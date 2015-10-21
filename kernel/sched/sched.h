@@ -990,15 +990,17 @@ static const u32 prio_to_wmult[40] = {
  /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
 };
 
-#define ENQUEUE_WAKEUP		1
-#define ENQUEUE_HEAD		2
+#define ENQUEUE_WAKEUP		0x01
+#define ENQUEUE_HEAD		0x02
 #ifdef CONFIG_SMP
-#define ENQUEUE_WAKING		4	/* sched_class::task_waking was called */
+#define ENQUEUE_WAKING		0x04	/* sched_class::task_waking was called */
 #else
-#define ENQUEUE_WAKING		0
+#define ENQUEUE_WAKING		0x00
 #endif
+#define ENQUEUE_RESTORE		0x08
 
-#define DEQUEUE_SLEEP		1
+#define DEQUEUE_SLEEP		0x01
+#define DEQUEUE_SAVE		0x02
 
 struct sched_class {
 	const struct sched_class *next;
