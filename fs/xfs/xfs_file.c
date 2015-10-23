@@ -624,6 +624,7 @@ xfs_file_aio_write_checks(
 	struct inode		*inode = file->f_mapping->host;
 	struct xfs_inode	*ip = XFS_I(inode);
 	int			error = 0;
+	bool			drained_dio = false;
 
 restart:
 	error = generic_write_checks2(iocb, pos, count, S_ISBLK(inode->i_mode));
@@ -666,18 +667,42 @@ restart:
 	 * write.  If zeroing is needed and we are currently holding the
 	 * iolock shared, we need to update it to exclusive which implies
 	 * having to redo all checks before.
+	 *
+	 * We need to serialise against EOF updates that occur in IO
+	 * completions here. We want to make sure that nobody is changing the
+	 * size while we do this check until we have placed an IO barrier (i.e.
+	 * hold the XFS_IOLOCK_EXCL) that prevents new IO from being dispatched.
+	 * The spinlock effectively forms a memory barrier once we have the
+	 * XFS_IOLOCK_EXCL so we are guaranteed to see the latest EOF value
+	 * and hence be able to correctly determine if we need to run zeroing.
 	 */
+	spin_lock(&ip->i_flags_lock);
 	if (*pos > i_size_read(inode)) {
-		if (*iolock == XFS_IOLOCK_SHARED) {
-			xfs_rw_iunlock(ip, *iolock);
-			*iolock = XFS_IOLOCK_EXCL;
-			xfs_rw_ilock(ip, *iolock);
+		spin_unlock(&ip->i_flags_lock);
+		if (!drained_dio) {
+			if (*iolock == XFS_IOLOCK_SHARED) {
+				xfs_rw_iunlock(ip, *iolock);
+				*iolock = XFS_IOLOCK_EXCL;
+				xfs_rw_ilock(ip, *iolock);
+			}
+
+			/*
+			 * We now have an IO submission barrier in place, but
+			 * AIO can do EOF updates during IO completion and hence
+			 * we now need to wait for all of them to drain. Non-AIO
+			 * DIO will have drained before we are given the
+			 * XFS_IOLOCK_EXCL, and so for most cases this wait is a
+			 * no-op.
+			 */
+			inode_dio_wait(inode);
+			drained_dio = true;
 			goto restart;
 		}
 		error = -xfs_zero_eof(ip, *pos, i_size_read(inode));
 		if (error)
 			return error;
-	}
+	} else
+		spin_unlock(&ip->i_flags_lock);
 
 	/*
 	 * Updating the timestamps will grab the ilock again from
@@ -744,6 +769,8 @@ xfs_file_dio_aio_write(
 	int			iolock;
 	struct xfs_buftarg	*target = XFS_IS_REALTIME_INODE(ip) ?
 					mp->m_rtdev_targp : mp->m_ddev_targp;
+	size_t			write_len;
+	pgoff_t			end;
 
 	/* DIO must be aligned to device logical sector size */
 	if ((pos | count) & target->bt_logical_sectormask)
@@ -809,9 +836,24 @@ xfs_file_dio_aio_write(
 	}
 
 	trace_xfs_file_direct_write(ip, count, iocb->ki_pos, 0);
-	ret = generic_file_direct_write(iocb, iovp,
-			&nr_segs, pos, &iocb->ki_pos, count, ocount);
 
+	if (count != ocount)
+		nr_segs = iov_shorten((struct iovec *)iovp, nr_segs, count);
+	write_len = iov_length(iovp, nr_segs);
+	end = (pos + write_len - 1) >> PAGE_CACHE_SHIFT;
+
+	ret = mapping->a_ops->direct_IO(WRITE, iocb, iovp, pos, nr_segs);
+
+	/* see generic_file_direct_write() for why this is necessary */
+	if (mapping->nrpages) {
+		invalidate_inode_pages2_range(mapping,
+					      pos >> PAGE_CACHE_SHIFT, end);
+	}
+
+	if (ret > 0) {
+		pos += ret;
+		iocb->ki_pos = pos;
+	}
 out:
 	xfs_rw_iunlock(ip, iolock);
 
