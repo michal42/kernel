@@ -19,6 +19,8 @@
 #include <linux/idr.h>
 #include <linux/hdreg.h>
 #include <linux/delay.h>
+#include <linux/ktime.h>
+#include <linux/elevator.h> /* for rq_end_sector() */
 
 #include <trace/events/block.h>
 
@@ -201,6 +203,12 @@ struct mapped_device {
 	struct bio flush_bio;
 
 	struct dm_stats stats;
+
+	/* for request-based merge heuristic in dm_request_fn() */
+	unsigned seq_rq_merge_deadline_usecs;
+	int last_rq_rw;
+	sector_t last_rq_pos;
+	ktime_t last_rq_start_time;
 };
 
 /*
@@ -1760,6 +1768,12 @@ static struct request *dm_start_request(struct mapped_device *md, struct request
 	clone = orig->special;
 	atomic_inc(&md->pending[rq_data_dir(clone)]);
 
+	if (md->seq_rq_merge_deadline_usecs) {
+		md->last_rq_pos = rq_end_sector(orig);
+		md->last_rq_rw = rq_data_dir(orig);
+		md->last_rq_start_time = ktime_get();
+	}
+
 	/*
 	 * Hold the md reference here for the in-flight I/O.
 	 * We can't rely on the reference count by device opener,
@@ -1770,6 +1784,45 @@ static struct request *dm_start_request(struct mapped_device *md, struct request
 	dm_get(md);
 
 	return clone;
+}
+
+#define MAX_SEQ_RQ_MERGE_DEADLINE_USECS 100000
+
+ssize_t dm_attr_rq_based_seq_io_merge_deadline_show(struct mapped_device *md, char *buf)
+{
+	return sprintf(buf, "%u\n", md->seq_rq_merge_deadline_usecs);
+}
+
+ssize_t dm_attr_rq_based_seq_io_merge_deadline_store(struct mapped_device *md,
+						     const char *buf, size_t count)
+{
+	unsigned deadline;
+
+	if (!dm_request_based(md))
+		return count;
+
+	if (kstrtouint(buf, 10, &deadline))
+		return -EINVAL;
+
+	if (deadline > MAX_SEQ_RQ_MERGE_DEADLINE_USECS)
+		deadline = MAX_SEQ_RQ_MERGE_DEADLINE_USECS;
+
+	md->seq_rq_merge_deadline_usecs = deadline;
+
+	return count;
+}
+
+static bool dm_request_peeked_before_merge_deadline(struct mapped_device *md)
+{
+	ktime_t kt_deadline;
+
+	if (!md->seq_rq_merge_deadline_usecs)
+		return false;
+
+	kt_deadline = ns_to_ktime((u64)md->seq_rq_merge_deadline_usecs * NSEC_PER_USEC);
+	kt_deadline = ktime_add_safe(md->last_rq_start_time, kt_deadline);
+
+	return !ktime_after(ktime_get(), kt_deadline);
 }
 
 /*
@@ -1812,6 +1865,11 @@ static void dm_request_fn(struct request_queue *q)
 			dm_kill_unmapped_request(clone, -EIO);
 			continue;
 		}
+
+		if (dm_request_peeked_before_merge_deadline(md) &&
+		    md_in_flight(md) && rq->bio && rq->bio->bi_vcnt == 1 &&
+		    md->last_rq_pos == pos && md->last_rq_rw == rq_data_dir(rq))
+			goto delay_and_out;
 
 		if (ti->type->busy && ti->type->busy(ti))
 			goto delay_and_out;
@@ -2362,6 +2420,9 @@ static int dm_init_request_based_queue(struct mapped_device *md)
 	q = blk_init_allocated_queue(md->queue, dm_request_fn, NULL);
 	if (!q)
 		return 0;
+
+	/* disable dm_request_fn's merge heuristic by default */
+	md->seq_rq_merge_deadline_usecs = 0;
 
 	md->queue = q;
 	dm_init_md_queue(md);
