@@ -611,7 +611,7 @@ check_nonholder:
 
 	if (core_scsi3_pr_seq_non_holder(cmd, pr_reg_type,
 					 sess->se_node_acl->initiatorname,
-					 registered_nexus));
+					 registered_nexus))
 		return TCM_RESERVATION_CONFLICT;
 	return 0;
 }
