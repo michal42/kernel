@@ -329,7 +329,10 @@ static int __resolve_indirect_ref(struct btrfs_fs_info *fs_info,
 		goto out;
 	}
 
-	root_level = btrfs_old_root_level(root, time_seq);
+	if (path->search_commit_root)
+		root_level = btrfs_header_level(root->commit_root);
+	else
+		root_level = btrfs_old_root_level(root, time_seq);
 
 	if (root_level + 1 == level) {
 		srcu_read_unlock(&fs_info->subvol_srcu, index);
@@ -1112,9 +1115,9 @@ static int btrfs_find_all_leafs(struct btrfs_trans_handle *trans,
  *
  * returns 0 on success, < 0 on error.
  */
-int btrfs_find_all_roots(struct btrfs_trans_handle *trans,
-				struct btrfs_fs_info *fs_info, u64 bytenr,
-				u64 time_seq, struct ulist **roots)
+static int __btrfs_find_all_roots(struct btrfs_trans_handle *trans,
+				  struct btrfs_fs_info *fs_info, u64 bytenr,
+				  u64 time_seq, struct ulist **roots)
 {
 	struct ulist *tmp;
 	struct ulist_node *node = NULL;
@@ -1148,6 +1151,20 @@ int btrfs_find_all_roots(struct btrfs_trans_handle *trans,
 
 	ulist_free(tmp);
 	return 0;
+}
+
+int btrfs_find_all_roots(struct btrfs_trans_handle *trans,
+			 struct btrfs_fs_info *fs_info, u64 bytenr,
+			 u64 time_seq, struct ulist **roots)
+{
+	int ret;
+
+	if (!trans)
+		down_read(&fs_info->commit_root_sem);
+	ret = __btrfs_find_all_roots(trans, fs_info, bytenr, time_seq, roots);
+	if (!trans)
+		up_read(&fs_info->commit_root_sem);
+	return ret;
 }
 
 /*
@@ -1537,6 +1554,8 @@ int iterate_extent_inodes(struct btrfs_fs_info *fs_info,
 		if (IS_ERR(trans))
 			return PTR_ERR(trans);
 		btrfs_get_tree_mod_seq(fs_info, &tree_mod_seq_elem);
+	} else {
+		down_read(&fs_info->commit_root_sem);
 	}
 
 	ret = btrfs_find_all_leafs(trans, fs_info, extent_item_objectid,
@@ -1547,8 +1566,8 @@ int iterate_extent_inodes(struct btrfs_fs_info *fs_info,
 
 	ULIST_ITER_INIT(&ref_uiter);
 	while (!ret && (ref_node = ulist_next(refs, &ref_uiter))) {
-		ret = btrfs_find_all_roots(trans, fs_info, ref_node->val,
-					   tree_mod_seq_elem.seq, &roots);
+		ret = __btrfs_find_all_roots(trans, fs_info, ref_node->val,
+					     tree_mod_seq_elem.seq, &roots);
 		if (ret)
 			break;
 		ULIST_ITER_INIT(&root_uiter);
@@ -1570,6 +1589,8 @@ out:
 	if (!search_commit_root) {
 		btrfs_put_tree_mod_seq(fs_info, &tree_mod_seq_elem);
 		btrfs_end_transaction(trans, fs_info->extent_root);
+	} else {
+		up_read(&fs_info->commit_root_sem);
 	}
 
 	return ret;
