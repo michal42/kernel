@@ -639,12 +639,10 @@ restart:
 		if (*iolock & XFS_IOLOCK_EXCL)
 			 dmflags |= DM_FLAGS_IMUX; /* dmapi disable mutex flg */
 
-		xfs_rw_iunlock(ip, XFS_ILOCK_EXCL); /* does not disable mutex */
 		error = XFS_SEND_DATA(ip->i_mount, DM_EVENT_WRITE, ip,
 				      *pos, *count, dmflags, iolock);
 		if (error)
 			return -error;
-		xfs_rw_ilock(ip, XFS_ILOCK_EXCL);
 
 	/* DMAPI NOSPACE will call this routine again. eventsent is retained
 	 * to ensure that DM event is only sent once.
