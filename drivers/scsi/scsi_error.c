@@ -2195,6 +2195,12 @@ int scsi_error_handler(void *data)
 	while (true) {
 		kgr_task_safe(current);
 
+		/*
+		 * The sequence in kthread_stop() sets the stop flag first
+		 * then wakes the process.  To avoid missed wakeups, the task
+		 * should always be in a non running state before the stop
+		 * flag is checked
+		 */
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (kthread_should_stop())
 			break;
