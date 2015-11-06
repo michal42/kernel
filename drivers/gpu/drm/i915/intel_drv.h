@@ -162,6 +162,7 @@ struct intel_panel {
 	struct {
 		bool present;
 		u32 level;
+		u32 max;
 		bool enabled;
 		struct backlight_device *device;
 	} backlight;
@@ -583,6 +584,7 @@ extern int intel_panel_setup_backlight(struct drm_connector *connector);
 extern void intel_panel_enable_backlight(struct intel_connector *connector);
 extern void intel_panel_disable_backlight(struct intel_connector *connector);
 extern void intel_panel_destroy_backlight(struct drm_connector *connector);
+extern void intel_panel_init_backlight_funcs(struct drm_device *dev);
 extern enum drm_connector_status intel_panel_detect(struct drm_device *dev);
 
 struct intel_set_config {

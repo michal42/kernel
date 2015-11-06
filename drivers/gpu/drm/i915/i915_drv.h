@@ -331,6 +331,7 @@ struct drm_i915_error_state {
 	struct intel_display_error_state *display;
 };
 
+struct intel_connector;
 struct intel_crtc_config;
 struct intel_crtc;
 struct intel_limit;
@@ -392,6 +393,14 @@ struct drm_i915_display_funcs {
 	/* render clock increase/decrease */
 	/* display clock increase/decrease */
 	/* pll clock increase/decrease */
+
+	int (*setup_backlight)(struct intel_connector *connector);
+	uint32_t (*get_max_backlight)(struct intel_connector *connector);
+	uint32_t (*get_backlight)(struct intel_connector *connector);
+	void (*set_backlight)(struct intel_connector *connector,
+			      uint32_t level);
+	void (*disable_backlight)(struct intel_connector *connector);
+	void (*enable_backlight)(struct intel_connector *connector);
 };
 
 struct intel_uncore_funcs {
