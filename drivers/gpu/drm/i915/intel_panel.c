@@ -466,12 +466,15 @@ void intel_panel_set_backlight(struct intel_connector *connector, u32 level,
 	unsigned long flags;
 	u64 n;
 
-	if (!panel->backlight.present || pipe == INVALID_PIPE)
+	if (!panel->backlight.present)
 		return;
 
 	spin_lock_irqsave(&dev_priv->backlight_lock, flags);
 
-	WARN_ON(panel->backlight.max == 0);
+	if (pipe == INVALID_PIPE && !panel->backlight.max)
+		goto out;
+	if (WARN_ON(panel->backlight.max == 0))
+		goto out;
 
 	/* scale to hardware max, but be careful to not overflow */
 	freq = panel->backlight.max;
@@ -483,9 +486,12 @@ void intel_panel_set_backlight(struct intel_connector *connector, u32 level,
 	if (panel->backlight.device)
 		panel->backlight.device->props.brightness = level;
 
+	if (pipe == INVALID_PIPE)
+		goto out;
 	if (panel->backlight.enabled)
 		intel_panel_actually_set_backlight(connector, level);
 
+ out:
 	spin_unlock_irqrestore(&dev_priv->backlight_lock, flags);
 }
 
