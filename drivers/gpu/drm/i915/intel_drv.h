@@ -574,7 +574,7 @@ extern void intel_panel_set_backlight(struct intel_connector *connector, u32 lev
 extern int intel_panel_setup_backlight(struct drm_connector *connector);
 extern void intel_panel_enable_backlight(struct intel_connector *connector);
 extern void intel_panel_disable_backlight(struct intel_connector *connector);
-extern void intel_panel_destroy_backlight(struct drm_device *dev);
+extern void intel_panel_destroy_backlight(struct drm_connector *connector);
 extern enum drm_connector_status intel_panel_detect(struct drm_device *dev);
 
 struct intel_set_config {

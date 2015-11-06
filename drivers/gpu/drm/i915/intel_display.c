@@ -10796,6 +10796,7 @@ void intel_modeset_cleanup(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct drm_crtc *crtc;
+	struct drm_connector *connector;
 
 	/*
 	 * Interrupts and polling as the first thing to avoid creating havoc.
@@ -10833,8 +10834,11 @@ void intel_modeset_cleanup(struct drm_device *dev)
 	/* flush any delayed tasks or pending work */
 	flush_scheduled_work();
 
-	/* destroy backlight, if any, before the connectors */
-	intel_panel_destroy_backlight(dev);
+	/* destroy the backlight and sysfs files before encoders/connectors */
+	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
+		intel_panel_destroy_backlight(connector);
+		/*drm_sysfs_connector_remove(connector);*/
+	}
 
 	drm_mode_config_cleanup(dev);
 
