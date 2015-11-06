@@ -2944,8 +2944,11 @@ static void i915_hpd_irq_setup(struct drm_device *dev)
 		hotplug_en |= CRT_HOTPLUG_VOLTAGE_COMPARE_50;
 
 		/* Ignore TV since it's buggy */
-		i915_hotplug_interrupt_update_locked(dev_priv, HOTPLUG_INT_EN_MASK |
-					             CRT_HOTPLUG_VOLTAGE_COMPARE_MASK, hotplug_en);
+		i915_hotplug_interrupt_update_locked(dev_priv,
+						     HOTPLUG_INT_EN_MASK |
+					             CRT_HOTPLUG_VOLTAGE_COMPARE_MASK |
+						     CRT_HOTPLUG_ACTIVATION_PERIOD_64,
+						     hotplug_en);
 	}
 }
 
