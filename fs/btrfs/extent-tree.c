@@ -7270,8 +7270,10 @@ static int record_one_subtree_extent(struct btrfs_trans_handle *trans,
 	qrecord->old_roots = NULL;
 
 	delayed_refs = &trans->transaction->delayed_refs;
+	spin_lock(&delayed_refs->lock);
 	if (btrfs_qgroup_insert_dirty_extent(delayed_refs, qrecord))
 		kfree(qrecord);
+	spin_unlock(&delayed_refs->lock);
 
 	return 0;
 }
@@ -7285,6 +7287,10 @@ static int account_leaf_items(struct btrfs_trans_handle *trans,
 	struct btrfs_key key;
 	struct btrfs_file_extent_item *fi;
 	u64 bytenr, num_bytes;
+
+	/* We can be called directly from walk_up_proc() */
+	if (!root->fs_info->quota_enabled)
+		return 0;
 
 	for (i = 0; i < nr; i++) {
 		btrfs_item_key_to_cpu(eb, &key, i);
