@@ -157,6 +157,17 @@ struct intel_encoder {
 struct intel_panel {
 	struct drm_display_mode *fixed_mode;
 	int fitting_mode;
+
+	/* backlight */
+	struct {
+		bool present;
+		u32 level;
+		u32 max;
+		bool enabled;
+		bool combination_mode;	/* gen 2/4 only */
+		bool active_low_pwm;
+		struct backlight_device *device;
+	} backlight;
 };
 
 struct intel_connector {
@@ -574,7 +585,8 @@ extern void intel_panel_set_backlight(struct intel_connector *connector, u32 lev
 extern int intel_panel_setup_backlight(struct drm_connector *connector);
 extern void intel_panel_enable_backlight(struct intel_connector *connector);
 extern void intel_panel_disable_backlight(struct intel_connector *connector);
-extern void intel_panel_destroy_backlight(struct drm_device *dev);
+extern void intel_panel_destroy_backlight(struct drm_connector *connector);
+extern void intel_panel_init_backlight_funcs(struct drm_device *dev);
 extern enum drm_connector_status intel_panel_detect(struct drm_device *dev);
 
 struct intel_set_config {

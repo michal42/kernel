@@ -1634,7 +1634,7 @@ static void i9xx_update_wm(struct drm_device *dev)
 			&to_intel_crtc(enabled)->config.adjusted_mode;
 		int clock = adjusted_mode->clock;
 		int htotal = adjusted_mode->htotal;
-		int hdisplay = to_intel_crtc(crtc)->config.requested_mode.hdisplay;
+		int hdisplay = to_intel_crtc(enabled)->config.requested_mode.hdisplay;
 		int pixel_size = enabled->fb->bits_per_pixel / 8;
 		unsigned long line_time_us;
 		int entries;

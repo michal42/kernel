@@ -331,6 +331,7 @@ struct drm_i915_error_state {
 	struct intel_display_error_state *display;
 };
 
+struct intel_connector;
 struct intel_crtc_config;
 struct intel_crtc;
 struct intel_limit;
@@ -392,6 +393,13 @@ struct drm_i915_display_funcs {
 	/* render clock increase/decrease */
 	/* display clock increase/decrease */
 	/* pll clock increase/decrease */
+
+	int (*setup_backlight)(struct intel_connector *connector);
+	uint32_t (*get_backlight)(struct intel_connector *connector);
+	void (*set_backlight)(struct intel_connector *connector,
+			      uint32_t level);
+	void (*disable_backlight)(struct intel_connector *connector);
+	void (*enable_backlight)(struct intel_connector *connector);
 };
 
 struct intel_uncore_funcs {
@@ -707,8 +715,6 @@ struct i915_suspend_saved_registers {
 	u32 saveBLC_PWM_CTL;
 	u32 saveBLC_PWM_CTL2;
 	u32 saveBLC_HIST_CTL_B;
-	u32 saveBLC_PWM_CTL_B;
-	u32 saveBLC_PWM_CTL2_B;
 	u32 saveBLC_CPU_PWM_CTL;
 	u32 saveBLC_CPU_PWM_CTL2;
 	u32 saveFPB0;
@@ -1237,13 +1243,8 @@ typedef struct drm_i915_private {
 	struct intel_overlay *overlay;
 	unsigned int sprite_scaling_enabled;
 
-	/* backlight */
-	struct {
-		int level;
-		bool enabled;
-		spinlock_t lock; /* bl registers and the above bl fields */
-		struct backlight_device *device;
-	} backlight;
+	/* backlight registers and fields in struct intel_panel */
+	spinlock_t backlight_lock;
 
 	/* LVDS info */
 	bool no_aux_handshake;
