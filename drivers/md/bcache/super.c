@@ -1733,8 +1733,6 @@ void bch_cache_release(struct kobject *kobj)
 		ca->set->cache[ca->sb.nr_this_dev] = NULL;
 	}
 
-	bch_cache_allocator_exit(ca);
-
 	bio_split_pool_free(&ca->bio_split_hook);
 
 	free_pages((unsigned long) ca->disk_buckets, ilog2(bucket_pages(ca)));
@@ -1765,8 +1763,6 @@ static int cache_alloc(struct cache_sb *sb, struct cache *ca)
 
 	__module_get(THIS_MODULE);
 	kobject_init(&ca->kobj, &bch_cache_ktype);
-
-	INIT_LIST_HEAD(&ca->discards);
 
 	bio_init(&ca->journal.bio);
 	ca->journal.bio.bi_max_vecs = 8;
