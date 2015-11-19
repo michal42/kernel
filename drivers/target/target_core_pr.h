@@ -71,4 +71,13 @@ extern sense_reason_t target_scsi3_emulate_pr_in(struct se_cmd *);
 extern sense_reason_t target_scsi3_emulate_pr_out(struct se_cmd *);
 extern sense_reason_t target_check_reservation(struct se_cmd *);
 
+/*
+ * XXX se_subsystem_api->get_sense_buffer has been unused since v3.6
+ * (d5829eac5f7cfff89c6d1cf11717eee97cf030d0), so we abuse it to store a
+ * struct target_pr_ops pointer on SLES with the rbd backend, and avoid an
+ * se_subsystem_api KABI change.
+ */
+#define TARGET_PR_OPS(dev) \
+	(!strcmp(dev->transport->name, "rbd") ? dev->transport->pr_ops : NULL)
+
 #endif /* TARGET_CORE_PR_H */
