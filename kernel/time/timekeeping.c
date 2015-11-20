@@ -23,6 +23,9 @@
 #include <linux/stop_machine.h>
 #include <linux/pvclock_gtod.h>
 #include <linux/compiler.h>
+#ifdef CONFIG_XEN_PRIVILEGED_GUEST
+#include <asm/time.h>
+#endif
 
 #include "tick-internal.h"
 #include "ntp_internal.h"
@@ -936,6 +939,10 @@ int do_settimeofday64(const struct timespec64 *ts)
 out:
 	timekeeping_update(tk, TK_CLEAR_NTP | TK_MIRROR | TK_CLOCK_WAS_SET);
 
+#ifdef CONFIG_XEN_PRIVILEGED_GUEST
+	xen_update_wallclock(ts);
+#endif
+
 	write_seqcount_end(&tk_core.seq);
 	raw_spin_unlock_irqrestore(&timekeeper_lock, flags);
 
@@ -979,6 +986,10 @@ int timekeeping_inject_offset(struct timespec *ts)
 
 	tk_xtime_add(tk, &ts64);
 	tk_set_wall_to_mono(tk, timespec64_sub(tk->wall_to_monotonic, ts64));
+
+#ifdef CONFIG_XEN_PRIVILEGED_GUEST
+	xen_update_wallclock(&tmp);
+#endif
 
 error: /* even if we error out, we forwarded the time, so call update */
 	timekeeping_update(tk, TK_CLEAR_NTP | TK_MIRROR | TK_CLOCK_WAS_SET);

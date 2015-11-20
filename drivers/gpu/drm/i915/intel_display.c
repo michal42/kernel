@@ -2229,7 +2229,7 @@ static void intel_disable_pipe(struct intel_crtc *crtc)
 
 static bool need_vtd_wa(struct drm_device *dev)
 {
-#ifdef CONFIG_INTEL_IOMMU
+#if defined(CONFIG_INTEL_IOMMU) || defined(CONFIG_XEN)
 	if (INTEL_INFO(dev)->gen >= 6 && intel_iommu_gfx_mapped)
 		return true;
 #endif

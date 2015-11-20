@@ -140,6 +140,7 @@ EXPORT_SYMBOL_GPL(efi_query_variable_store);
 */
 void __init efi_reserve_boot_services(void)
 {
+#ifndef CONFIG_XEN
 	void *p;
 
 	for (p = memmap.map; p < memmap.map_end; p += memmap.desc_size) {
@@ -167,10 +168,12 @@ void __init efi_reserve_boot_services(void)
 		} else
 			memblock_reserve(start, size);
 	}
+#endif
 }
 
 void __init efi_free_boot_services(void)
 {
+#ifndef CONFIG_XEN
 	void *p;
 
 	for (p = memmap.map; p < memmap.map_end; p += memmap.desc_size) {
@@ -190,8 +193,10 @@ void __init efi_free_boot_services(void)
 	}
 
 	efi_unmap_memmap();
+#endif
 }
 
+#ifndef CONFIG_XEN
 /*
  * A number of config table entries get remapped to virtual addresses
  * after entering EFI virtual mode. However, the kexec kernel requires
@@ -288,3 +293,4 @@ bool efi_poweroff_required(void)
 {
 	return !!acpi_gbl_reduced_hardware;
 }
+#endif /* !CONFIG_XEN */

@@ -134,7 +134,11 @@ extern u64 efi_setup;
 
 static inline bool efi_is_native(void)
 {
+#ifndef CONFIG_XEN
 	return IS_ENABLED(CONFIG_X86_64) == efi_enabled(EFI_64BIT);
+#else
+	return 1; /* Hypervisor handles the mismatch quite fine. */
+#endif
 }
 
 static inline bool efi_runtime_supported(void)

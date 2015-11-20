@@ -383,6 +383,7 @@ void note_interrupt(struct irq_desc *desc, irqreturn_t action_ret)
 		}
 	}
 
+	irq = irq_desc_get_irq(desc);
 	if (unlikely(action_ret == IRQ_NONE)) {
 		/*
 		 * If we are seeing only the odd spurious IRQ caused by
@@ -392,12 +393,11 @@ void note_interrupt(struct irq_desc *desc, irqreturn_t action_ret)
 		 */
 		if (time_after(jiffies, desc->last_unhandled + HZ/10))
 			desc->irqs_unhandled = 1;
-		else
+		else if (!irq_ignore_unhandled(irq))
 			desc->irqs_unhandled++;
 		desc->last_unhandled = jiffies;
 	}
 
-	irq = irq_desc_get_irq(desc);
 	if (unlikely(try_misrouted_irq(irq, desc, action_ret))) {
 		int ok = misrouted_irq(irq);
 		if (action_ret == IRQ_NONE)

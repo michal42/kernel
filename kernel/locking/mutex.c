@@ -217,6 +217,9 @@ ww_mutex_set_context_slowpath(struct ww_mutex *lock,
 }
 
 #ifdef CONFIG_MUTEX_SPIN_ON_OWNER
+#ifndef arch_cpu_is_running
+#define arch_cpu_is_running(cpu) true
+#endif
 /*
  * Look out! "owner" is an entirely speculative pointer
  * access and not reliable.
@@ -236,7 +239,9 @@ bool mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 		 */
 		barrier();
 
-		if (!owner->on_cpu || need_resched()) {
+		if (!owner->on_cpu ||
+		    !arch_cpu_is_running(task_thread_info(owner)->cpu) ||
+		    need_resched()) {
 			ret = false;
 			break;
 		}
@@ -262,7 +267,8 @@ static inline int mutex_can_spin_on_owner(struct mutex *lock)
 	rcu_read_lock();
 	owner = READ_ONCE(lock->owner);
 	if (owner)
-		retval = owner->on_cpu;
+		retval = owner->on_cpu &&
+			 arch_cpu_is_running(task_thread_info(owner)->cpu);
 	rcu_read_unlock();
 	/*
 	 * if lock->owner is not set, the mutex owner may have just acquired

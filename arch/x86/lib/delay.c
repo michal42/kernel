@@ -84,6 +84,7 @@ static void delay_tsc(unsigned long __loops)
 	preempt_enable();
 }
 
+#ifndef CONFIG_XEN
 /*
  * On some AMD platforms, MWAITX has a configurable 32-bit timer, that
  * counts with TSC frequency. The input value is the loop of the
@@ -121,6 +122,7 @@ static void delay_mwaitx(unsigned long __loops)
 		start = end;
 	}
 }
+#endif
 
 /*
  * Since we calibrate only once at boot, this
@@ -134,10 +136,12 @@ void use_tsc_delay(void)
 		delay_fn = delay_tsc;
 }
 
+#ifndef CONFIG_XEN
 void use_mwaitx_delay(void)
 {
 	delay_fn = delay_mwaitx;
 }
+#endif
 
 int read_current_timer(unsigned long *timer_val)
 {

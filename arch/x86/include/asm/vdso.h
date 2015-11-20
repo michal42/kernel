@@ -39,7 +39,7 @@ extern const struct vdso_image vdso_image_x32;
 
 #if defined CONFIG_X86_32 || defined CONFIG_COMPAT
 extern const struct vdso_image vdso_image_32_int80;
-#ifdef CONFIG_COMPAT
+#if defined(CONFIG_COMPAT) || defined(CONFIG_X86_XEN)
 extern const struct vdso_image vdso_image_32_syscall;
 #endif
 extern const struct vdso_image vdso_image_32_sysenter;

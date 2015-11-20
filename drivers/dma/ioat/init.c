@@ -26,7 +26,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/workqueue.h>
 #include <linux/prefetch.h>
-#include <linux/dca.h>
 #include "dma.h"
 #include "registers.h"
 #include "hw.h"
@@ -1266,11 +1265,7 @@ static void ioat_remove(struct pci_dev *pdev)
 		return;
 
 	dev_err(&pdev->dev, "Removing dma and dca services\n");
-	if (device->dca) {
-		unregister_dca_provider(device->dca, &pdev->dev);
-		free_dca_provider(device->dca);
-		device->dca = NULL;
-	}
+	ioat_remove_dca_provider(pdev);
 	ioat_dma_remove(device);
 }
 

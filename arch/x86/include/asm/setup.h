@@ -31,7 +31,7 @@
 extern u64 relocated_ramdisk;
 
 /* Interrupt control for vSMPowered x86_64 systems */
-#ifdef CONFIG_X86_64
+#if defined(CONFIG_X86_64) && !defined(CONFIG_XEN)
 void vsmp_init(void);
 #else
 static inline void vsmp_init(void) { }
@@ -70,7 +70,11 @@ extern char _text[];
 
 static inline bool kaslr_enabled(void)
 {
+#ifdef CONFIG_RANDOMIZE_BASE
 	return !!(boot_params.hdr.loadflags & KASLR_FLAG);
+#else
+	return false;
+#endif
 }
 
 static inline unsigned long kaslr_offset(void)

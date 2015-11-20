@@ -22,6 +22,7 @@
 
 #define gtod (&VVAR(vsyscall_gtod_data))
 
+
 extern int __vdso_clock_gettime(clockid_t clock, struct timespec *ts);
 extern int __vdso_gettimeofday(struct timeval *tv, struct timezone *tz);
 extern time_t __vdso_time(time_t *t);
@@ -173,6 +174,7 @@ static notrace cycle_t vread_pvclock(int *mode)
 
 #endif
 
+#ifndef CONFIG_XEN
 notrace static cycle_t vread_tsc(void)
 {
 	cycle_t ret = (cycle_t)rdtsc_ordered();
@@ -192,24 +194,33 @@ notrace static cycle_t vread_tsc(void)
 	asm volatile ("");
 	return last;
 }
+#endif
 
 notrace static inline u64 vgetsns(int *mode)
 {
 	u64 v;
 	cycles_t cycles;
 
-	if (gtod->vclock_mode == VCLOCK_TSC)
+	switch (*mode) {
+#ifndef CONFIG_XEN
+	case VCLOCK_TSC:
 		cycles = vread_tsc();
+		break;
+#endif
 #ifdef CONFIG_HPET_TIMER
-	else if (gtod->vclock_mode == VCLOCK_HPET)
+	case VCLOCK_HPET:
 		cycles = vread_hpet();
+		break;
 #endif
 #ifdef CONFIG_PARAVIRT_CLOCK
-	else if (gtod->vclock_mode == VCLOCK_PVCLOCK)
+	case VCLOCK_PVCLOCK:
 		cycles = vread_pvclock(mode);
+		break;
 #endif
-	else
+	default:
+		*mode = VCLOCK_NONE;
 		return 0;
+	}
 	v = (cycles - gtod->cycle_last) & gtod->mask;
 	return v * gtod->mult;
 }
@@ -307,6 +318,7 @@ int clock_gettime(clockid_t, struct timespec *)
 
 notrace int __vdso_gettimeofday(struct timeval *tv, struct timezone *tz)
 {
+#ifndef CONFIG_XEN
 	if (likely(tv != NULL)) {
 		if (unlikely(do_realtime((struct timespec *)tv) == VCLOCK_NONE))
 			return vdso_fallback_gtod(tv, tz);
@@ -318,6 +330,9 @@ notrace int __vdso_gettimeofday(struct timeval *tv, struct timezone *tz)
 	}
 
 	return 0;
+#else
+	return vdso_fallback_gtod(tv, tz);
+#endif
 }
 int gettimeofday(struct timeval *, struct timezone *)
 	__attribute__((weak, alias("__vdso_gettimeofday")));
