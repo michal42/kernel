@@ -477,8 +477,6 @@ struct se_dif_v1_tuple {
 };
 
 struct se_cmd {
-	sense_reason_t		sense_reason;
-	u32			sense_info;
 	/* SAM response code being sent to initiator */
 	u8			scsi_status;
 	u8			scsi_asc;
@@ -503,6 +501,9 @@ struct se_cmd {
 	u32			data_length;
 	u32			residual_count;
 	u32			orig_fe_lun;
+#ifndef __GENKSYMS__
+	sense_reason_t		sense_reason;
+#endif
 	/* Persistent Reservation key */
 	u64			pr_res_key;
 	/* Used for sense data */
@@ -518,6 +519,9 @@ struct se_cmd {
 	struct list_head	se_cmd_list;
 	struct completion	cmd_wait_comp;
 	struct kref		cmd_kref;
+#ifndef __GENKSYMS__
+	u32			sense_info;
+#endif
 	struct target_core_fabric_ops *se_tfo;
 	sense_reason_t		(*execute_cmd)(struct se_cmd *);
 	sense_reason_t		(*execute_rw)(struct se_cmd *, struct scatterlist *,

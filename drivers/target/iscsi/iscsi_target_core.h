@@ -778,7 +778,9 @@ struct iscsi_tpg_attrib {
 	u32			demo_mode_discovery;
 	u32			default_erl;
 	u8			t10_pi;
+#ifndef __GENKSYMS__
 	u32                     tpg_enabled_sendtargets;
+#endif
 	struct iscsi_portal_group *tpg;
 };
 
