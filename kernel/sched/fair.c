@@ -263,7 +263,7 @@ static inline struct rq *rq_of(struct cfs_rq *cfs_rq)
 
 static inline struct task_struct *task_of(struct sched_entity *se)
 {
-#ifdef CONFIG_SCHED_DEBUG
+#ifdef CONFIG_SCHED_DEBUG_PARANOID
 	WARN_ON_ONCE(!entity_is_task(se));
 #endif
 	return container_of(se, struct task_struct, se);
@@ -2822,7 +2822,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-#ifdef CONFIG_SCHED_DEBUG
+#ifdef CONFIG_SCHED_DEBUG_PARANOID
 	s64 d = se->vruntime - cfs_rq->min_vruntime;
 
 	if (d < 0)

@@ -779,6 +779,15 @@ config SCHED_DEBUG
 	  that can help debug the scheduler. The runtime overhead of this
 	  option is minimal.
 
+config SCHED_DEBUG_PARANOID
+	bool "Add additional paranoid debugging checks to scheduler"
+	depends on DEBUG_KERNEL && SCHED_DEBUG && PROC_FS
+	default n
+	help
+	  If you say Y here, additional debugging checks will be made in
+	  some of the scheduler hot paths. The runtime overhead is small
+	  but it is measurable.
+
 config SCHEDSTATS
 	bool "Collect scheduler statistics"
 	depends on DEBUG_KERNEL && PROC_FS

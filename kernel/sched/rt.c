@@ -98,7 +98,7 @@ static void destroy_rt_bandwidth(struct rt_bandwidth *rt_b)
 
 static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
 {
-#ifdef CONFIG_SCHED_DEBUG
+#ifdef CONFIG_SCHED_DEBUG_PARANOID
 	WARN_ON_ONCE(!rt_entity_is_task(rt_se));
 #endif
 	return container_of(rt_se, struct task_struct, rt);

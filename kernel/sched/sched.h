@@ -267,6 +267,7 @@ struct cfs_rq {
 	struct sched_entity *curr, *next, *last, *skip;
 
 #ifdef	CONFIG_SCHED_DEBUG
+	/* Unused due to SCHED_DEBUG_PARANOID but still required by KABI */
 	unsigned int nr_spread_over;
 #endif
 
