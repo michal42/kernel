@@ -9,7 +9,9 @@
 #include <linux/swapops.h>
 #include <linux/vmalloc.h>
 #include <linux/mman.h>
+#ifndef __GENKSYMS__
 #include <linux/hugetlb.h>
+#endif
 
 #include <asm/uaccess.h>
 
