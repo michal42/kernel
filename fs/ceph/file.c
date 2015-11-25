@@ -403,6 +403,36 @@ more:
 }
 
 /*
+ * copy user data from a page vector into a user pointer
+ */
+static int copy_page_vector_to_user(struct page **pages,
+		void __user *data,
+		loff_t off, size_t len)
+{
+	int i = 0;
+	int po = off & ~PAGE_CACHE_MASK;
+	int left = len;
+	int l, bad;
+
+	while (left > 0) {
+		l = min_t(int, left, PAGE_CACHE_SIZE-po);
+		bad = copy_to_user(data, page_address(pages[i]) + po, l);
+		if (bad == l)
+			return -EFAULT;
+		data += l - bad;
+		left -= l - bad;
+		if (po) {
+			po += l - bad;
+			if (po == PAGE_CACHE_SIZE)
+				po = 0;
+		}
+		i++;
+	}
+	return len;
+}
+
+
+/*
  * Completely synchronous read and write methods.  Direct from __user
  * buffer to osd, or directly to user pages (if O_DIRECT).
  *
@@ -445,7 +475,7 @@ static ssize_t ceph_sync_read(struct file *file, char __user *data,
 			   (unsigned long)data & ~PAGE_MASK);
 
 	if (ret >= 0 && !o_direct)
-		ret = ceph_copy_page_vector_to_user(pages, data, off, ret);
+		ret = copy_page_vector_to_user(pages, data, off, ret);
 	if (ret >= 0)
 		*poff = off + ret;
 
@@ -557,7 +587,7 @@ more:
 	snapc = ci->i_snap_realm->cached_context;
 	vino = ceph_vino(inode);
 	req = ceph_osdc_new_request(&fsc->client->osdc, &ci->i_layout,
-				    vino, pos, &len, num_ops,
+				    vino, pos, &len, 0, num_ops,
 				    CEPH_OSD_OP_WRITE, flags, snapc,
 				    ci->i_truncate_seq, ci->i_truncate_size,
 				    false);
@@ -946,7 +976,7 @@ static int ceph_zero_partial_object(struct inode *inode,
 	req = ceph_osdc_new_request(&fsc->client->osdc, &ci->i_layout,
 					ceph_vino(inode),
 					offset, length,
-					1, op,
+					0, 1, op,
 					CEPH_OSD_FLAG_WRITE |
 					CEPH_OSD_FLAG_ONDISK,
 					NULL, 0, 0, false);
