@@ -1007,22 +1007,30 @@ static void core_alua_do_transition_tg_pt_work(struct work_struct *work)
 					alua_port_list) {
 			lacl = se_deve->se_lun_acl;
 			/*
-			 * se_deve->se_lun_acl pointer may be NULL for a
-			 * entry created without explicit Node+MappedLUN ACLs
+			 * spc4r37 p.242:
+			 * After an explicit target port asymmetric access
+			 * state change, a device server shall establish a
+			 * unit attention condition with the additional sense
+			 * code set to ASYMMETRIC ACCESS STATE CHANGED for
+			 * the initiator port associated with every I_T nexus
+			 * other than the I_T nexus on which the SET TARGET
+			 * PORT GROUPS command was received.
 			 */
-			if (!lacl)
-				continue;
-
 			if ((tg_pt_gp->tg_pt_gp_alua_access_status ==
 			     ALUA_STATUS_ALTERED_BY_EXPLICIT_STPG) &&
-			   (tg_pt_gp->tg_pt_gp_alua_nacl != NULL) &&
-			    (tg_pt_gp->tg_pt_gp_alua_nacl == lacl->se_lun_nacl) &&
 			   (tg_pt_gp->tg_pt_gp_alua_port != NULL) &&
 			    (tg_pt_gp->tg_pt_gp_alua_port == port))
 				continue;
 
-			core_scsi3_ua_allocate(lacl->se_lun_nacl,
-				se_deve->mapped_lun, 0x2A,
+			/*
+			 * se_deve->se_lun_acl pointer may be NULL for a
+			 * entry created without explicit Node+MappedLUN ACLs
+			 */
+			if (lacl && (tg_pt_gp->tg_pt_gp_alua_nacl != NULL) &&
+			    (tg_pt_gp->tg_pt_gp_alua_nacl == lacl->se_lun_nacl))
+			    continue;
+
+			core_scsi3_ua_allocate_deve(se_deve, 0x2A,
 				ASCQ_2AH_ASYMMETRIC_ACCESS_STATE_CHANGED);
 		}
 		spin_unlock_bh(&port->sep_alua_lock);
