@@ -659,6 +659,9 @@ static inline int free_pages_check(struct page *page)
 	page_cpupid_reset_last(page);
 	if (page->flags & PAGE_FLAGS_CHECK_AT_PREP)
 		page->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
+
+	/* Get rid of the stale PG_waiters flag */
+	__ClearPageWaiters(page);
 	return 0;
 }
 
