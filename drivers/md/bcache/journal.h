@@ -132,6 +132,7 @@ struct journal_write {
 
 	struct cache_set	*c;
 	struct closure_waitlist	wait;
+	bool			dirty;
 	bool			need_write;
 };
 
