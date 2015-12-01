@@ -431,7 +431,9 @@ struct drm_file {
 
 	int is_master; /* this file private is a master for a minor */
 	/* this client is allowed to gain master privileges for @master */
+#ifndef __GENKSYMS__
 	bool allowed_master;
+#endif
 	struct drm_master *master; /* master this node is currently associated with
 				      N.B. not always minor->master */
 
