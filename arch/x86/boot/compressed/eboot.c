@@ -843,8 +843,8 @@ static efi_status_t relocate_kernel(struct setup_header *hdr)
 static void setup_hibernation_keys(struct boot_params *params)
 {
 	unsigned long key_size;
-	unsigned long attributes;
-	unsigned long ignore;
+	unsigned long attributes = 0;
+	unsigned long buff_size;
 	struct setup_data *setup_data, *hibernation_setup_data;
 	struct hibernation_keys *keys;
 	bool regen_key = false;
@@ -862,6 +862,7 @@ static void setup_hibernation_keys(struct boot_params *params)
 
 	memset(hibernation_setup_data, 0, size);
 	keys = (struct hibernation_keys *) hibernation_setup_data->data;
+	key_size = sizeof(keys->hibernation_key);
 
 	status = efi_call_phys5(sys_table->runtime->get_variable,
 				HIBERNATION_KEY, &EFI_HIBERNATION_GUID,
@@ -877,16 +878,19 @@ static void setup_hibernation_keys(struct boot_params *params)
 			status = EFI_NOT_FOUND;
 		} else
 			goto clean_fail;
+	} else if (status !=  EFI_SUCCESS && status != EFI_NOT_FOUND) {
+		efi_printk(sys_table, "Failed to get hibernation key: ");
+		efi_printk(sys_table, efi_status_to_str(status));
+		efi_printk(sys_table, "\n");
 	}
 
+	buff_size = sizeof(regen_key);
 	reg_status = efi_call_phys5(sys_table->runtime->get_variable,
 				    HIBERNATION_KEY_REGEN_FLAG,
-				    &EFI_HIBERNATION_GUID, &attributes, &ignore,
-				    &regen_key);
+				    &EFI_HIBERNATION_GUID, &attributes,
+				    &buff_size, &regen_key);
 	if ((status != EFI_SUCCESS) ||
 	   (reg_status == EFI_SUCCESS && regen_key)) {
-		efi_printk(sys_table, "Regenerating hibernation key\n");
-
 		efi_get_random_key(sys_table, params, keys->hibernation_key,
 				   HIBERNATION_DIGEST_SIZE);
 
@@ -896,8 +900,11 @@ static void setup_hibernation_keys(struct boot_params *params)
 					HIBERNATION_KEY_ATTRIBUTE,
 					HIBERNATION_DIGEST_SIZE,
 					keys->hibernation_key);
-		if (status != EFI_SUCCESS)
-			efi_printk(sys_table, "Failed to set hibernation key\n");
+		if (status != EFI_SUCCESS) {
+			efi_printk(sys_table, "Failed to set hibernation key: ");
+        		efi_printk(sys_table, efi_status_to_str(status));
+        		efi_printk(sys_table, "\n");
+		}
 
 		efi_call_phys5(sys_table->runtime->get_variable,
 				HIBERNATION_KEY, &EFI_HIBERNATION_GUID,

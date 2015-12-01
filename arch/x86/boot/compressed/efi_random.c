@@ -5,25 +5,6 @@
 #include <asm/archrandom.h>
 #include <asm/efi.h>
 
-#define EFI_STATUS_STR(_status) \
-case EFI_##_status: \
-	return "EFI_" __stringify(_status);
-
-static char *efi_status_to_str(efi_status_t status)
-{
-	switch (status) {
-	EFI_STATUS_STR(SUCCESS)
-	EFI_STATUS_STR(INVALID_PARAMETER)
-	EFI_STATUS_STR(OUT_OF_RESOURCES)
-	EFI_STATUS_STR(DEVICE_ERROR)
-	EFI_STATUS_STR(WRITE_PROTECTED)
-	EFI_STATUS_STR(SECURITY_VIOLATION)
-	EFI_STATUS_STR(NOT_FOUND)
-	}
-
-	return "";
-}
-
 static efi_status_t efi_locate_rng(efi_system_table_t *sys_table,
 				   void ***rng_handle)
 {
