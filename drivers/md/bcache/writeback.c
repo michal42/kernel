@@ -169,8 +169,10 @@ static void refill_dirty(struct closure *cl)
 	down_write(&dc->writeback_lock);
 
 	if (!atomic_read(&dc->has_dirty)) {
-		SET_BDEV_STATE(&dc->sb, BDEV_STATE_CLEAN);
-		bch_write_bdev_super(dc, NULL);
+		if (BDEV_STATE(&dc->sb) != BDEV_STATE_NONE) {
+			SET_BDEV_STATE(&dc->sb, BDEV_STATE_CLEAN);
+			bch_write_bdev_super(dc, NULL);
+		}
 
 		up_write(&dc->writeback_lock);
 		closure_return(cl);
