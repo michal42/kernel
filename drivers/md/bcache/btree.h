@@ -125,6 +125,7 @@ struct btree {
 	unsigned long		seq;
 	struct rw_semaphore	lock;
 	struct cache_set	*c;
+	struct btree		*parent;
 
 	unsigned long		flags;
 	uint16_t		written;	/* would be nice to kill */
@@ -142,7 +143,8 @@ struct btree {
 	struct bset_tree	sets[MAX_BSETS];
 
 	/* For outstanding btree writes, used as a lock - protects write_idx */
-	struct closure_with_waitlist	io;
+	struct closure		io;
+	struct semaphore	io_mutex;
 
 	struct list_head	list;
 	struct delayed_work	work;
@@ -215,6 +217,8 @@ static inline struct bkey *bch_btree_iter_init(struct btree *b,
 	return __bch_btree_iter_init(b, iter, search, b->sets);
 }
 
+void __bkey_put(struct cache_set *c, struct bkey *k);
+
 /* Looping macros */
 
 #define for_each_cached_btree(b, c, iter)				\
@@ -257,7 +261,7 @@ struct btree_op {
 	} type:8;
 
 	unsigned		csum:1;
-	unsigned		skip:1;
+	unsigned		bypass:1;
 	unsigned		flush_journal:1;
 
 	unsigned		insert_data_done:1;
@@ -327,12 +331,13 @@ static inline void rw_unlock(bool w, struct btree *b)
 ({									\
 	int _r, l = (b)->level - 1;					\
 	bool _w = l <= (op)->lock;					\
-	struct btree *_b = bch_btree_node_get((b)->c, key, l, op);	\
-	if (!IS_ERR(_b)) {						\
-		_r = bch_btree_ ## fn(_b, op, ##__VA_ARGS__);		\
-		rw_unlock(_w, _b);					\
+	struct btree *_child = bch_btree_node_get((b)->c, key, l, _w);	\
+	if (!IS_ERR(_child)) {						\
+		_child->parent = (b);					\
+		_r = bch_btree_ ## fn(_child, op, ##__VA_ARGS__);	\
+		rw_unlock(_w, _child);					\
 	} else								\
-		_r = PTR_ERR(_b);					\
+		_r = PTR_ERR(_child);					\
 	_r;								\
 })
 
@@ -350,10 +355,17 @@ static inline void rw_unlock(bool w, struct btree *b)
 		bool _w = insert_lock(op, _b);				\
 		rw_lock(_w, _b, _b->level);				\
 		if (_b == (c)->root &&					\
-		    _w == insert_lock(op, _b))				\
+		    _w == insert_lock(op, _b)) {			\
+			_b->parent = NULL;				\
 			_r = bch_btree_ ## fn(_b, op, ##__VA_ARGS__);	\
+		}							\
 		rw_unlock(_w, _b);					\
-		bch_cannibalize_unlock(c, &(op)->cl);		\
+		bch_cannibalize_unlock(c);				\
+		if (_r == -ENOSPC) {					\
+			wait_event((c)->try_wait,			\
+				   !(c)->try_harder);			\
+			_r = -EINTR;					\
+		}							\
 	} while (_r == -EINTR);						\
 									\
 	_r;								\
@@ -371,15 +383,14 @@ static inline bool should_split(struct btree *b)
 void bch_btree_node_read(struct btree *);
 void bch_btree_node_write(struct btree *, struct closure *);
 
-void bch_cannibalize_unlock(struct cache_set *, struct closure *);
+void bch_cannibalize_unlock(struct cache_set *);
 void bch_btree_set_root(struct btree *);
-struct btree *bch_btree_node_alloc(struct cache_set *, int, struct closure *);
-struct btree *bch_btree_node_get(struct cache_set *, struct bkey *,
-				int, struct btree_op *);
+struct btree *bch_btree_node_alloc(struct cache_set *, int);
+struct btree *bch_btree_node_get(struct cache_set *, struct bkey *, int, bool);
 
-bool bch_btree_insert_check_key(struct btree *, struct btree_op *,
-				   struct bio *);
-int bch_btree_insert(struct btree_op *, struct cache_set *);
+int bch_btree_insert_check_key(struct btree *, struct btree_op *,
+			       struct bkey *);
+int bch_btree_insert(struct btree_op *, struct cache_set *, struct keylist *);
 
 int bch_btree_search_recurse(struct btree *, struct btree_op *);
 
