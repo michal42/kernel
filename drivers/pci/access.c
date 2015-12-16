@@ -418,23 +418,37 @@ static int pci_vpd_f0_dev_check(struct pci_dev *dev)
 static size_t
 pci_vpd_pci22_size(struct pci_dev *dev, size_t old_size)
 {
-	loff_t off = 0;
+	size_t off = 0;
 	unsigned char header[1+2];	/* 1 byte tag, 2 bytes length */
 
 	while (off < old_size && pci_read_vpd(dev, off, 1, header)) {
-		if (header[0] == 0x78)	/* End tag descriptor */
-			return off + 1;
-		if (header[0] & 0x80) {
+		unsigned char tag;
+
+		if (header[0] == 0xff) {
+			/* Invalid data from VPD read */
+			tag = header[0];
+		} else if (header[0] & 0x80) {
 			/* Large Resource Data Type Tag */
 			if (pci_read_vpd(dev, off+1, 2, &header[1]) != 2)
 				return off + 1;
 			off += 3 + ((header[2] << 8) | header[1]);
+			tag = (header[0] & 0x7f);
 		} else {
 			/* Short Resource Data Type Tag */
 			off += 1 + (header[0] & 0x07);
+			tag = (header[0] & 0x78) >> 3;
+		}
+		if (tag == 0x0f)	/* End tag descriptor */
+			break;
+		if ((tag != 0x02) && (tag != 0x10) && (tag != 0x11)) {
+			dev_printk(KERN_DEBUG, &dev->dev,
+				   "invalid %s vpd tag %02x at offset %zu.",
+				   header[0] & 0x80 ? "large" : "short" ,
+				   tag, off);
+			break;
 		}
 	}
-	return old_size;
+	return off;
 }
 
 int pci_vpd_pci22_init(struct pci_dev *dev)
@@ -465,6 +479,12 @@ int pci_vpd_pci22_init(struct pci_dev *dev)
 	vpd->busy = false;
 	dev->vpd = &vpd->base;
 	vpd->base.len = pci_vpd_pci22_size(dev, vpd->base.len);
+	if (vpd->base.len == 0) {
+		dev_printk(KERN_DEBUG, &dev->dev, "Disabling VPD access.");
+		dev->vpd = NULL;
+		kfree(vpd);
+		return -ENXIO;
+	}
 	return 0;
 }
 
