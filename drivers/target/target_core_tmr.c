@@ -377,10 +377,10 @@ int core_tmr_lun_reset(
 	 * LOGICAL UNIT RESET
 	 */
 	if (!preempt_and_abort_list) {
-		if (dev->transport->pr_ops && dev->transport->pr_ops->reset) {
+		if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->reset) {
 			sense_reason_t ret;
 
-			ret = dev->transport->pr_ops->reset(dev);
+			ret = TARGET_PR_OPS(dev)->reset(dev);
 			if (ret != TCM_NO_SENSE) {
 				pr_err("LUN_RESET: failed to release "
 				       "reservations: %u\n", ret);

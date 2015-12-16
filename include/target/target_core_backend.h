@@ -76,14 +76,25 @@ struct se_subsystem_api {
 	unsigned int (*get_lbppbe)(struct se_device *);
 	unsigned int (*get_io_min)(struct se_device *);
 	unsigned int (*get_io_opt)(struct se_device *);
+#ifndef __GENKSYMS__
+	/*
+	 * XXX se_subsystem_api->get_sense_buffer has been unused since v3.6
+	 * (d5829eac5f7cfff89c6d1cf11717eee97cf030d0), so we abuse it to store a
+	 * struct target_pr_ops pointer on SLES with the rbd backend, and avoid
+	 * an se_subsystem_api KABI change.
+	 */
+	union {
+		unsigned char *(*get_sense_buffer)(struct se_cmd *);
+		/* backend reservation hooks */
+		struct target_pr_ops *pr_ops;
+	};
+#else
 	unsigned char *(*get_sense_buffer)(struct se_cmd *);
+#endif
 	bool (*get_write_cache)(struct se_device *);
 	int (*init_prot)(struct se_device *);
 	int (*format_prot)(struct se_device *);
 	void (*free_prot)(struct se_device *);
-
-	/* backend reservation hooks */
-	struct target_pr_ops *pr_ops;
 };
 
 struct sbc_ops {

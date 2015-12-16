@@ -132,6 +132,7 @@ struct journal_write {
 
 	struct cache_set	*c;
 	struct closure_waitlist	wait;
+	bool			dirty;
 	bool			need_write;
 };
 
@@ -141,6 +142,7 @@ struct journal {
 	/* used when waiting because the journal was full */
 	struct closure_waitlist	wait;
 	struct closure		io;
+	int			io_in_flight;
 	struct delayed_work	work;
 
 	/* Number of blocks free in the bucket(s) we're currently writing to */
@@ -200,8 +202,9 @@ struct journal_device {
 struct closure;
 struct cache_set;
 struct btree_op;
+struct keylist;
 
-void bch_journal(struct closure *);
+atomic_t *bch_journal(struct cache_set *, struct keylist *, struct closure *);
 void bch_journal_next(struct journal *);
 void bch_journal_mark(struct cache_set *, struct list_head *);
 void bch_journal_meta(struct cache_set *, struct closure *);

@@ -153,7 +153,7 @@ bool
 evtchn_do_upcall(struct pt_regs *regs);
 
 /* Mark a PIRQ as unavailable for dynamic allocation. */
-void evtchn_register_pirq(int irq);
+int evtchn_register_pirq(int irq);
 /* Map a Xen-supplied PIRQ to a dynamically allocated one. */
 int evtchn_map_pirq(int irq, unsigned int xen_pirq, unsigned int nr);
 /* Look up a Xen-supplied PIRQ for a dynamically allocated one. */

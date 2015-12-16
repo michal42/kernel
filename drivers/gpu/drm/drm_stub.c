@@ -222,6 +222,25 @@ int drm_setmaster_ioctl(struct drm_device *dev, void *data,
 		return -EINVAL;
 
 	mutex_lock(&dev->struct_mutex);
+
+	/*
+	 * If this file_priv is not allowed to gain master privileges for
+	 * file_priv::master, allocate a new master and start a new master
+	 * realm.
+	 */
+	if (!file_priv->allowed_master) {
+		struct drm_master *saved_master = file_priv->master;
+
+		ret = drm_new_set_master(dev, file_priv);
+		if (ret)
+			file_priv->master = saved_master;
+		else
+			drm_master_put(&saved_master);
+
+		mutex_unlock(&dev->struct_mutex);
+		return ret;
+	}
+
 	file_priv->minor->master = drm_master_get(file_priv->master);
 	file_priv->is_master = 1;
 	if (dev->driver->master_set) {

@@ -234,8 +234,8 @@ target_scsi2_reservation_release(struct se_cmd *cmd)
 	if (!sess || !sess->se_tpg)
 		goto out;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->scsi2_release)
-		ret = dev->transport->pr_ops->scsi2_release(cmd);
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->scsi2_release)
+		ret = TARGET_PR_OPS(dev)->scsi2_release(cmd);
 	else
 		ret = target_scsi2_reservation_release_execute(cmd);
 out:
@@ -314,8 +314,8 @@ target_scsi2_reservation_reserve(struct se_cmd *cmd)
 	if (!sess || !sess->se_tpg)
 		goto out;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->scsi2_reserve)
-		ret = dev->transport->pr_ops->scsi2_reserve(cmd);
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->scsi2_reserve)
+		ret = TARGET_PR_OPS(dev)->scsi2_reserve(cmd);
 	else
 		ret = target_scsi2_reservation_reserve_execute(cmd);
 out:
@@ -611,7 +611,7 @@ check_nonholder:
 
 	if (core_scsi3_pr_seq_non_holder(cmd, pr_reg_type,
 					 sess->se_node_acl->initiatorname,
-					 registered_nexus));
+					 registered_nexus))
 		return TCM_RESERVATION_CONFLICT;
 	return 0;
 }
@@ -2266,13 +2266,13 @@ core_scsi3_emulate_pro_register(struct se_cmd *cmd, u64 res_key, u64 sa_res_key,
 	struct se_device *dev = cmd->se_dev;
 	sense_reason_t ret;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->pr_register) {
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_register) {
 		bool ignore_existing;
 		if (register_type == REGISTER_AND_IGNORE_EXISTING_KEY)
 			ignore_existing = true;
 		else
 			ignore_existing = false;
-		ret = dev->transport->pr_ops->pr_register(cmd, res_key,
+		ret = TARGET_PR_OPS(dev)->pr_register(cmd, res_key,
 			sa_res_key, aptpl, all_tg_pt, spec_i_pt,
 			ignore_existing);
 	} else {
@@ -2480,9 +2480,8 @@ core_scsi3_emulate_pro_reserve(struct se_cmd *cmd, int type, int scope,
 			return TCM_INVALID_PARAMETER_LIST;
 		}
 
-		if (dev->transport->pr_ops
-					&& dev->transport->pr_ops->pr_reserve) {
-			ret = dev->transport->pr_ops->pr_reserve(cmd, type,
+		if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_reserve) {
+			ret = TARGET_PR_OPS(dev)->pr_reserve(cmd, type,
 								 res_key);
 		} else {
 			ret = core_scsi3_pro_reserve(cmd, type, scope, res_key);
@@ -2733,12 +2732,12 @@ core_scsi3_emulate_pro_release(struct se_cmd *cmd, int type, int scope,
 	struct se_device *dev = cmd->se_dev;
 	sense_reason_t ret;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->pr_release) {
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_release) {
 		if (scope != PR_SCOPE_LU_SCOPE) {
 			pr_err("SPC-3 PR: Illegal SCOPE: 0x%02x\n", scope);
 			return TCM_INVALID_PARAMETER_LIST;
 		}
-		ret = dev->transport->pr_ops->pr_release(cmd, type, res_key);
+		ret = TARGET_PR_OPS(dev)->pr_release(cmd, type, res_key);
 	} else {
 		ret = core_scsi3_emulate_pro_release_execute(cmd, type, scope,
 							     res_key);
@@ -2836,8 +2835,8 @@ core_scsi3_emulate_pro_clear(struct se_cmd *cmd, u64 res_key)
 	struct se_device *dev = cmd->se_dev;
 	sense_reason_t ret;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->pr_clear) {
-		ret = dev->transport->pr_ops->pr_clear(cmd, res_key);
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_clear) {
+		ret = TARGET_PR_OPS(dev)->pr_clear(cmd, res_key);
 	} else {
 		ret = core_scsi3_emulate_pro_clear_execute(cmd, res_key);
 	}
@@ -3222,8 +3221,7 @@ core_scsi3_emulate_pro_preempt(struct se_cmd *cmd, int type, int scope,
 	case PR_TYPE_EXCLUSIVE_ACCESS_REGONLY:
 	case PR_TYPE_WRITE_EXCLUSIVE_ALLREG:
 	case PR_TYPE_EXCLUSIVE_ACCESS_ALLREG:
-		if (dev->transport->pr_ops
-					&& dev->transport->pr_ops->pr_preempt) {
+		if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_preempt) {
 			bool abort;
 			if (preempt_type == PREEMPT_AND_ABORT)
 				abort = true;
@@ -3234,7 +3232,7 @@ core_scsi3_emulate_pro_preempt(struct se_cmd *cmd, int type, int scope,
 				pr_err("SPC-3 PR: Illegal SCOPE: 0x%02x\n", scope);
 				return TCM_INVALID_PARAMETER_LIST;
 			}
-			ret = dev->transport->pr_ops->pr_preempt(cmd, res_key,
+			ret = TARGET_PR_OPS(dev)->pr_preempt(cmd, res_key,
 								 sa_res_key,
 								 type, abort);
 		} else {
@@ -3675,9 +3673,8 @@ core_scsi3_emulate_pro_register_and_move(struct se_cmd *cmd, u64 res_key,
 	struct se_device *dev = cmd->se_dev;
 	sense_reason_t ret;
 
-	if (dev->transport->pr_ops
-			&& dev->transport->pr_ops->pr_register_and_move) {
-		ret = dev->transport->pr_ops->pr_register_and_move(cmd, res_key,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_register_and_move) {
+		ret = TARGET_PR_OPS(dev)->pr_register_and_move(cmd, res_key,
 			sa_res_key, aptpl, unreg);
 	} else {
 		ret = core_scsi3_emulate_pro_register_and_move_execute(cmd,
@@ -3721,8 +3718,8 @@ target_scsi3_emulate_pr_out(struct se_cmd *cmd)
 	 * initiator or service action and shall terminate with a RESERVATION
 	 * CONFLICT status.
 	 */
-	if (dev->transport->pr_ops && dev->transport->pr_ops->check_conflict) {
-		ret = dev->transport->pr_ops->check_conflict(cmd,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->check_conflict) {
+		ret = TARGET_PR_OPS(dev)->check_conflict(cmd,
 						TARGET_PR_CHECK_SCSI2_ANY);
 		if (ret) {
 			return ret;
@@ -3912,8 +3909,8 @@ core_scsi3_pri_read_keys(struct se_cmd *cmd)
 	if (!buf)
 		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->pr_read_keys) {
-		ret = dev->transport->pr_ops->pr_read_keys(cmd, buf,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_read_keys) {
+		ret = TARGET_PR_OPS(dev)->pr_read_keys(cmd, buf,
 							   cmd->data_length);
 	} else {
 		ret = core_scsi3_pri_read_keys_execute(cmd, buf,
@@ -4023,9 +4020,8 @@ core_scsi3_pri_read_reservation(struct se_cmd *cmd)
 	if (!buf)
 		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
 
-	if (dev->transport->pr_ops
-			&& dev->transport->pr_ops->pr_read_reservation) {
-		ret = dev->transport->pr_ops->pr_read_reservation(cmd, buf,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_read_reservation) {
+		ret = TARGET_PR_OPS(dev)->pr_read_reservation(cmd, buf,
 							   cmd->data_length);
 	} else {
 		ret = core_scsi3_pri_read_reservation_execute(cmd, buf,
@@ -4104,9 +4100,8 @@ core_scsi3_pri_report_capabilities(struct se_cmd *cmd)
 	if (!buf)
 		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
 
-	if (dev->transport->pr_ops
-			&& dev->transport->pr_ops->pr_report_capabilities) {
-		ret = dev->transport->pr_ops->pr_report_capabilities(cmd, buf,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_report_capabilities) {
+		ret = TARGET_PR_OPS(dev)->pr_report_capabilities(cmd, buf,
 							   cmd->data_length);
 	} else {
 		ret = core_scsi3_pri_report_capabilities_execute(cmd, buf,
@@ -4301,9 +4296,8 @@ core_scsi3_pri_read_full_status(struct se_cmd *cmd)
 	if (!buf)
 		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
 
-	if (dev->transport->pr_ops
-			&& dev->transport->pr_ops->pr_read_full_status) {
-		ret = dev->transport->pr_ops->pr_read_full_status(cmd, buf,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->pr_read_full_status) {
+		ret = TARGET_PR_OPS(dev)->pr_read_full_status(cmd, buf,
 							   cmd->data_length);
 	} else {
 		ret = core_scsi3_pri_read_full_status_execute(cmd, buf,
@@ -4334,8 +4328,8 @@ target_scsi3_emulate_pr_in(struct se_cmd *cmd)
 	 * initiator or service action and shall terminate with a RESERVATION
 	 * CONFLICT status.
 	 */
-	if (dev->transport->pr_ops && dev->transport->pr_ops->check_conflict) {
-		ret = dev->transport->pr_ops->check_conflict(cmd,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->check_conflict) {
+		ret = TARGET_PR_OPS(dev)->check_conflict(cmd,
 						TARGET_PR_CHECK_SCSI2_ANY);
 		if (ret) {
 			return ret;
@@ -4400,8 +4394,8 @@ target_check_reservation(struct se_cmd *cmd)
 	if (dev->transport->transport_type == TRANSPORT_PLUGIN_PHBA_PDEV)
 		return 0;
 
-	if (dev->transport->pr_ops && dev->transport->pr_ops->check_conflict)
-		ret = dev->transport->pr_ops->check_conflict(cmd,
+	if (TARGET_PR_OPS(dev) && TARGET_PR_OPS(dev)->check_conflict)
+		ret = TARGET_PR_OPS(dev)->check_conflict(cmd,
 						TARGET_PR_CHECK_SCSI2_SCSI3);
 	else
 		ret = target_check_reservation_execute(cmd);

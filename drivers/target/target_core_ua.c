@@ -79,19 +79,12 @@ target_scsi3_ua_check(struct se_cmd *cmd)
 	}
 }
 
-int core_scsi3_ua_allocate(
-	struct se_node_acl *nacl,
-	u32 unpacked_lun,
+int core_scsi3_ua_allocate_deve(
+	struct se_dev_entry *deve,
 	u8 asc,
 	u8 ascq)
 {
-	struct se_dev_entry *deve;
 	struct se_ua *ua, *ua_p, *ua_tmp;
-	/*
-	 * PASSTHROUGH OPS
-	 */
-	if (!nacl)
-		return -EINVAL;
 
 	ua = kmem_cache_zalloc(se_ua_cache, GFP_ATOMIC);
 	if (!ua) {
@@ -100,12 +93,8 @@ int core_scsi3_ua_allocate(
 	}
 	INIT_LIST_HEAD(&ua->ua_nacl_list);
 
-	ua->ua_nacl = nacl;
 	ua->ua_asc = asc;
 	ua->ua_ascq = ascq;
-
-	spin_lock_irq(&nacl->device_list_lock);
-	deve = nacl->device_list[unpacked_lun];
 
 	spin_lock(&deve->ua_lock);
 	list_for_each_entry_safe(ua_p, ua_tmp, &deve->ua_list, ua_nacl_list) {
@@ -114,7 +103,6 @@ int core_scsi3_ua_allocate(
 		 */
 		if ((ua_p->ua_asc == asc) && (ua_p->ua_ascq == ascq)) {
 			spin_unlock(&deve->ua_lock);
-			spin_unlock_irq(&nacl->device_list_lock);
 			kmem_cache_free(se_ua_cache, ua);
 			return 0;
 		}
@@ -159,7 +147,6 @@ int core_scsi3_ua_allocate(
 			list_add_tail(&ua->ua_nacl_list,
 				&deve->ua_list);
 		spin_unlock(&deve->ua_lock);
-		spin_unlock_irq(&nacl->device_list_lock);
 
 		atomic_inc(&deve->ua_count);
 		smp_mb__after_atomic_inc();
@@ -167,16 +154,39 @@ int core_scsi3_ua_allocate(
 	}
 	list_add_tail(&ua->ua_nacl_list, &deve->ua_list);
 	spin_unlock(&deve->ua_lock);
-	spin_unlock_irq(&nacl->device_list_lock);
 
-	pr_debug("[%s]: Allocated UNIT ATTENTION, mapped LUN: %u, ASC:"
+	pr_debug("Allocated UNIT ATTENTION, mapped LUN: %u, ASC:"
 		" 0x%02x, ASCQ: 0x%02x\n",
-		nacl->se_tpg->se_tpg_tfo->get_fabric_name(), unpacked_lun,
+		deve->mapped_lun,
 		asc, ascq);
 
 	atomic_inc(&deve->ua_count);
 	smp_mb__after_atomic_inc();
 	return 0;
+}
+
+int core_scsi3_ua_allocate(
+	struct se_node_acl *nacl,
+	u32 unpacked_lun,
+	u8 asc,
+	u8 ascq)
+{
+	struct se_dev_entry *deve;
+	int ret;
+
+	if (!nacl)
+		return -EINVAL;
+
+	spin_lock_irq(&nacl->device_list_lock);
+	deve = nacl->device_list[unpacked_lun];
+	if (!deve) {
+		spin_unlock_irq(&nacl->device_list_lock);
+		return -EINVAL;
+	}
+
+	ret = core_scsi3_ua_allocate_deve(deve, asc, ascq);
+	spin_unlock_irq(&nacl->device_list_lock);
+	return ret;
 }
 
 void core_scsi3_ua_release_all(

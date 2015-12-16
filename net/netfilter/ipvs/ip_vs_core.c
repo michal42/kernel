@@ -47,9 +47,11 @@
 #include <linux/netfilter_ipv4.h>
 
 #ifdef CONFIG_IP_VS_IPV6
+#if !defined(__powerpc64__) || !defined(__GENKSYMS__)
 #include <net/ipv6.h>
 #include <linux/netfilter_ipv6.h>
 #include <net/ip6_route.h>
+#endif
 #endif
 
 #include <net/ip_vs.h>
@@ -1657,7 +1659,10 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 	    is_new_conn(skb, &iph)) {
 		ip_vs_conn_expire_now(cp);
 		__ip_vs_conn_put(cp);
-		cp = NULL;
+		if (ip_vs_conn_uses_conntrack(cp, skb))
+			return NF_DROP;
+		else
+			cp = NULL;
 	}
 
 	if (unlikely(!cp) && !iph.fragoffs) {

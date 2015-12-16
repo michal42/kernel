@@ -198,6 +198,59 @@ static int drm_cpu_valid(void)
 }
 
 /**
+ * drm_new_set_master - Allocate a new master object and become master for the
+ * associated master realm.
+ *
+ * @dev: The associated device.
+ * @fpriv: File private identifying the client.
+ *
+ * This function must be called with dev::struct_mutex held. Returns negative
+ * error code on failure, zero oun success.
+ */
+int drm_new_set_master(struct drm_device *dev, struct drm_file *fpriv)
+{
+	int ret;
+
+	lockdep_assert_held(&dev->struct_mutex);
+	/* create a new master */
+	fpriv->minor->master = drm_master_create(fpriv->minor);
+	if (!fpriv->minor->master)
+		return -ENOMEM;
+
+	fpriv->is_master = 1;
+	fpriv->allowed_master = true;
+
+	/* take another reference for the copy in the local file priv */
+	fpriv->master = drm_master_get(fpriv->minor->master);
+
+	fpriv->authenticated = 1;
+
+	if (dev->driver->master_create) {
+		mutex_unlock(&dev->struct_mutex);
+		ret = dev->driver->master_create(dev, fpriv->master);
+		mutex_lock(&dev->struct_mutex);
+		if (ret) {
+			/* drop both references if this fails */
+			drm_master_put(&fpriv->minor->master);
+			drm_master_put(&fpriv->master);
+			return ret;
+		}
+	}
+	if (dev->driver->master_set) {
+		ret = dev->driver->master_set(dev, fpriv, true);
+		if (ret) {
+			/* drop both references if this fails */
+			drm_master_put(&fpriv->minor->master);
+			drm_master_put(&fpriv->master);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+
+/**
  * Called whenever a process opens /dev/drm.
  *
  * \param inode device inode.
@@ -213,7 +266,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 {
 	int minor_id = iminor(inode);
 	struct drm_file *priv;
-	int ret;
+	int ret = 0;
 
 	if (filp->f_flags & O_EXCL)
 		return -EBUSY;	/* No exclusive opens */
@@ -267,47 +320,15 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 	mutex_lock(&dev->struct_mutex);
 	if (!priv->minor->master && !drm_is_render_client(priv)) {
 		/* create a new master */
-		priv->minor->master = drm_master_create(priv->minor);
-		if (!priv->minor->master) {
-			mutex_unlock(&dev->struct_mutex);
-			ret = -ENOMEM;
-			goto out_close;
-		}
-
-		priv->is_master = 1;
-		/* take another reference for the copy in the local file priv */
-		priv->master = drm_master_get(priv->minor->master);
-
-		priv->authenticated = 1;
-
-		mutex_unlock(&dev->struct_mutex);
-		if (dev->driver->master_create) {
-			ret = dev->driver->master_create(dev, priv->master);
-			if (ret) {
-				mutex_lock(&dev->struct_mutex);
-				/* drop both references if this fails */
-				drm_master_put(&priv->minor->master);
-				drm_master_put(&priv->master);
-				mutex_unlock(&dev->struct_mutex);
-				goto out_close;
-			}
-		}
-		mutex_lock(&dev->struct_mutex);
-		if (dev->driver->master_set) {
-			ret = dev->driver->master_set(dev, priv, true);
-			if (ret) {
-				/* drop both references if this fails */
-				drm_master_put(&priv->minor->master);
-				drm_master_put(&priv->master);
-				mutex_unlock(&dev->struct_mutex);
-				goto out_close;
-			}
-		}
+		ret = drm_new_set_master(dev, priv);
 	} else if (!drm_is_render_client(priv)) {
 		/* get a reference to the master */
 		priv->master = drm_master_get(priv->minor->master);
 	}
 	mutex_unlock(&dev->struct_mutex);
+	if (ret)
+		goto out_close;
+
 
 	mutex_lock(&dev->struct_mutex);
 	list_add(&priv->lhead, &dev->filelist);

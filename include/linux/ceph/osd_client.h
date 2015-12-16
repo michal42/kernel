@@ -301,7 +301,10 @@ extern void osd_req_op_extent_init(struct ceph_osd_request *osd_req,
 extern void osd_req_op_extent_update(struct ceph_osd_request *osd_req,
 					unsigned int which, u64 length);
 
-extern struct ceph_osd_data *osd_req_op_extent_osd_data(
+extern struct ceph_osd_data *osd_req_op_extent_osd_request_data(
+					struct ceph_osd_request *osd_req,
+					unsigned int which);
+extern struct ceph_osd_data *osd_req_op_extent_osd_response_data(
 					struct ceph_osd_request *osd_req,
 					unsigned int which);
 extern struct ceph_osd_data *osd_req_op_cls_response_data(

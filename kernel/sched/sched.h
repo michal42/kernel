@@ -876,9 +876,10 @@ static inline void finish_lock_switch(struct rq *rq, struct task_struct *prev)
 	 * After ->on_cpu is cleared, the task can be moved to a different CPU.
 	 * We must ensure this doesn't happen until the switch is completely
 	 * finished.
+	 *
+	 * Pairs with the control dependency and rmb in try_to_wake_up().
 	 */
-	smp_wmb();
-	prev->on_cpu = 0;
+	smp_store_release(&prev->on_cpu, 0);
 #endif
 #ifdef CONFIG_DEBUG_SPINLOCK
 	/* this is a valid case when another task releases the spinlock */
@@ -983,15 +984,17 @@ static const u32 prio_to_wmult[40] = {
  /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
 };
 
-#define ENQUEUE_WAKEUP		1
-#define ENQUEUE_HEAD		2
+#define ENQUEUE_WAKEUP		0x01
+#define ENQUEUE_HEAD		0x02
 #ifdef CONFIG_SMP
-#define ENQUEUE_WAKING		4	/* sched_class::task_waking was called */
+#define ENQUEUE_WAKING		0x04	/* sched_class::task_waking was called */
 #else
-#define ENQUEUE_WAKING		0
+#define ENQUEUE_WAKING		0x00
 #endif
+#define ENQUEUE_RESTORE		0x08
 
-#define DEQUEUE_SLEEP		1
+#define DEQUEUE_SLEEP		0x01
+#define DEQUEUE_SAVE		0x02
 
 struct sched_class {
 	const struct sched_class *next;

@@ -96,7 +96,7 @@ static unsigned writeback_delay(struct cached_dev *dc, unsigned sectors)
 {
 	uint64_t ret;
 
-	if (atomic_read(&dc->disk.detaching) ||
+	if (test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags) ||
 	    !dc->writeback_percent)
 		return 0;
 
@@ -162,15 +162,17 @@ static void refill_dirty(struct closure *cl)
 	struct bkey end = MAX_KEY;
 	SET_KEY_INODE(&end, dc->disk.id);
 
-	if (!atomic_read(&dc->disk.detaching) &&
+	if (!test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags) &&
 	    !dc->writeback_running)
 		closure_return(cl);
 
 	down_write(&dc->writeback_lock);
 
 	if (!atomic_read(&dc->has_dirty)) {
-		SET_BDEV_STATE(&dc->sb, BDEV_STATE_CLEAN);
-		bch_write_bdev_super(dc, NULL);
+		if (BDEV_STATE(&dc->sb) != BDEV_STATE_NONE) {
+			SET_BDEV_STATE(&dc->sb, BDEV_STATE_CLEAN);
+			bch_write_bdev_super(dc, NULL);
+		}
 
 		up_write(&dc->writeback_lock);
 		closure_return(cl);
@@ -207,7 +209,7 @@ normal_refill:
 			cached_dev_put(dc);
 		}
 
-		if (!atomic_read(&dc->disk.detaching))
+		if (!test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags))
 			closure_delay(&dc->writeback, dc->writeback_delay * HZ);
 	}
 
@@ -222,7 +224,7 @@ normal_refill:
 void bch_writeback_queue(struct cached_dev *dc)
 {
 	if (closure_trylock(&dc->writeback.cl, &dc->disk.cl)) {
-		if (!atomic_read(&dc->disk.detaching))
+		if (!test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags))
 			closure_delay(&dc->writeback, dc->writeback_delay * HZ);
 
 		continue_at(&dc->writeback.cl, refill_dirty, dirty_wq);
@@ -311,7 +313,7 @@ static void write_dirty_finish(struct closure *cl)
 		for (i = 0; i < KEY_PTRS(&w->key); i++)
 			atomic_inc(&PTR_BUCKET(dc->disk.c, &w->key, i)->pin);
 
-		bch_btree_insert(&op, dc->disk.c);
+		bch_btree_insert(&op, dc->disk.c, &op.keys);
 		closure_sync(&op.cl);
 
 		if (op.insert_collision)

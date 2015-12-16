@@ -429,12 +429,10 @@ struct bcache_device {
 
 	struct gendisk		*disk;
 
-	/* If nonzero, we're closing */
-	atomic_t		closing;
-
-	/* If nonzero, we're detaching/unregistering from cache set */
-	atomic_t		detaching;
-	int			flush_done;
+	unsigned long		flags;
+#define BCACHE_DEV_CLOSING	0
+#define BCACHE_DEV_DETACHING	1
+#define BCACHE_DEV_UNLINK_DONE	2
 
 	uint64_t		nr_stripes;
 	unsigned		stripe_size;
@@ -473,7 +471,8 @@ struct cached_dev {
 	struct cache_sb		sb;
 	struct bio		sb_bio;
 	struct bio_vec		sb_bv[1];
-	struct closure_with_waitlist sb_write;
+	struct closure		sb_write;
+	struct semaphore	sb_write_mutex;
 
 	/* Refcount on the cache set. Always nonzero when we're caching. */
 	atomic_t		count;
@@ -620,15 +619,6 @@ struct cache {
 
 	bool			discard; /* Get rid of? */
 
-	/*
-	 * We preallocate structs for issuing discards to buckets, and keep them
-	 * on this list when they're not in use; do_discard() issues discards
-	 * whenever there's work to do and is called by free_some_buckets() and
-	 * when a discard finishes.
-	 */
-	atomic_t		discards_in_flight;
-	struct list_head	discards;
-
 	struct journal_device	journal;
 
 	/* The rest of this all shows up in sysfs */
@@ -693,7 +683,8 @@ struct cache_set {
 	uint64_t		cached_dev_sectors;
 	struct closure		caching;
 
-	struct closure_with_waitlist sb_write;
+	struct closure		sb_write;
+	struct semaphore	sb_write_mutex;
 
 	mempool_t		*search;
 	mempool_t		*bio_meta;
@@ -748,8 +739,8 @@ struct cache_set {
 	 * basically a lock for this that we can wait on asynchronously. The
 	 * btree_root() macro releases the lock when it returns.
 	 */
-	struct closure		*try_harder;
-	struct closure_waitlist	try_wait;
+	struct task_struct	*try_harder;
+	wait_queue_head_t	try_wait;
 	uint64_t		try_harder_start;
 
 	/*
@@ -763,7 +754,7 @@ struct cache_set {
 	 * written.
 	 */
 	atomic_t		prio_blocked;
-	struct closure_waitlist	bucket_wait;
+	wait_queue_head_t	bucket_wait;
 
 	/*
 	 * For any bio we don't skip we subtract the number of sectors from
@@ -815,7 +806,8 @@ struct cache_set {
 	unsigned		nr_uuids;
 	struct uuid_entry	*uuids;
 	BKEY_PADDED(uuid_bucket);
-	struct closure_with_waitlist uuid_write;
+	struct closure		uuid_write;
+	struct semaphore	uuid_write_mutex;
 
 	/*
 	 * A btree node on disk could have too many bsets for an iterator to fit
@@ -1098,14 +1090,6 @@ do {									\
 	for (b = (ca)->buckets + (ca)->sb.first_bucket;			\
 	     b < (ca)->buckets + (ca)->sb.nbuckets; b++)
 
-static inline void __bkey_put(struct cache_set *c, struct bkey *k)
-{
-	unsigned i;
-
-	for (i = 0; i < KEY_PTRS(k); i++)
-		atomic_dec_bug(&PTR_BUCKET(c, k, i)->pin);
-}
-
 static inline void cached_dev_put(struct cached_dev *dc)
 {
 	if (atomic_dec_and_test(&dc->count))
@@ -1177,13 +1161,13 @@ uint8_t bch_inc_gen(struct cache *, struct bucket *);
 void bch_rescale_priorities(struct cache_set *, int);
 bool bch_bucket_add_unused(struct cache *, struct bucket *);
 
-long bch_bucket_alloc(struct cache *, unsigned, struct closure *);
+long bch_bucket_alloc(struct cache *, unsigned, bool);
 void bch_bucket_free(struct cache_set *, struct bkey *);
 
 int __bch_bucket_alloc_set(struct cache_set *, unsigned,
-			   struct bkey *, int, struct closure *);
+			   struct bkey *, int, bool);
 int bch_bucket_alloc_set(struct cache_set *, unsigned,
-			 struct bkey *, int, struct closure *);
+			 struct bkey *, int, bool);
 
 __printf(2, 3)
 bool bch_cache_set_error(struct cache_set *, const char *, ...);
@@ -1226,7 +1210,6 @@ int bch_btree_cache_alloc(struct cache_set *);
 void bch_moving_init_cache_set(struct cache_set *);
 
 int bch_cache_allocator_start(struct cache *ca);
-void bch_cache_allocator_exit(struct cache *ca);
 int bch_cache_allocator_init(struct cache *ca);
 
 void bch_debug_exit(void);

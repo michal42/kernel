@@ -274,16 +274,29 @@ static void kgr_send_fake_signal(void)
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
-		/*
-		 * send fake signal to all non-kthread tasks which are still
-		 * not migrated. kthreads should be migrated now.
-		 */
-		if ((t->flags & PF_KTHREAD) || !kgr_task_in_progress(t))
+		if (!kgr_task_in_progress(t))
 			continue;
 
-		spin_lock_irq(&t->sighand->siglock);
-		signal_wake_up(t, 0);
-		spin_unlock_irq(&t->sighand->siglock);
+		/*
+		 * There is a small race here. We could see TIF_KGR_IN_PROGRESS
+		 * set and decide to wake up a kthread or send a fake signal.
+		 * Meanwhile the thread could migrate itself and the action
+		 * would be meaningless.  It is not serious though.
+		 */
+		if (t->flags & PF_KTHREAD) {
+			/*
+			 * Wake up a kthread which still has not been migrated.
+			 */
+			wake_up_process(t);
+		} else {
+			/*
+			 * Send fake signal to all non-kthread tasks which are
+			 * still not migrated.
+			 */
+			spin_lock_irq(&t->sighand->siglock);
+			signal_wake_up(t, 0);
+			spin_unlock_irq(&t->sighand->siglock);
+		}
 	}
 	read_unlock(&tasklist_lock);
 }
@@ -324,17 +337,31 @@ void kgr_unmark_processes(void)
 	read_unlock(&tasklist_lock);
 }
 
-static void kgr_handle_processes(void)
+static void kgr_mark_processes(void)
+{
+	struct task_struct *p, *t;
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(p, t)
+		kgr_mark_task_in_progress(t);
+	read_unlock(&tasklist_lock);
+}
+
+static void kgr_wakeup_kthreads(void)
 {
 	struct task_struct *p, *t;
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
-		/* skip tasks wandering in userspace as already migrated */
-		if (kgr_needs_lazy_migration(t))
-			kgr_mark_task_in_progress(t);
-		/* wake up kthreads, they will clean the progress flag */
-		if (t->flags & PF_KTHREAD) {
+		/*
+		 * Wake up kthreads, they will clean the progress flag.
+		 *
+		 * There is a small race here. We could see TIF_KGR_IN_PROGRESS
+		 * set and decide to wake up a kthread. Meanwhile the kthread
+		 * could migrate itself and the waking up would be meaningless.
+		 * It is not serious though.
+		 */
+		if ((t->flags & PF_KTHREAD) && kgr_task_in_progress(t)) {
 			/*
 			 * this is incorrect for kthreads waiting still for
 			 * their first wake_up.
@@ -915,7 +942,7 @@ int kgr_modify_kernel(struct kgr_patch *patch, bool revert)
 	}
 
 	set_bit(0, kgr_immutable);
-	wmb(); /* set_bit before kgr_handle_processes */
+	wmb(); /* set_bit before kgr_mark_processes */
 
 	/*
 	 * Set kgr_patch before it can be used in kgr_patching_failed if
@@ -953,9 +980,15 @@ int kgr_modify_kernel(struct kgr_patch *patch, bool revert)
 	mutex_unlock(&kgr_in_progress_lock);
 
 	kgr_handle_irqs();
-	kgr_handle_processes();
-	wmb(); /* clear_bit after kgr_handle_processes */
+	kgr_mark_processes();
+	wmb(); /* clear_bit after kgr_mark_processes */
 	clear_bit(0, kgr_immutable);
+	/*
+	 * There is no need to have an explicit barrier here. wake_up_process()
+	 * implies a write barrier. That is every woken up task sees
+	 * kgr_immutable cleared.
+	 */
+	kgr_wakeup_kthreads();
 	/*
 	 * give everyone time to exit kernel, and check after a while
 	 */
