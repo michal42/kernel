@@ -198,15 +198,23 @@ static
 int xen_pcibk_disable_msi(struct xen_pcibk_device *pdev,
 			  struct pci_dev *dev, struct xen_pci_op *op)
 {
-#ifndef CONFIG_XEN
-	struct xen_pcibk_dev_data *dev_data;
-#endif
-
 	if (unlikely(verbose_request))
 		printk(KERN_DEBUG DRV_NAME ": %s: disable MSI\n",
 		       pci_name(dev));
-	pci_disable_msi(dev);
 
+	if (dev->msi_enabled) {
+#ifndef CONFIG_XEN
+		struct xen_pcibk_dev_data *dev_data;
+#endif
+
+		pci_disable_msi(dev);
+
+#ifndef CONFIG_XEN
+		dev_data = pci_get_drvdata(dev);
+		if (dev_data)
+			dev_data->ack_intr = 1;
+#endif
+	}
 #ifndef CONFIG_XEN
 	op->value = dev->irq ? xen_pirq_from_irq(dev->irq) : 0;
 #else
@@ -215,11 +223,6 @@ int xen_pcibk_disable_msi(struct xen_pcibk_device *pdev,
 	if (unlikely(verbose_request))
 		printk(KERN_DEBUG DRV_NAME ": %s: MSI: %d\n", pci_name(dev),
 			op->value);
-#ifndef CONFIG_XEN
-	dev_data = pci_get_drvdata(dev);
-	if (dev_data)
-		dev_data->ack_intr = 1;
-#endif
 	return 0;
 }
 
@@ -293,15 +296,23 @@ static
 int xen_pcibk_disable_msix(struct xen_pcibk_device *pdev,
 			   struct pci_dev *dev, struct xen_pci_op *op)
 {
-#ifndef CONFIG_XEN
-	struct xen_pcibk_dev_data *dev_data;
-#endif
-
 	if (unlikely(verbose_request))
 		printk(KERN_DEBUG DRV_NAME ": %s: disable MSI-X\n",
 			pci_name(dev));
-	pci_disable_msix(dev);
 
+	if (dev->msix_enabled) {
+#ifndef CONFIG_XEN
+		struct xen_pcibk_dev_data *dev_data;
+#endif
+
+		pci_disable_msix(dev);
+
+#ifndef CONFIG_XEN
+		dev_data = pci_get_drvdata(dev);
+		if (dev_data)
+			dev_data->ack_intr = 1;
+#endif
+	}
 #ifndef CONFIG_XEN
 	/*
 	 * SR-IOV devices (which don't have any legacy IRQ) have
@@ -309,11 +320,8 @@ int xen_pcibk_disable_msix(struct xen_pcibk_device *pdev,
 	 */
 	op->value = dev->irq ? xen_pirq_from_irq(dev->irq) : 0;
 	if (unlikely(verbose_request))
-		printk(KERN_DEBUG DRV_NAME ": %s: MSI-X: %d\n", pci_name(dev),
-			op->value);
-	dev_data = pci_get_drvdata(dev);
-	if (dev_data)
-		dev_data->ack_intr = 1;
+		printk(KERN_DEBUG DRV_NAME ": %s: MSI-X: %d\n",
+		       pci_name(dev), op->value);
 #else
 	op->value = dev->irq;
 #endif
