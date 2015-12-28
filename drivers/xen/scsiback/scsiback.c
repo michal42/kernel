@@ -524,11 +524,13 @@ static int prepare_pending_reqs(struct vscsibk_info *info,
 
 	pending_req->info       = info;
 
-	pending_req->v_chn = vir.chn = ring_req->channel;
-	pending_req->v_tgt = vir.tgt = ring_req->id;
+	vir.chn = ring_req->channel;
+	vir.tgt = ring_req->id;
 	vir.lun = ring_req->lun;
-
 	rmb();
+	pending_req->v_chn = vir.chn;
+	pending_req->v_tgt = vir.tgt;
+
 	sdev = scsiback_do_translation(info, &vir);
 	if (!sdev) {
 		pending_req->sdev = NULL;
@@ -587,11 +589,12 @@ static void latch_segments(pending_req_t *pending_req,
 			   const struct vscsiif_sg_list *sgl)
 {
 	unsigned int nr_segs = sgl->nr_segments;
+	const vscsiif_segment_t *seg = sgl->seg;
 
 	barrier();
 	if (pending_req->nr_segments + nr_segs <= vscsiif_segs) {
 		memcpy(pending_req->segs + pending_req->nr_segments,
-		       sgl->seg, nr_segs * sizeof(*sgl->seg));
+		       seg, nr_segs * sizeof(*seg));
 		pending_req->nr_segments += nr_segs;
 	}
 	else
