@@ -6192,6 +6192,11 @@ static int complete_emulated_pio(struct kvm_vcpu *vcpu)
 	return complete_emulated_io(vcpu);
 }
 
+void kvm_arch_mmu_notifier_invalidate_page(struct kvm *kvm,
+					   unsigned long address)
+{
+}
+
 /*
  * Implements the following, as a state machine:
  *
