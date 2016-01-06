@@ -34,6 +34,12 @@ int __read_mostly watchdog_thresh = 10;
 static int __read_mostly watchdog_running;
 static u64 __read_mostly sample_period;
 
+#ifdef CONFIG_SMP
+int __read_mostly sysctl_hardlockup_all_cpu_backtrace;
+#else
+#define sysctl_hardlockup_all_cpu_backtrace 0
+#endif
+
 static DEFINE_PER_CPU(unsigned long, watchdog_touch_ts);
 static DEFINE_PER_CPU(struct task_struct *, softlockup_watchdog);
 static DEFINE_PER_CPU(struct hrtimer, watchdog_hrtimer);
@@ -55,6 +61,7 @@ static DEFINE_PER_CPU(struct perf_event *, watchdog_ev);
 #ifdef CONFIG_HARDLOCKUP_DETECTOR
 static int hardlockup_panic =
 			CONFIG_BOOTPARAM_HARDLOCKUP_PANIC_VALUE;
+static unsigned long hardlockup_allcpu_dumped;
 
 static int __init hardlockup_panic_setup(char *str)
 {
@@ -67,6 +74,16 @@ static int __init hardlockup_panic_setup(char *str)
 	return 1;
 }
 __setup("nmi_watchdog=", hardlockup_panic_setup);
+#endif
+
+#ifdef CONFIG_SMP
+static int __init hardlockup_all_cpu_backtrace_setup(char *str)
+{
+	sysctl_hardlockup_all_cpu_backtrace =
+		!!simple_strtol(str, NULL, 0);
+	return 1;
+}
+__setup("hardlockup_all_cpu_backtrace=", hardlockup_all_cpu_backtrace_setup);
 #endif
 
 unsigned int __read_mostly softlockup_panic =
@@ -234,15 +251,30 @@ static void watchdog_overflow_callback(struct perf_event *event,
 	 */
 	if (is_hardlockup()) {
 		int this_cpu = smp_processor_id();
+		struct pt_regs *regs = get_irq_regs();
 
 		/* only print hardlockups once */
 		if (__this_cpu_read(hard_watchdog_warn) == true)
 			return;
 
-		if (hardlockup_panic)
-			panic("Watchdog detected hard LOCKUP on cpu %d", this_cpu);
+		pr_emerg("Watchdog detected hard LOCKUP on cpu %d", this_cpu);
+		print_modules();
+		print_irqtrace_events(current);
+		if (regs)
+			show_regs(regs);
 		else
-			WARN(1, "Watchdog detected hard LOCKUP on cpu %d", this_cpu);
+			dump_stack();
+
+		/*
+		 * Perform all-CPU dump only once to avoid multiple hardlockups
+		 * generating interleaving traces
+		 */
+		if (sysctl_hardlockup_all_cpu_backtrace &&
+				!test_and_set_bit(0, &hardlockup_allcpu_dumped))
+			trigger_allbutself_cpu_backtrace();
+
+		if (hardlockup_panic)
+			nmi_panic(regs, "Hard LOCKUP");
 
 		__this_cpu_write(hard_watchdog_warn, true);
 		return;
