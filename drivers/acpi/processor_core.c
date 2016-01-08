@@ -205,9 +205,47 @@ exit:
 	return apic_id;
 }
 
+int acpi_get_apicid(acpi_handle handle, int type, u32 acpi_id)
+{
+	int apic_id = -1;
+
+	apic_id = map_mat_entry(handle, type, acpi_id);
+	if (apic_id == -1)
+		apic_id = map_madt_entry(type, acpi_id);
+
+	return apic_id;
+}
+
+int acpi_map_cpuid(int apic_id, int type, u32 acpi_id)
+{
+#ifdef CONFIG_SMP
+	int i;
+
+#ifndef CONFIG_PROCESSOR_EXTERNAL_CONTROL
+	for_each_possible_cpu(i) {
+		if (cpu_physical_id(i) == apic_id)
+			return i;
+	}
+#else
+	/*
+	 * Use of cpu_physical_id() is bogus here. Rather than defining a
+	 * stub enforcing a 1:1 mapping, we keep it undefined to catch bad
+	 * uses. Return as if there was a 1:1 mapping.
+	 */
+	if (apic_id < nr_cpu_ids && cpu_possible(apic_id))
+		return apic_id;
+#endif
+#else
+	/* In UP kernel, only processor 0 is valid */
+	if (apic_id == 0)
+		return apic_id;
+#endif
+	return -1;
+}
+
 int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 {
-	int i = 0, apic_id = -1;
+	int apic_id, i = 0;
 
 	if (type < 0) {
 		if (!processor_cntl_external())
@@ -216,9 +254,8 @@ int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 		i = 1;
 	}
 
-	apic_id = map_mat_entry(handle, type, acpi_id);
-	if (apic_id == -1)
-		apic_id = map_madt_entry(type, acpi_id);
+	apic_id = acpi_get_apicid(handle, type, acpi_id);
+
 	if (apic_id == -1 || i) {
 		/*
 		 * On UP processor, there is no _MAT or MADT table.
@@ -246,27 +283,7 @@ int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 			return apic_id;
 	}
 
-#ifdef CONFIG_SMP
-#ifndef CONFIG_PROCESSOR_EXTERNAL_CONTROL
-	for_each_possible_cpu(i) {
-		if (cpu_physical_id(i) == apic_id)
-			return i;
-	}
-#else
-	/*
-	 * Use of cpu_physical_id() is bogus here. Rather than defining a
-	 * stub enforcing a 1:1 mapping, we keep it undefined to catch bad
-	 * uses. Return as if there was a 1:1 mapping.
-	 */
-	if (apic_id < nr_cpu_ids && cpu_possible(apic_id))
-		return apic_id;
-#endif
-#else
-	/* In UP kernel, only processor 0 is valid */
-	if (apic_id == 0)
-		return apic_id;
-#endif
-	return -1;
+	return acpi_map_cpuid(apic_id, type, acpi_id);
 }
 EXPORT_SYMBOL_GPL(acpi_get_cpuid);
 
