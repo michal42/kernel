@@ -125,7 +125,7 @@ acpi_ex_resolve_node_to_value(struct acpi_namespace_node **object_ptr,
 
 	if (!source_desc) {
 		ACPI_ERROR((AE_INFO, "No object attached to node %p", node));
-		return_ACPI_STATUS(AE_AML_NO_OPERAND);
+		return_ACPI_STATUS(AE_AML_UNINITIALIZED_NODE);
 	}
 
 	/*

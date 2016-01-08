@@ -164,11 +164,16 @@ static struct md_rdev *next_active_rdev(struct md_rdev *rdev, struct mddev *mdde
 	 * nr_pending is 0 and In_sync is clear, the entries we return will
 	 * still be in the same position on the list when we re-enter
 	 * list_for_each_entry_continue_rcu.
+	 *
+	 * Note that if entered with 'rdev == NULL' to start at the
+	 * beginning, we temporarily assign 'rdev' to an address which
+	 * isn't really an rdev, but which can be used by
+	 * list_for_each_entry_continue_rcu() to find the first entry.
 	 */
 	rcu_read_lock();
 	if (rdev == NULL)
 		/* start at the beginning */
-		rdev = list_entry_rcu(&mddev->disks, struct md_rdev, same_set);
+		rdev = list_entry(&mddev->disks, struct md_rdev, same_set);
 	else {
 		/* release the previous rdev and start from there. */
 		rdev_dec_pending(rdev, mddev);
@@ -730,17 +735,13 @@ static inline unsigned long file_page_offset(struct bitmap_storage *store,
 /*
  * return a pointer to the page in the filemap that contains the given bit
  *
- * this lookup is complicated by the fact that the bitmap sb might be exactly
- * 1 page (e.g., x86) or less than 1 page -- so the bitmap might start on page
- * 0 or page 1
  */
 static inline struct page *filemap_get_page(struct bitmap_storage *store,
 					    unsigned long chunk)
 {
 	if (file_page_index(store, chunk) >= store->file_pages)
 		return NULL;
-	return store->filemap[file_page_index(store, chunk)
-			      - file_page_index(store, 0)];
+	return store->filemap[file_page_index(store, chunk)];
 }
 
 static int bitmap_storage_alloc(struct bitmap_storage *store,
@@ -2009,7 +2010,8 @@ int bitmap_resize(struct bitmap *bitmap, sector_t blocks,
 	if (bitmap->mddev->bitmap_info.offset || bitmap->mddev->bitmap_info.file)
 		ret = bitmap_storage_alloc(&store, chunks,
 					   !bitmap->mddev->bitmap_info.external,
-					   bitmap->cluster_slot);
+					   mddev_is_clustered(bitmap->mddev)
+					   ? bitmap->cluster_slot : 0);
 	if (ret)
 		goto err;
 
