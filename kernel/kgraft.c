@@ -372,15 +372,16 @@ static void kgr_wakeup_kthreads(void)
 	read_unlock(&tasklist_lock);
 }
 
-static unsigned long kgr_get_fentry_loc(const char *f_name)
+static unsigned long kgr_get_fentry_loc(const struct kgr_patch_fun *pf)
 {
 	unsigned long orig_addr, fentry_loc;
 	const char *check_name;
 	char check_buf[KSYM_SYMBOL_LEN];
 
-	orig_addr = kallsyms_lookup_name(f_name);
+	orig_addr = kallsyms_lookup_name(pf->name);
 	if (!orig_addr) {
-		pr_err("kgr: function %s not resolved\n", f_name);
+		if (pf->abort_if_missing)
+			pr_err("kgr: function %s not resolved\n", pf->name);
 		return -ENOENT;
 	}
 
@@ -391,9 +392,9 @@ static unsigned long kgr_get_fentry_loc(const char *f_name)
 	}
 
 	check_name = kallsyms_lookup(fentry_loc, NULL, NULL, NULL, check_buf);
-	if (strcmp(check_name, f_name)) {
+	if (strcmp(check_name, pf->name)) {
 		pr_err("kgr: we got out of bounds the intended function (%s -> %s)\n",
-				f_name, check_name);
+				pf->name, check_name);
 		return -EINVAL;
 	}
 
@@ -599,7 +600,7 @@ static int kgr_init_ftrace_ops(struct kgr_patch_fun *patch_fun)
 			fentry_loc, patch_fun->new_fun);
 	patch_fun->loc_new = fentry_loc;
 
-	fentry_loc = kgr_get_fentry_loc(patch_fun->name);
+	fentry_loc = kgr_get_fentry_loc(patch_fun);
 	if (IS_ERR_VALUE(fentry_loc))
 		return fentry_loc;
 
