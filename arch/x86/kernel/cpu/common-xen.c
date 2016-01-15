@@ -302,8 +302,9 @@ static __always_inline void setup_smap(struct cpuinfo_x86 *c)
 {
 	unsigned long eflags;
 
+	asm ("pushf;" __ASM_SIZE(pop) "%0" : "=rm" (eflags));
+
 	/* This should have been cleared long ago */
-	raw_local_save_flags(eflags);
 	BUG_ON(eflags & X86_EFLAGS_AC);
 
 	if (cpu_has(c, X86_FEATURE_SMAP)) {

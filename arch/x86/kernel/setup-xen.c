@@ -694,10 +694,9 @@ static int __init reserve_crashkernel_low(void)
 					low_size, alignment);
 
 	if (!low_base) {
-		if (!auto_set)
-			pr_info("crashkernel low reservation failed - No suitable area found.\n");
-
-		return -EINVAL;
+		pr_err("Cannot reserve %ldMB crashkernel low memory, please try smaller size.\n",
+		       (unsigned long)(low_size >> 20));
+		return -ENOMEM;
 	}
 
 	memblock_reserve(low_base, low_size);
@@ -759,11 +758,12 @@ static void __init reserve_crashkernel(void)
 			return;
 		}
 	}
-
-	if (crash_base >= (1ULL<<32) && reserve_crashkernel_low())
-		return;
-
 	memblock_reserve(crash_base, crash_size);
+
+	if (crash_base >= (1ULL << 32) && reserve_crashkernel_low()) {
+		memblock_free(crash_base, crash_size);
+		return;
+	}
 
 	printk(KERN_INFO "Reserving %ldMB of memory at %ldMB "
 			"for crashkernel (System RAM: %ldMB)\n",
@@ -1410,6 +1410,14 @@ void __init setup_arch(char **cmdline_p)
 	clone_pgd_range(initial_page_table + KERNEL_PGD_BOUNDARY,
 			swapper_pg_dir     + KERNEL_PGD_BOUNDARY,
 			KERNEL_PGD_PTRS);
+
+	/*
+	 * sync back low identity map too.  It is used for example
+	 * in the 32-bit EFI stub.
+	 */
+	clone_pgd_range(initial_page_table,
+			swapper_pg_dir     + KERNEL_PGD_BOUNDARY,
+			min(KERNEL_PGD_PTRS, KERNEL_PGD_BOUNDARY));
 #endif
 
 	tboot_probe();
