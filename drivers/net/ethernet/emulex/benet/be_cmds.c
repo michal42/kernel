@@ -347,6 +347,8 @@ static void be_async_grp5_evt_process(struct be_adapter *adapter,
 	case ASYNC_EVENT_PVID_STATE:
 		be_async_grp5_pvid_state_process(adapter, compl);
 		break;
+	default:
+		break;
 	}
 }
 

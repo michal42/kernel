@@ -1441,6 +1441,40 @@ COMPAT_SYSCALL_DEFINE4(kexec_load, compat_ulong_t, entry,
 }
 #endif
 
+/*
+ * No panic_cpu check version of crash_kexec().  This function is called
+ * only when panic_cpu holds the current CPU number; this is the only CPU
+ * which processes crash_kexec routines.
+ */
+void __crash_kexec(struct pt_regs *regs)
+{
+	/* Take the kexec_mutex here to prevent sys_kexec_load
+	 * running on one cpu from replacing the crash kernel
+	 * we are using after a panic on a different cpu.
+	 *
+	 * If the crash kernel was not located in a fixed area
+	 * of memory the xchg(&kexec_crash_image) would be
+	 * sufficient.  But since I reuse the memory...
+	 */
+	if (mutex_trylock(&kexec_mutex)) {
+		if (kexec_crash_image) {
+			struct pt_regs fixed_regs;
+
+			crash_setup_regs(&fixed_regs, regs);
+			crash_save_vmcoreinfo();
+			machine_crash_shutdown(&fixed_regs);
+			machine_kexec(kexec_crash_image);
+#ifdef CONFIG_XEN
+		} else if (is_initial_xendomain()) {
+			xen_kexec_exec_t xke = { .type = KEXEC_TYPE_CRASH };
+
+			VOID(HYPERVISOR_kexec_op(KEXEC_CMD_kexec, &xke));
+#endif
+		}
+		mutex_unlock(&kexec_mutex);
+	}
+}
+
 #ifdef CONFIG_KEXEC_FILE
 SYSCALL_DEFINE5(kexec_file_load, int, kernel_fd, int, initrd_fd,
 		unsigned long, cmdline_len, const char __user *, cmdline_ptr,
@@ -1531,30 +1565,24 @@ out:
 
 void crash_kexec(struct pt_regs *regs)
 {
-	/* Take the kexec_mutex here to prevent sys_kexec_load
-	 * running on one cpu from replacing the crash kernel
-	 * we are using after a panic on a different cpu.
-	 *
-	 * If the crash kernel was not located in a fixed area
-	 * of memory the xchg(&kexec_crash_image) would be
-	 * sufficient.  But since I reuse the memory...
+	int old_cpu, this_cpu;
+
+	/*
+	 * Only one CPU is allowed to execute the crash_kexec() code as with
+	 * panic().  Otherwise parallel calls of panic() and crash_kexec()
+	 * may stop each other.  To exclude them, we use panic_cpu here too.
 	 */
-	if (mutex_trylock(&kexec_mutex)) {
-		if (kexec_crash_image) {
-			struct pt_regs fixed_regs;
+	this_cpu = raw_smp_processor_id();
+	old_cpu = atomic_cmpxchg(&panic_cpu, PANIC_CPU_INVALID, this_cpu);
+	if (old_cpu == PANIC_CPU_INVALID) {
+		/* This is the 1st CPU which comes here, so go ahead. */
+		__crash_kexec(regs);
 
-			crash_setup_regs(&fixed_regs, regs);
-			crash_save_vmcoreinfo();
-			machine_crash_shutdown(&fixed_regs);
-			machine_kexec(kexec_crash_image);
-#ifdef CONFIG_XEN
-		} else if (is_initial_xendomain()) {
-			xen_kexec_exec_t xke = { .type = KEXEC_TYPE_CRASH };
-
-			VOID(HYPERVISOR_kexec_op(KEXEC_CMD_kexec, &xke));
-#endif
-		}
-		mutex_unlock(&kexec_mutex);
+		/*
+		 * Reset panic_cpu to allow another panic()/crash_kexec()
+		 * call.
+		 */
+		atomic_set(&panic_cpu, PANIC_CPU_INVALID);
 	}
 }
 
