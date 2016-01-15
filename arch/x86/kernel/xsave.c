@@ -24,7 +24,8 @@ u64 pcntxt_mask;
 struct xsave_struct *init_xstate_buf;
 
 static struct _fpx_sw_bytes fx_sw_reserved, fx_sw_reserved_ia32;
-static unsigned int *xstate_offsets, *xstate_sizes, xstate_features;
+static unsigned int xstate_offsets[XFEATURES_NR_MAX] = { [ 0 ... XFEATURES_NR_MAX - 1] = -1};
+static unsigned int xstate_sizes[XFEATURES_NR_MAX]   = { [ 0 ... XFEATURES_NR_MAX - 1] = -1};
 
 /*
  * If a processor implementation discern that a processor state component is
@@ -456,28 +457,24 @@ static inline void xstate_enable(void)
 }
 
 /*
- * Record the offsets and sizes of different state managed by the xsave
- * memory layout.
+ * Record the offsets and sizes of various xstates contained
+ * in the XSAVE state memory layout.
+ *
+ * ( Note that certain features might be non-present, for them
+ *   we'll have 0 offset and 0 size. )
  */
 static void __init setup_xstate_features(void)
 {
-	int eax, ebx, ecx, edx, leaf = 0x2;
+	u32 eax, ebx, ecx, edx, leaf;
 
-	xstate_features = fls64(pcntxt_mask);
-	xstate_offsets = alloc_bootmem(xstate_features * sizeof(int));
-	xstate_sizes = alloc_bootmem(xstate_features * sizeof(int));
-
-	do {
+	for (leaf = 2; leaf < XFEATURES_NR_MAX; leaf++) {
 		cpuid_count(XSTATE_CPUID, leaf, &eax, &ebx, &ecx, &edx);
-
-		if (eax == 0)
-			break;
 
 		xstate_offsets[leaf] = ebx;
 		xstate_sizes[leaf] = eax;
 
-		leaf++;
-	} while (1);
+		printk(KERN_INFO "x86/fpu: xstate_offset[%d]: %04x, xstate_sizes[%d]: %04x\n", leaf, ebx, leaf, eax);
+	}
 }
 
 /*
@@ -563,6 +560,16 @@ static void __init xstate_enable_boot_cpu(void)
 	/* Auto enable eagerfpu for xsaveopt */
 	if (cpu_has_xsaveopt && eagerfpu != DISABLE)
 		eagerfpu = ENABLE;
+
+	if (pcntxt_mask & XSTATE_EAGER) {
+		if (eagerfpu == DISABLE) {
+			pr_err("eagerfpu not present, disabling some xstate features: 0x%llx\n",
+					pcntxt_mask & XSTATE_EAGER);
+			pcntxt_mask &= ~XSTATE_EAGER;
+		} else {
+			eagerfpu = ENABLE;
+		}
+	}
 
 	pr_info("enabled xstate_bv 0x%llx, cntxt size 0x%x\n",
 		pcntxt_mask, xstate_size);
