@@ -48,9 +48,8 @@ obj-$(CONFIG_MODULE_SIG_UEFI) += modsign_uefi.o
 obj-$(CONFIG_KALLSYMS) += kallsyms.o
 obj-$(CONFIG_STACK_UNWIND) += unwind.o
 obj-$(CONFIG_BSD_PROCESS_ACCT) += acct.o
-ifeq ($(findstring y,$(CONFIG_KEXEC)$(CONFIG_XEN_PRIVILEGED_GUEST)),y)
-obj-y += kexec.o
-endif
+obj-$(CONFIG_KEXEC) += kexec.o
+obj-$(CONFIG_XEN_PRIVILEGED_GUEST) += kexec.o
 obj-$(CONFIG_BACKTRACE_SELF_TEST) += backtracetest.o
 obj-$(CONFIG_COMPAT) += compat.o
 obj-$(CONFIG_CGROUPS) += cgroup.o
