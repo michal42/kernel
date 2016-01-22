@@ -206,10 +206,10 @@ asmlinkage __visible void __init x86_64_start_kernel(char * real_mode_data)
 	init_level4_pgt[511] = early_level4_pgt[511];
 
 #else
+	xen_switch_pt();
+
 	if (rc)
 		printk(KERN_WARNING "M2P strict mode unavailable (%d)\n", rc);
-
-	xen_switch_pt();
 #endif
 	x86_64_start_reservations(real_mode_data);
 }

@@ -16,11 +16,6 @@
 #include <linux/linkage.h>
 #include <linux/err.h>
 
-/* Avoid __ASSEMBLER__'ifying <linux/audit.h> just for this.  */
-#include <linux/elf-em.h>
-#define AUDIT_ARCH_I386		(EM_386|__AUDIT_ARCH_LE)
-#define __AUDIT_ARCH_LE		0x40000000
-
 	.section .entry.text, "ax"
 
 #ifdef CONFIG_PARAVIRT
@@ -53,90 +48,12 @@ ENDPROC(native_usergs_sysret32)
  * with the int 0x80 path.
  */
 ENTRY(entry_SYSENTER_compat)
+	/* Interrupts are on upon entry. */
 	movq	8(%rsp),%r11
-	popq	%rcx
-
-	/* Zero-extending 32-bit regs, do not remove */
-	movl	%ebp, %ebp
-	movl	%eax, %eax
-	movl	ASM_THREAD_INFO(TI_sysenter_return, %rsp, 6*8), %r10d
-	movl	$__USER32_DS,40(%rsp)
-	movq	%rbp,32(%rsp)
-	movl	$__USER32_CS,16(%rsp)
-	movq	%r10,8(%rsp)
-
-	/* Construct struct pt_regs on stack */
-	movq	%rax,(%rsp)		/* pt_regs->orig_ax */
-	pushq	%rdi			/* pt_regs->di */
-	pushq	%rsi			/* pt_regs->si */
-	pushq	%rdx			/* pt_regs->dx */
-	pushq	%rcx			/* pt_regs->cx */
-	pushq	$-ENOSYS		/* pt_regs->ax */
+	movq	0(%rsp),%rcx
+	movq	%rbp,5*8(%rsp)		/* pt_regs->sp */
 	cld
-	sub	$(10*8), %rsp /* pt_regs->r8-11, bp, bx, r12-15 not saved */
-
-	/*
-	 * no need to do an access_ok check here because rbp has been
-	 * 32-bit zero extended
-	 */
-	ASM_STAC
-1:	movl	(%rbp), %ebp
-	_ASM_EXTABLE(1b, ia32_badarg)
-	ASM_CLAC
-	orl     $TS_COMPAT, ASM_THREAD_INFO(TI_status, %rsp, SIZEOF_PTREGS)
-	testl   $_TIF_WORK_SYSCALL_ENTRY, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	jnz	sysenter_tracesys
-	jmp	ia32_do_call
-
-#ifdef CONFIG_AUDITSYSCALL
-	.macro auditsys_entry_common
-	/*
-	 * At this point, registers hold syscall args in the 32-bit syscall ABI:
-	 * EAX is syscall number, the 6 args are in EBX,ECX,EDX,ESI,EDI,EBP.
-	 *
-	 * We want to pass them to __audit_syscall_entry(), which is a 64-bit
-	 * C function with 5 parameters, so shuffle them to match what
-	 * the function expects: RDI,RSI,RDX,RCX,R8.
-	 */
-	movl	%esi, %r8d		/* arg5 (R8 ) <= 4th syscall arg (ESI) */
-	xchg	%ecx, %edx		/* arg4 (RCX) <= 3rd syscall arg (EDX) */
-					/* arg3 (RDX) <= 2nd syscall arg (ECX) */
-	movl	%ebx, %esi		/* arg2 (RSI) <= 1st syscall arg (EBX) */
-	movl	%eax, %edi		/* arg1 (RDI) <= syscall number  (EAX) */
-	call	__audit_syscall_entry
-
-	/*
-	 * We are going to jump back to the syscall dispatch code.
-	 * Prepare syscall args as required by the 64-bit C ABI.
-	 * Registers clobbered by __audit_syscall_entry() are
-	 * loaded from pt_regs on stack:
-	 */
-	movl	ORIG_RAX(%rsp), %eax	/* syscall number */
-	movl	%ebx, %edi		/* arg1 */
-	movl	RCX(%rsp), %esi		/* arg2 */
-	movl	RDX(%rsp), %edx		/* arg3 */
-	movl	RSI(%rsp), %ecx		/* arg4 */
-	movl	RDI(%rsp), %r8d		/* arg5 */
-	.endm
-
-sysenter_auditsys:
-	auditsys_entry_common
-	movl	%ebp, %r9d		/* reload 6th syscall arg */
-	jmp	.Lia32_dispatch
-#endif
-
-sysenter_tracesys:
-#ifdef CONFIG_AUDITSYSCALL
-	testl	$(_TIF_WORK_SYSCALL_ENTRY & ~_TIF_SYSCALL_AUDIT), ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	jz	sysenter_auditsys
-#endif
-	SAVE_EXTRA_REGS
-	xorl	%eax, %eax		/* Do not leak kernel information */
-	movq	%rax, R11(%rsp)
-	movq	%rax, R10(%rsp)
-	movq	%rax, R9(%rsp)
-	movq	%rax, R8(%rsp)
-	jmp	.Ltracesys
+	/* jmp	entry_SYSCALL_compat */
 ENDPROC(entry_SYSENTER_compat)
 
 /*
@@ -164,13 +81,9 @@ ENDPROC(entry_SYSENTER_compat)
  * edi  arg5
  * esp  user stack
  * 0(%esp) arg6
- *
- * This is purely a fast path. For anything complicated we use the int 0x80
- * path below. We set up a complete hardware stack frame to share code
- * with the int 0x80 path.
  */
 ENTRY(entry_SYSCALL_compat)
-	movl	RSP-RIP+16(%rsp), %r8d
+	/* Interrupts are on upon entry. */
 
 	/* Zero-extending 32-bit regs, do not remove */
 	movl	%eax, %eax
@@ -182,102 +95,24 @@ ENTRY(entry_SYSCALL_compat)
 	movq	%rdi, 0(%rsp)		/* pt_regs->di */
 	pushq	%rsi			/* pt_regs->si */
 	pushq	%rdx			/* pt_regs->dx */
-	pushq	%rbp			/* pt_regs->cx */
-	movl	%ebp, %ecx
+	pushq	%rbp			/* pt_regs->cx (stashed in bp) */
 	pushq	$-ENOSYS		/* pt_regs->ax */
-	sub	$(10*8), %rsp		/* pt_regs->r8-11, bp, bx, r12-15 not saved */
+	xorq    %r8,%r8
+	pushq   %r8                     /* pt_regs->r8  = 0 */
+	pushq   %r8                     /* pt_regs->r9  = 0 */
+	pushq   %r8                     /* pt_regs->r10 = 0 */
+	pushq   %r8                     /* pt_regs->r11 = 0 */
+	pushq   %rbx                    /* pt_regs->rbx */
+	pushq   %rbp                    /* pt_regs->rbp (will be overwritten) */
+	pushq   %r8                     /* pt_regs->r12 = 0 */
+	pushq   %r8                     /* pt_regs->r13 = 0 */
+	pushq   %r8                     /* pt_regs->r14 = 0 */
+	pushq   %r8                     /* pt_regs->r15 = 0 */
 
-	/*
-	 * No need to do an access_ok check here because r8 has been
-	 * 32-bit zero extended:
-	 */
-	ASM_STAC
-1:	movl	(%r8), %r9d
-	_ASM_EXTABLE(1b, ia32_badarg)
-	ASM_CLAC
-	orl	$TS_COMPAT, ASM_THREAD_INFO(TI_status, %rsp, SIZEOF_PTREGS)
-	testl	$_TIF_WORK_SYSCALL_ENTRY, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	jnz	cstar_tracesys
-cstar_do_call:
-	/* 32-bit syscall -> 64-bit C ABI argument conversion */
-	movl	%edi, %r8d		/* arg5 */
-	/* r9 already loaded */		/* arg6 */
-	jmp	.Lia32_arg_fixup_common
-
-#ifdef CONFIG_AUDITSYSCALL
-cstar_auditsys:
-	movl	%r9d, R9(%rsp)		/* register to be clobbered by call */
-	auditsys_entry_common
-	movl	R9(%rsp), %r9d		/* reload 6th syscall arg */
-	jmp	.Lia32_dispatch
-#endif
-
-cstar_tracesys:
-#ifdef CONFIG_AUDITSYSCALL
-	testl	$(_TIF_WORK_SYSCALL_ENTRY & ~_TIF_SYSCALL_AUDIT), ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	jz	cstar_auditsys
-#endif
-	xchgl	%r9d, %ebp
-	SAVE_EXTRA_REGS
-	xorl	%eax, %eax		/* Do not leak kernel information */
-	movq	%rax, R11(%rsp)
-	movq	%rax, R10(%rsp)
-	movq	%r9, R9(%rsp)
-	movq	%rax, R8(%rsp)
-	movq	%rsp, %rdi		/* &pt_regs -> arg1 */
-	call	syscall_trace_enter
-	movl	R9(%rsp), %r9d
-
-	/* Reload arg registers from stack. (see sysenter_tracesys) */
-	movl	RCX(%rsp), %ecx
-	movl	RDX(%rsp), %edx
-	movl	RSI(%rsp), %esi
-	movl	RDI(%rsp), %edi
-	movl	%eax, %eax		/* zero extension */
-
-	RESTORE_EXTRA_REGS
-	xchgl	%ebp, %r9d
-	jmp	cstar_do_call
+	movq	%rsp, %rdi
+	call	do_fast_syscall_32
+	jmp	.Lsyscall_32_done
 END(entry_SYSCALL_compat)
-
-ia32_badarg:
-	/*
-	 * So far, we've entered kernel mode, set AC, turned on IRQs, and
-	 * saved C regs except r8-r11.  We haven't done any of the other
-	 * standard entry work, though.  We want to bail, but we shouldn't
-	 * treat this as a syscall entry since we don't even know what the
-	 * args are.  Instead, treat this as a non-syscall entry, finish
-	 * the entry work, and immediately exit after setting AX = -EFAULT.
-	 *
-	 * We're really just being polite here.  Killing the task outright
-	 * would be a reasonable action, too.  Given that the only valid
-	 * way to have gotten here is through the vDSO, and we already know
-	 * that the stack pointer is bad, the task isn't going to survive
-	 * for long no matter what we do.
-	 */
-
-	ASM_CLAC			/* undo STAC */
-	movq	$-EFAULT, RAX(%rsp)	/* return -EFAULT if possible */
-
-	/* Fill in the rest of pt_regs */
-	xorl	%eax, %eax
-	movq	%rax, R11(%rsp)
-	movq	%rax, R10(%rsp)
-	movq	%rax, R9(%rsp)
-	movq	%rax, R8(%rsp)
-	SAVE_EXTRA_REGS
-
-	/* Turn IRQs back off. */
-	DISABLE_INTERRUPTS(CLBR_NONE)
-	TRACE_IRQS_OFF
-
-	/* Now finish entering normal kernel mode. */
-#ifdef CONFIG_CONTEXT_TRACKING
-	call enter_from_user_mode
-#endif
-
-	/* And exit again. */
-	jmp retint_user
 
 /*
  * Emulated IA32 system calls via int 0x80.
@@ -304,7 +139,13 @@ ENTRY(entry_INT80_compat)
 	movq	8(%rsp),%r11
 	popq	%rcx
 
-	/* Zero-extending 32-bit regs, do not remove */
+	/*
+	 * User tracing code (ptrace or signal handlers) might assume that
+	 * the saved RAX contains a 32-bit number when we're invoking a 32-bit
+	 * syscall.  Just in case the high bits are nonzero, zero-extend
+	 * the syscall number.  (This could almost certainly be deleted
+	 * with no ill effects.)
+	 */
 	movl	%eax, %eax
 
 	/* Construct struct pt_regs on stack (iret frame is already on stack) */
@@ -314,70 +155,31 @@ ENTRY(entry_INT80_compat)
 	pushq	%rdx			/* pt_regs->dx */
 	pushq	%rcx			/* pt_regs->cx */
 	pushq	$-ENOSYS		/* pt_regs->ax */
-	pushq	$0			/* pt_regs->r8 */
-	pushq	$0			/* pt_regs->r9 */
-	pushq	$0			/* pt_regs->r10 */
-	pushq	$0			/* pt_regs->r11 */
+	xorq    %r8,%r8
+	pushq   %r8                     /* pt_regs->r8  = 0 */
+	pushq   %r8                     /* pt_regs->r9  = 0 */
+	pushq   %r8                     /* pt_regs->r10 = 0 */
+	pushq   %r8                     /* pt_regs->r11 = 0 */
+	pushq   %rbx                    /* pt_regs->rbx */
+	pushq   %rbp                    /* pt_regs->rbp */
+	pushq   %r12                    /* pt_regs->r12 */
+	pushq   %r13                    /* pt_regs->r13 */
+	pushq   %r14                    /* pt_regs->r14 */
+	pushq   %r15                    /* pt_regs->r15 */
 	cld
-	sub	$(6*8), %rsp /* pt_regs->bp, bx, r12-15 not saved */
 
-	orl	$TS_COMPAT, ASM_THREAD_INFO(TI_status, %rsp, SIZEOF_PTREGS)
-	testl	$_TIF_WORK_SYSCALL_ENTRY, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	jnz	ia32_tracesys
+	movq	%rsp, %rdi
+	call	do_syscall_32_irqs_on
+.Lsyscall_32_done:
 
-ia32_do_call:
-	/* 32-bit syscall -> 64-bit C ABI argument conversion */
-	movl	%edi, %r8d		/* arg5 */
-	movl	%ebp, %r9d		/* arg6 */
-.Lia32_arg_fixup_common:
-	xchg	%ecx, %esi		/* rsi:arg2, rcx:arg4 */
-	movl	%ebx, %edi		/* arg1 */
-	movl	%edx, %edx		/* arg3 (zero extension) */
-.Lia32_dispatch:
-	cmpq	$(IA32_NR_syscalls-1), %rax
-	ja	1f
-
-	call	*ia32_sys_call_table(, %rax, 8)
-	movq	%rax, RAX(%rsp)
-1:
-	jmp	int_ret_from_sys_call
-
-ia32_tracesys:
-	SAVE_EXTRA_REGS
-.Ltracesys:
-	movq	%rsp, %rdi			/* &pt_regs -> arg1 */
-	call	syscall_trace_enter
-	/*
-	 * Reload arg registers from stack in case ptrace changed them.
-	 * Don't reload %eax because syscall_trace_enter() returned
-	 * the %rax value we should see.  But do truncate it to 32 bits.
-	 * If it's -1 to make us punt the syscall, then (u32)-1 is still
-	 * an appropriately invalid value.
-	 */
-	movl	RCX(%rsp), %ecx
-	movl	RDX(%rsp), %edx
-	movl	RSI(%rsp), %esi
-	movl	RDI(%rsp), %edi
-	movl	%eax, %eax		/* zero extension */
-	RESTORE_EXTRA_REGS
-	jmp	ia32_do_call
+	/* Go back to user mode. */
+	TRACE_IRQS_ON
+	SWAPGS
+	jmp	restore_regs_and_iret
 END(entry_INT80_compat)
-
-	.macro PTREGSCALL label, func
-	ALIGN
-GLOBAL(\label)
-	leaq	\func(%rip), %rax
-	jmp	ia32_ptregs_common
-	.endm
-
-	PTREGSCALL stub32_rt_sigreturn,	sys32_rt_sigreturn
-	PTREGSCALL stub32_sigreturn,	sys32_sigreturn
-	PTREGSCALL stub32_fork,		sys_fork
-	PTREGSCALL stub32_vfork,	sys_vfork
 
 	ALIGN
 GLOBAL(stub32_clone)
-	leaq	sys_clone(%rip), %rax
 	/*
 	 * The 32-bit clone ABI is: clone(..., int tls_val, int *child_tidptr).
 	 * The 64-bit clone ABI is: clone(..., int *child_tidptr, int tls_val).
@@ -386,12 +188,4 @@ GLOBAL(stub32_clone)
 	 * so we need to swap arguments here before calling it:
 	 */
 	xchg	%r8, %rcx
-	jmp	ia32_ptregs_common
-
-	ALIGN
-ia32_ptregs_common:
-	SAVE_EXTRA_REGS 8
-	call	*%rax
-	RESTORE_EXTRA_REGS 8
-	ret
-END(ia32_ptregs_common)
+	jmp	sys_clone

@@ -152,7 +152,7 @@ extern unsigned long tick_nsec;		/* SHIFTED_HZ period (nsec) */
 #define NTP_INTERVAL_LENGTH (NSEC_PER_SEC/NTP_INTERVAL_FREQ)
 
 extern int do_adjtimex(struct timex *);
-extern void hardpps(const struct timespec *, const struct timespec *);
+extern void hardpps(const struct timespec64 *, const struct timespec64 *);
 #ifdef CONFIG_XEN
 extern int ntp_synced(void);
 #endif

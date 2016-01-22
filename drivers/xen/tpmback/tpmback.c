@@ -245,17 +245,16 @@ int _packet_write(struct packet *pak,
 		unsigned int tocopy;
 		struct gnttab_map_grant_ref map_op;
 		struct gnttab_unmap_grant_ref unmap_op;
-		tpmif_tx_request_t *tx;
+		tpmif_tx_request_t tx = tpmif->tx->ring[i].req;
 
-		tx = &tpmif->tx->ring[i].req;
-
-		if (0 == tx->addr) {
+		rmb();
+		if (0 == tx.addr) {
 			DPRINTK("ERROR: Buffer for outgoing packet NULL?! i=%d\n", i);
 			return 0;
 		}
 
 		gnttab_set_map_op(&map_op, idx_to_kaddr(tpmif, i),
-				  GNTMAP_host_map, tx->ref, tpmif->domid);
+				  GNTMAP_host_map, tx.ref, tpmif->domid);
 
 		gnttab_check_GNTST_eagain_do_while(GNTTABOP_map_grant_ref, &map_op);
 
@@ -269,12 +268,12 @@ int _packet_write(struct packet *pak,
 		tocopy = min_t(size_t, size - offset, PAGE_SIZE);
 
 		if (copy_from_buffer((void *)(idx_to_kaddr(tpmif, i) |
-					      (tx->addr & ~PAGE_MASK)),
+					      (tx.addr & ~PAGE_MASK)),
 				     &data[offset], tocopy, isuserbuffer)) {
 			tpmif_put(tpmif);
 			return -EFAULT;
 		}
-		tx->size = tocopy;
+		tpmif->tx->ring[i].req.size = tocopy;
 
 		gnttab_set_unmap_op(&unmap_op, idx_to_kaddr(tpmif, i),
 				    GNTMAP_host_map, handle);
@@ -373,9 +372,6 @@ static int packet_read_shmem(struct packet *pak,
 	u32 to_copy;
 	grant_handle_t handle;
 
-	tpmif_tx_request_t *tx;
-
-	tx = &tpmif->tx->ring[0].req;
 	/*
 	 * Start copying data at the page with index 'index'
 	 * and within that page at offset 'offset'.
@@ -386,11 +382,11 @@ static int packet_read_shmem(struct packet *pak,
 		void *src;
 		struct gnttab_map_grant_ref map_op;
 		struct gnttab_unmap_grant_ref unmap_op;
+		tpmif_tx_request_t tx = tpmif->tx->ring[i].req;
 
-		tx = &tpmif->tx->ring[i].req;
-
+		rmb();
 		gnttab_set_map_op(&map_op, idx_to_kaddr(tpmif, i),
-				  GNTMAP_host_map, tx->ref, tpmif->domid);
+				  GNTMAP_host_map, tx.ref, tpmif->domid);
 
 		gnttab_check_GNTST_eagain_do_while(GNTTABOP_map_grant_ref, &map_op);
 
@@ -401,19 +397,19 @@ static int packet_read_shmem(struct packet *pak,
 
 		handle = map_op.handle;
 
-		if (to_copy > tx->size) {
+		if (to_copy > tx.size) {
 			/*
 			 * User requests more than what's available
 			 */
-			to_copy = min_t(u32, tx->size, to_copy);
+			to_copy = min_t(u32, tx.size, to_copy);
 		}
 
 		DPRINTK("Copying from mapped memory at %08lx\n",
 			(unsigned long)(idx_to_kaddr(tpmif, i) |
-					(tx->addr & ~PAGE_MASK)));
+					(tx.addr & ~PAGE_MASK)));
 
 		src = (void *)(idx_to_kaddr(tpmif, i) |
-			       ((tx->addr & ~PAGE_MASK) + pg_offset));
+			       ((tx.addr & ~PAGE_MASK) + pg_offset));
 		if (copy_to_buffer(&buffer[offset],
 				   src, to_copy, isuserbuffer)) {
 			return -EFAULT;
@@ -874,21 +870,23 @@ static void tpm_tx_action(unsigned long unused)
 {
 	struct list_head *ent;
 	tpmif_t *tpmif;
-	tpmif_tx_request_t *tx;
 
 	DPRINTK("%s: Getting data from front-end(s)!\n", __func__);
 
 	while (!list_empty(&tpm_schedule_list)) {
+		tpmif_tx_request_t tx;
+
 		/* Get a tpmif from the list with work to do. */
 		ent = tpm_schedule_list.next;
 		tpmif = list_entry(ent, tpmif_t, list);
 		tpmif_get(tpmif);
 		remove_from_tpm_schedule_list(tpmif);
 
-		tx = &tpmif->tx->ring[0].req;
+		tx = tpmif->tx->ring[0].req;
+		rmb();
 
 		/* pass it up */
-		vtpm_receive(tpmif, tx->size);
+		vtpm_receive(tpmif, tx.size);
 
 		tpmif_put(tpmif);
 	}

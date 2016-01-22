@@ -71,7 +71,7 @@ static struct ldt_struct *alloc_ldt_struct(int size)
 /* After calling this, the LDT is immutable. */
 static void finalize_ldt_struct(struct ldt_struct *ldt)
 {
-	make_pages_readonly(ldt->entries, PFN_DOWN(ldt->size * LDT_ENTRY_SIZE),
+	make_pages_readonly(ldt->entries, PFN_UP(ldt->size * LDT_ENTRY_SIZE),
 			    XENFEAT_writable_descriptor_tables);
 }
 
@@ -91,7 +91,7 @@ static void free_ldt_struct(struct ldt_struct *ldt)
 	if (likely(!ldt))
 		return;
 
-	make_pages_writable(ldt->entries, PFN_DOWN(ldt->size * LDT_ENTRY_SIZE),
+	make_pages_writable(ldt->entries, PFN_UP(ldt->size * LDT_ENTRY_SIZE),
 			    XENFEAT_writable_descriptor_tables);
 	if (ldt->size * LDT_ENTRY_SIZE > PAGE_SIZE)
 		vfree(ldt->entries);

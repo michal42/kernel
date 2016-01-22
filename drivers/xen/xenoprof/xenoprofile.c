@@ -259,10 +259,7 @@ static xenoprof_buf_t **get_buffer_array(unsigned int nbuf)
 
 static void release_buffer_array(xenoprof_buf_t **buf, unsigned int nbuf)
 {
-	if (nbuf * sizeof(xenoprof_buf_t) <= PAGE_SIZE)
-		kfree(buf);
-	else
-		vfree(buf);
+	kvfree(buf);
 }
 
 

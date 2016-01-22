@@ -497,9 +497,6 @@ static int __init arch_parse_efi_cmdline(char *str)
 		return -EINVAL;
 	}
 
-	if (parse_option_str(str, "debug"))
-		set_bit(EFI_DBG, &efi.flags);
-
 	return 0;
 }
 early_param("efi", arch_parse_efi_cmdline);

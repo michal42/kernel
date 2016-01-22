@@ -309,20 +309,16 @@ GLOBAL(stub_execveat)
 	jmp	return_from_execve
 END(stub_execveat)
 
-#if defined(CONFIG_X86_X32_ABI) || defined(CONFIG_IA32_EMULATION)
+#if defined(CONFIG_X86_X32_ABI)
 	.align	8
 GLOBAL(stub_x32_execve)
-GLOBAL(stub32_execve)
 	call	compat_sys_execve
 	jmp	return_from_execve
-END(stub32_execve)
 END(stub_x32_execve)
 	.align	8
 GLOBAL(stub_x32_execveat)
-GLOBAL(stub32_execveat)
 	call	compat_sys_execveat
 	jmp	return_from_execve
-END(stub32_execveat)
 END(stub_x32_execveat)
 #endif
 
@@ -423,7 +419,7 @@ retint_kernel:
  * At this label, code paths which return to kernel and to user,
  * which come from interrupts/exception and from syscalls, merge.
  */
-restore_regs_and_iret:
+GLOBAL(restore_regs_and_iret)
 	RESTORE_EXTRA_REGS
 restore_c_regs_and_iret:
 	movl	EFLAGS(%rsp), %eax
@@ -796,13 +792,19 @@ ENTRY(error_entry)
 	SWAPGS
 
 .Lerror_entry_from_usermode_after_swapgs:
+	/*
+	 * We need to tell lockdep that IRQs are off.  We can't do this until
+	 * we fix gsbase, and we should do it before enter_from_user_mode
+	 * (which can take locks).
+	 */
+	TRACE_IRQS_OFF
 #ifdef CONFIG_CONTEXT_TRACKING
 	call enter_from_user_mode
 #endif
+	ret
 
 .Lerror_entry_done:
 #endif
-
 	TRACE_IRQS_OFF
 	ret
 

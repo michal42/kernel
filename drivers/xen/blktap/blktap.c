@@ -105,10 +105,10 @@ typedef struct domid_translate_ext {
 typedef struct tap_blkif {
 	struct mm_struct *mm;         /*User address space                   */
 	unsigned long rings_vstart;   /*Kernel memory mapping                */
+	unsigned long rings_total;    /*Kernel memory mapping size           */
 	unsigned long user_vstart;    /*User memory mapping                  */
 	unsigned long dev_inuse;      /*One process opens device at a time.  */
 	unsigned long dev_pending;    /*In process of being opened           */
-	unsigned long ring_ok;        /*make this ring->state                */
 	blkif_front_ring_t ufe_ring;  /*Rings up to user space.              */
 	wait_queue_head_t wait;       /*for poll                             */
 	unsigned long mode;           /*current switching mode               */
@@ -408,12 +408,22 @@ static void blktap_vma_open(struct vm_area_struct *vma)
  */
 static void blktap_vma_close(struct vm_area_struct *vma)
 {
+	tap_blkif_t *info;
 	struct vm_area_struct *next = vma->vm_next;
+
+	if (vma->vm_file == NULL)
+		return;
+
+	info = vma->vm_file->private_data;
+	info->rings_total -= vma->vm_end - vma->vm_start;
+	if (info->rings_total == 0) {
+		info->mm = NULL;
+		return;
+	}
 
 	if (next == NULL ||
 	    vma->vm_ops != next->vm_ops ||
 	    vma->vm_end != next->vm_start ||
-	    vma->vm_file == NULL ||
 	    vma->vm_file != next->vm_file)
 		return;
 
@@ -547,7 +557,6 @@ void signal_tapdisk(int idx)
 {
 	tap_blkif_t *info;
 	struct task_struct *ptask;
-	struct mm_struct *mm;
 
 	/*
 	 * if the userland tools set things up wrong, this could be negative;
@@ -567,10 +576,7 @@ void signal_tapdisk(int idx)
 			info->status = CLEANSHUTDOWN;
 	}
 	info->blkif = NULL;
-
-	mm = xchg(&info->mm, NULL);
-	if (mm)
-		mmput(mm);
+	info->mm = NULL;
 }
 
 static int blktap_open(struct inode *inode, struct file *filp)
@@ -642,19 +648,16 @@ static int blktap_open(struct inode *inode, struct file *filp)
 static int blktap_release(struct inode *inode, struct file *filp)
 {
 	tap_blkif_t *info = filp->private_data;
-	struct mm_struct *mm;
 	
 	/* check for control device */
 	if (!info)
 		return 0;
 
-	info->ring_ok = 0;
+	info->mm = NULL;
 	smp_wmb();
 	info->rings_vstart = 0;
+	info->rings_total = 0;
 
-	mm = xchg(&info->mm, NULL);
-	if (mm)
-		mmput(mm);
 	kfree(info->foreign_maps->map);
 	kfree(info->foreign_maps);
 	info->foreign_maps = NULL;
@@ -713,7 +716,7 @@ static int blktap_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -ENOMEM;
 	}
 
-	if (info->rings_vstart) {
+	if (info->rings_total) {
 		WPRINTK("mmap already called on filp %p (minor %d)\n",
 			filp, info->minor);
 		return -EPERM;
@@ -731,6 +734,7 @@ static int blktap_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	size >>= PAGE_SHIFT;
 	info->rings_vstart = vma->vm_start;
+	info->rings_total  = vma->vm_end - vma->vm_start;
 	info->user_vstart  = info->rings_vstart + (RING_PAGES << PAGE_SHIFT);
     
 	/* Map the ring pages to the start of the region and reserve it. */
@@ -767,15 +771,15 @@ static int blktap_mmap(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_mm->context.has_foreign_mappings = 1;
 #endif
 
-	info->mm = get_task_mm(current);
 	smp_wmb();
-	info->ring_ok = 1;
+	info->mm = vma->vm_mm;
 	return 0;
  fail:
 	/* Clear any active mappings. */
 	zap_page_range(vma, vma->vm_start, 
 		       vma->vm_end - vma->vm_start, NULL);
 	info->rings_vstart = 0;
+	info->rings_total = 0;
 
 	return -ENOMEM;
 }
@@ -1072,6 +1076,7 @@ static void fast_flush_area(pending_req_t *req, unsigned int k_idx,
 	unsigned long uvaddr;
 	struct mm_struct *mm = info->mm;
 
+	smp_rmb();
 	if (mm != NULL)
 		down_read(&mm->mmap_sem);
 
@@ -1202,13 +1207,6 @@ int tap_blkif_schedule(void *arg)
 	blkif->xenblkd = NULL;
 	info = tapfds[blkif->dev_num];
 	blkif_put(blkif);
-
-	if (info) {
-		struct mm_struct *mm = xchg(&info->mm, NULL);
-
-		if (mm)
-			mmput(mm);
-	}
 
 	return 0;
 }
@@ -1498,11 +1496,12 @@ static void dispatch_rw_block_io(blkif_t *blkif,
 	}
 	
 	/* Make sure userspace is ready. */
-	if (!info->ring_ok) {
+	mm = info->mm;
+	smp_rmb();
+	if (!mm) {
 		WPRINTK("ring not ready for requests!\n");
 		goto fail_response;
 	}
-	smp_rmb();
 
 	if (RING_FULL(&info->ufe_ring)) {
 		WPRINTK("fe_ring is full, "
@@ -1525,7 +1524,6 @@ static void dispatch_rw_block_io(blkif_t *blkif,
 	}
 
 	op = 0;
-	mm = info->mm;
 	if (!xen_feature(XENFEAT_auto_translated_physmap))
 		down_read(&mm->mmap_sem);
 	for (i = 0; i < nseg; i++) {

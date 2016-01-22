@@ -171,10 +171,6 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
 	tsk = current;
 	err = -ENOMEM;
 
-#ifdef TIF_CSTAR
-	if (test_tsk_thread_flag(tsk, TIF_CSTAR))
-		p->thread.ip = (unsigned long) cstar_ret_from_fork;
-#endif
 	if (unlikely(test_tsk_thread_flag(tsk, TIF_IO_BITMAP))) {
 		p->thread.io_bitmap_ptr = kmemdup(tsk->thread.io_bitmap_ptr,
 						IO_BITMAP_BYTES, GFP_KERNEL);
@@ -346,14 +342,6 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 			__this_cpu_and(xen_x86_cr0, ~X86_CR0_TS);
 		xen_clear_cr0_upd();
 	}
-
-	/*
-	 * If it were not for PREEMPT_ACTIVE we could guarantee that the
-	 * preempt_count of all tasks was equal here and this would not be
-	 * needed.
-	 */
-	task_thread_info(prev_p)->saved_preempt_count = this_cpu_read(__preempt_count);
-	this_cpu_write(__preempt_count, task_thread_info(next_p)->saved_preempt_count);
 
 	/*
 	 * Now maybe handle debug registers

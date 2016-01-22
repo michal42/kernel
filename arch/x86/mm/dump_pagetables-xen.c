@@ -35,6 +35,8 @@ struct pg_state {
 	const struct addr_marker *marker;
 	unsigned long lines;
 	bool to_dmesg;
+	bool check_wx;
+	unsigned long wx_pages;
 };
 
 struct addr_marker {
@@ -91,7 +93,7 @@ static struct addr_marker address_markers[] = {
 	{ 0/* VMALLOC_START */,       "vmalloc() Area" },
 	{ 0/*VMALLOC_END*/,           "vmalloc() End" },
 # ifdef CONFIG_HIGHMEM
-	{ 0/*PKMAP_BASE*/,            "Persisent kmap() Area" },
+	{ 0/*PKMAP_BASE*/,            "Persistent kmap() Area" },
 # endif
 	{ 0/*FIXADDR_START*/,         "Fixmap Area" },
 	{ 0/*HYPERVISOR_VIRT_START*/, "Hypervisor Space" },
@@ -168,7 +170,7 @@ static void printk_prot(struct seq_file *m, pgprot_t prot, int level, bool dmsg)
 			pt_dump_cont_printf(m, dmsg, "    ");
 		if ((level == 4 && pr & _PAGE_PAT) ||
 		    ((level == 3 || level == 2) && pr & _PAGE_PAT_LARGE))
-			pt_dump_cont_printf(m, dmsg, "pat ");
+			pt_dump_cont_printf(m, dmsg, "PAT ");
 		else
 			pt_dump_cont_printf(m, dmsg, "    ");
 		if (pr & _PAGE_GLOBAL)
@@ -211,8 +213,8 @@ static void note_page(struct seq_file *m, struct pg_state *st,
 	 * we have now. "break" is either changing perms, levels or
 	 * address space marker.
 	 */
-	prot = pgprot_val(new_prot) & PTE_FLAGS_MASK;
-	cur = pgprot_val(st->current_prot) & PTE_FLAGS_MASK;
+	prot = pgprot_val(new_prot);
+	cur = pgprot_val(st->current_prot);
 
 	if (!st->level) {
 		/* First entry */
@@ -227,6 +229,16 @@ static void note_page(struct seq_file *m, struct pg_state *st,
 		const char *unit = units;
 		unsigned long delta;
 		int width = sizeof(unsigned long) * 2;
+		pgprotval_t pr = pgprot_val(st->current_prot);
+
+		if (st->check_wx && (pr & _PAGE_RW) && !(pr & _PAGE_NX)) {
+			WARN_ONCE(1,
+				  "x86/mm: Found insecure W+X mapping at address %p/%pS\n",
+				  (void *)st->start_address,
+				  (void *)st->start_address);
+			st->wx_pages += (st->current_address -
+					 st->start_address) / PAGE_SIZE;
+		}
 
 		/*
 		 * Now print the actual finished series
@@ -282,13 +294,13 @@ static void walk_pte_level(struct seq_file *m, struct pg_state *st, pmd_t addr,
 {
 	int i;
 	pte_t *start;
+	pgprotval_t prot;
 
 	start = (pte_t *) pmd_page_vaddr(addr);
 	for (i = 0; i < PTRS_PER_PTE; i++) {
-		pgprot_t prot = pte_pgprot(*start);
-
+		prot = pte_flags(*start);
 		st->current_address = normalize_addr(P + i * PTE_LEVEL_MULT);
-		note_page(m, st, prot, 4);
+		note_page(m, st, __pgprot(prot), 4);
 		start++;
 	}
 }
@@ -300,19 +312,20 @@ static void walk_pmd_level(struct seq_file *m, struct pg_state *st, pud_t addr,
 {
 	int i;
 	pmd_t *start;
+	pgprotval_t prot;
 
 	start = (pmd_t *) pud_page_vaddr(addr);
 	for (i = 0; i < PTRS_PER_PMD; i++) {
 		st->current_address = normalize_addr(P + i * PMD_LEVEL_MULT);
 		if (!hypervisor_space(st->current_address)
 		    && !pmd_none(*start)) {
-			pgprotval_t prot = __pmd_val(*start) & PTE_FLAGS_MASK;
-
-			if (pmd_large(*start) || !pmd_present(*start))
+			if (pmd_large(*start) || !pmd_present(*start)) {
+				prot = pmd_flags(*start);
 				note_page(m, st, __pgprot(prot), 3);
-			else
+			} else {
 				walk_pte_level(m, st, *start,
 					       P + i * PMD_LEVEL_MULT);
+			}
 		} else
 			note_page(m, st, __pgprot(0), 3);
 		start++;
@@ -332,6 +345,7 @@ static void walk_pud_level(struct seq_file *m, struct pg_state *st, pgd_t addr,
 {
 	int i;
 	pud_t *start;
+	pgprotval_t prot;
 
 	start = (pud_t *) pgd_page_vaddr(addr);
 
@@ -339,13 +353,13 @@ static void walk_pud_level(struct seq_file *m, struct pg_state *st, pgd_t addr,
 		st->current_address = normalize_addr(P + i * PUD_LEVEL_MULT);
 		if (!hypervisor_space(st->current_address)
 		    && !pud_none(*start)) {
-			pgprotval_t prot = __pud_val(*start) & PTE_FLAGS_MASK;
-
-			if (pud_large(*start) || !pud_present(*start))
+			if (pud_large(*start) || !pud_present(*start)) {
+				prot = pud_flags(*start);
 				note_page(m, st, __pgprot(prot), 2);
-			else
+			} else {
 				walk_pmd_level(m, st, *start,
 					       P + i * PUD_LEVEL_MULT);
+			}
 		} else
 			note_page(m, st, __pgprot(0), 2);
 
@@ -360,13 +374,30 @@ static void walk_pud_level(struct seq_file *m, struct pg_state *st, pgd_t addr,
 #define pgd_none(a)  pud_none(__pud_ma(__pgd_val(a)))
 #endif
 
-void ptdump_walk_pgd_level(struct seq_file *m, pgd_t *pgd)
+#ifdef CONFIG_X86_64
+static inline bool is_hypervisor_range(int idx)
+{
+	/*
+	 * ffff800000000000 - ffff87ffffffffff is reserved for
+	 * the hypervisor.
+	 */
+	return paravirt_enabled() &&
+		(idx >= pgd_index(__PAGE_OFFSET) - 16) &&
+		(idx < pgd_index(__PAGE_OFFSET));
+}
+#else
+static inline bool is_hypervisor_range(int idx) { return false; }
+#endif
+
+static void ptdump_walk_pgd_level_core(struct seq_file *m, pgd_t *pgd,
+				       bool checkwx)
 {
 #ifdef CONFIG_X86_64
 	pgd_t *start = (pgd_t *) &init_level4_pgt;
 #else
 	pgd_t *start = swapper_pg_dir;
 #endif
+	pgprotval_t prot;
 	int i;
 	struct pg_state st = {};
 
@@ -375,16 +406,20 @@ void ptdump_walk_pgd_level(struct seq_file *m, pgd_t *pgd)
 		st.to_dmesg = true;
 	}
 
+	st.check_wx = checkwx;
+	if (checkwx)
+		st.wx_pages = 0;
+
 	for (i = 0; i < PTRS_PER_PGD; i++) {
 		st.current_address = normalize_addr(i * PGD_LEVEL_MULT);
-		if (!pgd_none(*start)) {
-			pgprotval_t prot = __pgd_val(*start) & PTE_FLAGS_MASK;
-
-			if (pgd_large(*start) || !pgd_present(*start))
+		if (!pgd_none(*start) && !is_hypervisor_range(i)) {
+			if (pgd_large(*start) || !pgd_present(*start)) {
+				prot = pgd_flags(*start);
 				note_page(m, &st, __pgprot(prot), 1);
-			else
+			} else {
 				walk_pud_level(m, &st, *start,
 					       i * PGD_LEVEL_MULT);
+			}
 		} else
 			note_page(m, &st, __pgprot(0), 1);
 
@@ -394,8 +429,26 @@ void ptdump_walk_pgd_level(struct seq_file *m, pgd_t *pgd)
 	/* Flush out the last page */
 	st.current_address = normalize_addr(PTRS_PER_PGD*PGD_LEVEL_MULT);
 	note_page(m, &st, __pgprot(0), 0);
+	if (!checkwx)
+		return;
+	if (st.wx_pages)
+		pr_info("x86/mm: Checked W+X mappings: FAILED, %lu W+X pages found.\n",
+			st.wx_pages);
+	else
+		pr_info("x86/mm: Checked W+X mappings: passed, no W+X pages found.\n");
 }
 
+void ptdump_walk_pgd_level(struct seq_file *m, pgd_t *pgd)
+{
+	ptdump_walk_pgd_level_core(m, pgd, false);
+}
+
+void ptdump_walk_pgd_level_checkwx(void)
+{
+	ptdump_walk_pgd_level_core(NULL, NULL, true);
+}
+
+#ifdef CONFIG_X86_PTDUMP
 static int ptdump_show(struct seq_file *m, void *v)
 {
 	ptdump_walk_pgd_level(m, NULL);
@@ -413,10 +466,13 @@ static const struct file_operations ptdump_fops = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
+#endif
 
 static int __init pt_dump_init(void)
 {
+#ifdef CONFIG_X86_PTDUMP
 	struct dentry *pe;
+#endif
 
 #ifdef CONFIG_X86_32
 	/* Not a compile-time constant on x86-32 */
@@ -429,10 +485,12 @@ static int __init pt_dump_init(void)
 	address_markers[XEN_SPACE_NR].start_address = hypervisor_virt_start;
 #endif
 
+#ifdef CONFIG_X86_PTDUMP
 	pe = debugfs_create_file("kernel_page_tables", 0600, NULL, NULL,
 				 &ptdump_fops);
 	if (!pe)
 		return -ENOMEM;
+#endif
 
 	return 0;
 }

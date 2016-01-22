@@ -511,6 +511,9 @@ static int _do_block_io_op(blkif_t *blkif)
 
 		++rc;
 
+		/* Apply all sanity checks to /private copy/ of request. */
+		barrier();
+
 		switch (req.operation) {
 		case BLKIF_OP_READ:
 		case BLKIF_OP_WRITE:
@@ -524,15 +527,10 @@ static int _do_block_io_op(blkif_t *blkif)
 
 			/* before make_response() */
 			blk_rings->common.req_cons = rc;
-
-			/* Apply all sanity checks to /private copy/ of request. */
-			barrier();
-
 			dispatch_rw_block_io(blkif, &req, pending_req);
 			break;
 		case BLKIF_OP_DISCARD:
 			blk_rings->common.req_cons = rc;
-			barrier();
 			dispatch_discard(blkif, (void *)&req);
 			break;
 		case BLKIF_OP_INDIRECT:
@@ -542,12 +540,10 @@ static int _do_block_io_op(blkif_t *blkif)
 				return 1;
 			}
 			blk_rings->common.req_cons = rc;
-			barrier();
 			dispatch_indirect(blkif, (void *)&req, pending_req);
 			break;
 		case BLKIF_OP_PACKET:
 			blk_rings->common.req_cons = rc;
-			barrier();
 			blkif->st_pk_req++;
 			DPRINTK("error: block operation BLKIF_OP_PACKET not implemented\n");
 			make_response(blkif, req.id, req.operation,
@@ -558,7 +554,6 @@ static int _do_block_io_op(blkif_t *blkif)
 			 * avoid excessive CPU consumption by a bad guest. */
 			msleep(1);
 			blk_rings->common.req_cons = rc;
-			barrier();
 			DPRINTK("error: unknown block io operation [%d]\n",
 				req.operation);
 			make_response(blkif, req.id, req.operation,

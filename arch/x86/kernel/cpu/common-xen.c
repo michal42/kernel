@@ -295,8 +295,9 @@ static __always_inline void setup_smap(struct cpuinfo_x86 *c)
 {
 	unsigned long eflags;
 
+	asm ("pushf;" __ASM_SIZE(pop) "%0" : "=rm" (eflags));
+
 	/* This should have been cleared long ago */
-	raw_local_save_flags(eflags);
 	BUG_ON(eflags & X86_EFLAGS_AC);
 
 	if (cpu_has(c, X86_FEATURE_SMAP)) {
@@ -720,6 +721,7 @@ void get_cpu_cap(struct cpuinfo_x86 *c)
 
 		c->x86_virt_bits = (eax >> 8) & 0xff;
 		c->x86_phys_bits = eax & 0xff;
+		c->x86_capability[13] = cpuid_ebx(0x80000008);
 	}
 #ifdef CONFIG_X86_32
 	else if (cpu_has(c, X86_FEATURE_PAE) || cpu_has(c, X86_FEATURE_PSE36))
@@ -1054,7 +1056,7 @@ void enable_sep_cpu(void)
 		.address = { __KERNEL_CS, (unsigned long)entry_SYSENTER_PV32 },
 	};
 
-# ifdef TIF_CSTAR
+# ifdef CONFIG_CPU_SUP_AMD
 	if (boot_cpu_has(X86_FEATURE_SYSCALL32)) {
 		extern asmlinkage void entry_SYSCALL_PV32(void);
 		static const struct callback_register cstar = {

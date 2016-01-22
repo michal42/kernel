@@ -378,25 +378,6 @@ int nfs_inode_set_delegation(struct inode *inode, struct rpc_cred *cred, struct 
 				old_delegation, clp);
 		if (freeme == NULL)
 			goto out;
-	} else {
-		/* Don't accept an incompatible delegation */
-		int incompatible = 0;
-		struct nfs_inode *nfsi = NFS_I(inode);
-		struct nfs4_state *state;
-
-		spin_lock(&inode->i_lock);
-		list_for_each_entry(state, &nfsi->open_states, inode_states) {
-			if ((state->state & delegation->type) != state->state) {
-				incompatible = 1;
-				break;
-			}
-		}
-		spin_unlock(&inode->i_lock);
-		if (incompatible) {
-			freeme = delegation;
-			delegation = NULL;
-			goto out;
-		}
 	}
 	list_add_tail_rcu(&delegation->super_list, &server->delegations);
 	rcu_assign_pointer(nfsi->delegation, delegation);
@@ -740,14 +721,12 @@ int nfs_async_inode_return_delegation(struct inode *inode,
 	struct nfs_client *clp = server->nfs_client;
 	struct nfs_delegation *delegation;
 
-	filemap_flush(inode->i_mapping);
-
 	rcu_read_lock();
 	delegation = rcu_dereference(NFS_I(inode)->delegation);
 	if (delegation == NULL)
 		goto out_enoent;
-
-	if (!clp->cl_mvops->match_stateid(&delegation->stateid, stateid))
+	if (stateid != NULL &&
+	    !clp->cl_mvops->match_stateid(&delegation->stateid, stateid))
 		goto out_enoent;
 	nfs_mark_return_delegation(server, delegation);
 	rcu_read_unlock();

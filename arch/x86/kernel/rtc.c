@@ -202,11 +202,6 @@ static __init int add_rtc_cmos(void)
 	if (intel_mid_identify_cpu())
 		return -ENODEV;
 
-#ifdef CONFIG_XEN
-	if (!is_initial_xendomain())
-		return -ENODEV;
-#endif
-
 #ifdef CONFIG_ACPI
 	if (acpi_gbl_FADT.boot_flags & ACPI_FADT_NO_CMOS_RTC) {
 		/* This warning can likely go away again in a year or two. */
@@ -214,6 +209,13 @@ static __init int add_rtc_cmos(void)
 		return -ENODEV;
 	}
 #endif
+
+#ifdef CONFIG_XEN
+	if (!is_initial_xendomain())
+#else
+	if (paravirt_enabled() && !paravirt_has(RTC))
+#endif
+		return -ENODEV;
 
 	platform_device_register(&rtc_device);
 	dev_info(&rtc_device.dev,

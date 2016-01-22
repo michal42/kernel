@@ -116,7 +116,6 @@ struct page *kmap_atomic_to_page(void *ptr)
 	pte = kmap_pte - (idx - FIX_KMAP_BEGIN);
 	return pte_page(*pte);
 }
-EXPORT_SYMBOL(kmap_atomic_to_page);
 
 void clear_highpage(struct page *page)
 {

@@ -24,7 +24,6 @@
 #include <linux/types.h>
 #include <linux/edd.h>
 #ifndef CONFIG_XEN
-#include <asm/boot.h>
 #include <asm/setup.h>
 #else
 #include <asm/bootparam.h>

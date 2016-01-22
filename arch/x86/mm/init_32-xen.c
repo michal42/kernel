@@ -385,10 +385,18 @@ repeat:
 				pgprot_t init_prot = __pgprot(PTE_IDENT_ATTR);
 
 				/* XEN: Only map initial RAM allocation. */
-				if (pfn >= xen_start_info->nr_pages || pte_present(*pte))
+				if (pfn >= xen_start_info->nr_pages)
 					continue;
-				if (is_kernel_text(addr))
+				if (is_kernel_text(addr)) {
+					if (!mapping_iter && pte_present(*pte))
+						continue;
 					prot = PAGE_KERNEL_EXEC;
+				} else if (!mapping_iter &&
+					   pte_present(*pte) &&
+					   !(__supported_pte_mask & _PAGE_NX))
+					continue;
+				if (pte_present(*pte) && !pte_write(*pte))
+					pgprot_val(prot) &= ~_PAGE_RW;
 
 				pages_4k++;
 				if (mapping_iter == 1) {
@@ -955,6 +963,8 @@ void mark_rodata_ro(void)
 	set_pages_ro(virt_to_page(start), size >> PAGE_SHIFT);
 #endif
 	mark_nxdata_nx();
+	if (__supported_pte_mask & _PAGE_NX)
+		debug_checkwx();
 }
 #endif
 

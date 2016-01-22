@@ -104,6 +104,7 @@ void __init xen_start_kernel(void)
 {
 	unsigned int i;
 	struct xen_machphys_mapping mapping;
+	u64 efer;
 
 	xen_setup_features();
 
@@ -129,6 +130,15 @@ void __init xen_start_kernel(void)
 			 + PFN_PHYS(xen_start_info->nr_pt_frames)
 			 - PAGE_ALIGN(__pa_symbol(&_end)));
 
+#if defined(CONFIG_X86_32) && CONFIG_XEN_COMPAT < 0x040300
+	efer = 0;
+	if ((cpuid_eax(0x80000000) & 0xffff0000) == 0x80000000 &&
+	    cpuid_eax(0x80000000) > 0x80000000 &&
+	    cpuid_edx(0x80000001) & (1U << (X86_FEATURE_NX % 32)))
+#endif
+		rdmsrl(MSR_EFER, efer);
+	if (efer & EFER_NX)
+		set_cpu_cap(&boot_cpu_data, X86_FEATURE_NX);
 	x86_configure_nx();
 
 #ifdef CONFIG_X86_32

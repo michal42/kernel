@@ -1123,7 +1123,10 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		}
 
 		if (!(error_code & (PF_RSVD | PF_USER | PF_PROT))) {
-			if (vmalloc_fault(address) >= 0)
+			pagefault_disable(); /* suppress lazy MMU updates */
+			fault = vmalloc_fault(address);
+			pagefault_enable();
+			if (fault >= 0)
 				return;
 
 			if (kmemcheck_fault(regs, address, error_code))

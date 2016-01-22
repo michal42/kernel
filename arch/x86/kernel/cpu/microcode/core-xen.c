@@ -5,6 +5,12 @@
  *	      2006	Shaohua Li <shaohua.li@intel.com>
  *	      2013-2015	Borislav Petkov <bp@alien8.de>
  *
+ * X86 CPU microcode early update for Linux:
+ *
+ *	Copyright (C) 2012 Fenghua Yu <fenghua.yu@intel.com>
+ *			   H Peter Anvin" <hpa@zytor.com>
+ *		  (C) 2015 Borislav Petkov <bp@alien8.de>
+ *
  * This driver allows to upgrade microcode on x86 processors.
  *
  * This program is free software; you can redistribute it and/or
@@ -13,7 +19,7 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#define pr_fmt(fmt) "microcode: " fmt
 
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
@@ -34,16 +40,9 @@
 
 #include <xen/pcpu.h>
 
-MODULE_DESCRIPTION("Microcode Update Driver");
-MODULE_AUTHOR("Tigran Aivazian <tigran@aivazian.fsnet.co.uk>");
-MODULE_LICENSE("GPL");
+#define MICROCODE_VERSION	"2.01-xen"
 
-static int verbose;
-module_param(verbose, int, 0644);
-
-#define MICROCODE_VERSION	"2.00-xen"
-
-bool dis_ucode_ldr;
+static bool dis_ucode_ldr;
 module_param(dis_ucode_ldr, bool, 0);
 
 /*
@@ -144,9 +143,6 @@ static void __exit microcode_dev_exit(void)
 {
 	misc_deregister(&microcode_dev);
 }
-
-MODULE_ALIAS_MISCDEV(MICROCODE_MINOR);
-MODULE_ALIAS("devname:cpu/microcode");
 #else
 #define microcode_dev_init()	0
 #define microcode_dev_exit()	do { } while (0)
@@ -154,6 +150,12 @@ MODULE_ALIAS("devname:cpu/microcode");
 
 /* fake device for request_firmware */
 static struct platform_device	*microcode_pdev;
+
+#if !defined(MODULE) && defined(CONFIG_FW_LOADER_USER_HELPER)
+#define request_firmware \
+	(system_state == SYSTEM_RUNNING ? request_firmware \
+					: request_firmware_direct)
+#endif
 
 static int request_microcode(const char *name)
 {
@@ -228,20 +230,6 @@ static struct notifier_block ucode_cpu_notifier = {
 	.notifier_call = ucode_cpu_callback
 };
 
-#ifdef MODULE
-/* Autoload on Intel and AMD systems */
-static const struct x86_cpu_id __initconst microcode_id[] = {
-#ifdef CONFIG_MICROCODE_INTEL
-	{ X86_VENDOR_INTEL, X86_FAMILY_ANY, X86_MODEL_ANY, },
-#endif
-#ifdef CONFIG_MICROCODE_AMD
-	{ X86_VENDOR_AMD, X86_FAMILY_ANY, X86_MODEL_ANY, },
-#endif
-	{}
-};
-MODULE_DEVICE_TABLE(x86cpu, microcode_id);
-#endif
-
 static int __init microcode_init(void)
 {
 	const struct cpuinfo_x86 *c = &boot_cpu_data;
@@ -287,14 +275,4 @@ static int __init microcode_init(void)
 
 	return 0;
 }
-module_init(microcode_init);
-
-static void __exit microcode_exit(void)
-{
-	unregister_pcpu_notifier(&ucode_cpu_notifier);
-	microcode_dev_exit();
-	platform_device_unregister(microcode_pdev);
-
-	pr_info("Microcode Update Driver: v" MICROCODE_VERSION " removed.\n");
-}
-module_exit(microcode_exit);
+late_initcall(microcode_init);

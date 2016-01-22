@@ -45,8 +45,7 @@ startup_64:
 	 */
 	movl	$MSR_GS_BASE,%ecx
 	movq	$INIT_PER_CPU_VAR(irq_stack_union),%rax
-	movq    %rax,%rdx
-	shrq	$32,%rdx
+	cdq
 	wrmsr
 
 	pushq $0		# fake return address
