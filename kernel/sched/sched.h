@@ -150,8 +150,13 @@ struct task_group {
 	unsigned long shares;
 
 #ifdef	CONFIG_SMP
+#ifdef	__GENKSYMS__
 	atomic_long_t load_avg;
 	atomic_t runnable_avg;
+#else
+	atomic_long_t __load_avg;	/* Unused */
+	atomic_t __runnable_avg;	/* Unused */
+#endif
 #endif
 #endif
 
@@ -174,6 +179,16 @@ struct task_group {
 #endif
 
 	struct cfs_bandwidth cfs_bandwidth;
+
+#if defined(CONFIG_FAIR_GROUP_SCHED) && defined(CONFIG_SMP) && \
+   !defined(__GENKSYMS__)
+	/*
+	 *  Put load_avg/runnable_avg in its own cacheline to avoid
+	 *  interfering with the other fields in this structure.
+	 */
+	atomic_long_t load_avg ____cacheline_aligned;
+	atomic_t runnable_avg;
+#endif
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
