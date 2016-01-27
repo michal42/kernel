@@ -392,8 +392,8 @@ void sctp_generate_heartbeat_event(unsigned long data)
 			   asoc->state, asoc->ep, asoc,
 			   transport, GFP_ATOMIC);
 
-	if (error)
-		sk->sk_err = -error;
+	 if (error)
+		 sk->sk_err = -error;
 
 out_unlock:
 	sctp_bh_unlock_sock(sk);
@@ -409,7 +409,7 @@ void sctp_generate_proto_unreach_event(unsigned long data)
 	struct sctp_association *asoc = transport->asoc;
 	struct sock *sk = asoc->base.sk;
 	struct net *net = sock_net(sk);
-
+	
 	sctp_bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
 		pr_debug("%s: sock is busy\n", __func__);
