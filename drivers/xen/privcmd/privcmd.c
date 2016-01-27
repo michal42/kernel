@@ -471,7 +471,7 @@ static int privcmd_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	return VM_FAULT_SIGBUS;
 }
 
-static struct vm_operations_struct privcmd_vm_ops = {
+static const struct vm_operations_struct privcmd_vm_ops = {
 	.fault = privcmd_fault
 };
 
