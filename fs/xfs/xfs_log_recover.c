@@ -3530,8 +3530,6 @@ out:
 	if (!list_empty(&done_list))
 		list_splice_init(&done_list, &trans->r_itemq);
 
-	xlog_recover_free_trans(trans);
-
 	error2 = xfs_buf_delwri_submit(&buffer_list);
 	return error ? error : error2;
 }
@@ -3571,6 +3569,7 @@ xlog_recover_process_data(
 	int			error;
 	unsigned long		hash;
 	uint			flags;
+	bool			freeit = false;
 
 	lp = dp + be32_to_cpu(rhead->h_len);
 	num_logops = be32_to_cpu(rhead->h_num_logops);
@@ -3611,9 +3610,11 @@ xlog_recover_process_data(
 			case XLOG_COMMIT_TRANS:
 				error = xlog_recover_commit_trans(log,
 								trans, pass);
+				freeit = true;
 				break;
 			case XLOG_UNMOUNT_TRANS:
 				error = xlog_recover_unmount_trans(log, trans);
+				freeit = true;
 				break;
 			case XLOG_WAS_CONT_TRANS:
 				error = xlog_recover_add_to_cont_trans(log,
@@ -3638,7 +3639,7 @@ xlog_recover_process_data(
 				error = XFS_ERROR(EIO);
 				break;
 			}
-			if (error) {
+			if (error || freeit) {
 				xlog_recover_free_trans(trans);
 				return error;
 			}
