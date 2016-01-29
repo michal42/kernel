@@ -1426,17 +1426,26 @@ void __init setup_arch(char **cmdline_p)
 		struct xen_memory_reservation reservation = {
 			.domid = DOMID_SELF
 		};
-		unsigned int difference;
-		int ret;
+		unsigned long pfn;
 
-		difference = xen_start_info->nr_pages - max_pfn;
+		for (pfn = max_pfn; pfn < xen_start_info->nr_pages; ) {
+			unsigned long difference =
+				xen_start_info->nr_pages - pfn;
+			long ret;
 
-		set_xen_guest_handle(reservation.extent_start,
-				     phys_to_machine_mapping + max_pfn);
-		reservation.nr_extents = difference;
-		ret = HYPERVISOR_memory_op(XENMEM_decrease_reservation,
-					   &reservation);
-		BUG_ON(ret != difference);
+			set_xen_guest_handle(reservation.extent_start,
+					     phys_to_machine_mapping + pfn);
+			for (; ; difference = (difference + 1) >> 1) {
+				reservation.nr_extents = difference;
+				ret = HYPERVISOR_memory_op(
+					XENMEM_decrease_reservation,
+					&reservation);
+				if (ret || difference == 1)
+					break;
+			}
+			BUG_ON(ret != difference);
+			pfn += difference;
+		}
 	} else if (max_pfn > xen_start_info->nr_pages)
 		p2m_pages = xen_start_info->nr_pages;
 

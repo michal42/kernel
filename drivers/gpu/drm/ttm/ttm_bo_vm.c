@@ -225,6 +225,14 @@ static int ttm_bo_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			} else if (unlikely(!page)) {
 				break;
 			}
+#ifdef CONFIG_XEN
+			if (WARN_ON_ONCE(PageForeign(page))) {
+				if (i)
+					break;
+				retval = VM_FAULT_SIGBUS;
+				goto out_io_unlock;
+			}
+#endif
 			page->mapping = vma->vm_file->f_mapping;
 			page->index = drm_vma_node_start(&bo->vma_node) +
 				page_offset;

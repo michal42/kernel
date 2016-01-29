@@ -387,6 +387,13 @@ static void ttm_tt_clear_mapping(struct ttm_tt *ttm)
 		return;
 
 	for (i = 0; i < ttm->num_pages; ++i) {
+#ifdef CONFIG_XEN
+		if (PageForeign(*page)) {
+			WARN_ON_ONCE((*page)->mapping);
+			++page;
+			continue;
+		}
+#endif
 		(*page)->mapping = NULL;
 		(*page++)->index = 0;
 	}

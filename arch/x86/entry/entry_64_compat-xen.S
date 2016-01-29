@@ -173,8 +173,6 @@ ENTRY(entry_INT80_compat)
 .Lsyscall_32_done:
 
 	/* Go back to user mode. */
-	TRACE_IRQS_ON
-	SWAPGS
 	jmp	restore_regs_and_iret
 END(entry_INT80_compat)
 
