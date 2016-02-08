@@ -656,6 +656,9 @@ static struct nvme_bio_pair *nvme_bio_split(struct bio *bio, int idx,
 	bp->b1.bi_end_io = nvme_bio_pair_endio;
 	bp->b2.bi_end_io = nvme_bio_pair_endio;
 
+	bp->b1.bi_flags &= ~(1 << BIO_SEG_VALID);
+	bp->b2.bi_flags &= ~(1 << BIO_SEG_VALID);
+
 	bp->parent = bio;
 	atomic_set(&bp->cnt, 2);
 

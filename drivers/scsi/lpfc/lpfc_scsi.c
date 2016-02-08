@@ -5281,7 +5281,7 @@ lpfc_target_reset_handler(struct scsi_cmnd *cmnd)
 			spin_unlock_irq(shost->host_lock);
 		}
 		lpfc_reset_flush_io_context(vport, tgt_id, lun_id,
-					  LPFC_CTX_TGT);
+					    LPFC_CTX_TGT);
 		return FAST_IO_FAIL;
 	}
 

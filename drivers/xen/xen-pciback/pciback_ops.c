@@ -164,6 +164,7 @@ int xen_pcibk_enable_msi(struct xen_pcibk_device *pdev,
 		status = -ENXIO;
 	else
 		status = pci_enable_msi_block(dev, nvec);
+
 	if (status) {
 		if (status > 0 && status < nvec)
 			op->value = status;

@@ -56,14 +56,14 @@ void arch_trigger_all_cpu_backtrace(bool include_self)
 		cpumask_clear_cpu(cpu, to_cpumask(backtrace_mask));
 
 	if (!cpumask_empty(to_cpumask(backtrace_mask))) {
-#ifndef CONFIG_XEN
 		pr_info("sending NMI to %s CPUs:\n",
 			(include_self ? "all" : "other"));
+#ifndef CONFIG_XEN
 		apic->send_IPI_mask(to_cpumask(backtrace_mask), NMI_VECTOR);
-	}
 #else /* this works even without CONFIG_X86_LOCAL_APIC */
-	xen_send_IPI_all(NMI_VECTOR);
+		xen_send_IPI_mask(to_cpumask(backtrace_mask), NMI_VECTOR);
 #endif
+	}
 
 	/* Wait for up to 10 seconds for all CPUs to do the backtrace */
 	for (i = 0; i < 10 * 1000; i++) {

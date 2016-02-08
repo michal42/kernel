@@ -2488,7 +2488,10 @@ static inline void __update_cfs_rq_tg_load_contrib(struct cfs_rq *cfs_rq,
 	tg_contrib = cfs_rq->runnable_load_avg + cfs_rq->blocked_load_avg;
 	tg_contrib -= cfs_rq->tg_load_contrib;
 
-	if (!tg_contrib)
+	/*
+	 * No need to update load_avg for root_task_group as it is not used.
+	 */
+	if (!tg_contrib || (tg == &root_task_group))
 		return;
 
 	if (force_update || abs(tg_contrib) > cfs_rq->tg_load_contrib / 8) {
@@ -2506,6 +2509,12 @@ static inline void __update_tg_runnable_avg(struct sched_avg *sa,
 {
 	struct task_group *tg = cfs_rq->tg;
 	long contrib;
+
+	/*
+	 * No need to update runnable_avg for root_task_group as it is not used.
+	 */
+	if (tg == &root_task_group)
+		return;
 
 	/* The fraction of a cpu used by this cfs_rq */
 	contrib = div_u64((u64)sa->runnable_avg_sum << NICE_0_SHIFT,

@@ -340,7 +340,9 @@ static __kprobes void default_do_nmi(struct pt_regs *regs)
 	 * crash dump, we simply loop here.
 	 */
 	while (!raw_spin_trylock(&nmi_reason_lock)) {
+#ifndef CONFIG_XEN
 		run_crash_ipi_callback(regs);
+#endif
 		cpu_relax();
 	}
 

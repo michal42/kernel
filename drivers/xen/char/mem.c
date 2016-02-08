@@ -157,7 +157,7 @@ static ssize_t write_mem(struct file *file, const char __user *buf,
 }
 
 #ifndef ARCH_HAS_DEV_MEM_MMAP_MEM
-static struct vm_operations_struct mmap_mem_ops = {
+static const struct vm_operations_struct mmap_mem_ops = {
 #ifdef CONFIG_HAVE_IOREMAP_PROT
 	.access = generic_access_phys
 #endif

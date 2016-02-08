@@ -589,15 +589,14 @@ static void latch_segments(pending_req_t *pending_req,
 			   const struct vscsiif_sg_list *sgl)
 {
 	unsigned int nr_segs = sgl->nr_segments;
-	const vscsiif_segment_t *seg = sgl->seg;
 
 	barrier();
 	if (pending_req->nr_segments + nr_segs <= vscsiif_segs) {
 		memcpy(pending_req->segs + pending_req->nr_segments,
-		       seg, nr_segs * sizeof(*seg));
+		       sgl->seg, nr_segs * sizeof(*sgl->seg));
+		barrier();
 		pending_req->nr_segments += nr_segs;
-	}
-	else
+	} else
 		DPRINTK("scsiback: invalid nr_segs = %u\n", nr_segs);
 }
 
