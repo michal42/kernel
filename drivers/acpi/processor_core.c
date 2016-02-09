@@ -207,7 +207,7 @@ exit:
 
 int acpi_get_apicid(acpi_handle handle, int type, u32 acpi_id)
 {
-	int apic_id = -1;
+	int apic_id;
 
 	apic_id = map_mat_entry(handle, type, acpi_id);
 	if (apic_id == -1)
@@ -216,7 +216,7 @@ int acpi_get_apicid(acpi_handle handle, int type, u32 acpi_id)
 	return apic_id;
 }
 
-int acpi_map_cpuid(int apic_id, int type, u32 acpi_id)
+int acpi_map_cpuid(int apic_id, u32 acpi_id)
 {
 #ifdef CONFIG_SMP
 	int i;
@@ -283,7 +283,7 @@ int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 			return apic_id;
 	}
 
-	return acpi_map_cpuid(apic_id, type, acpi_id);
+	return acpi_map_cpuid(apic_id, acpi_id);
 }
 EXPORT_SYMBOL_GPL(acpi_get_cpuid);
 

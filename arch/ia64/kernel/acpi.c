@@ -952,7 +952,7 @@ int __ref acpi_map_lsapic2(acpi_handle handle, int physid, int *pcpu)
 {
 	return _acpi_map_lsapic2(handle, physid, pcpu);
 }
-EXPORT_SYMBOL(acpi_map_lsapic);
+EXPORT_SYMBOL(acpi_map_lsapic2);
 
 int acpi_unmap_lsapic(int cpu)
 {
