@@ -228,11 +228,12 @@ static void nfs_mark_uptodate(struct page *page, unsigned int base, unsigned int
 
 static int wb_priority(struct writeback_control *wbc)
 {
+	int ret = 0;
 	if (wbc->for_reclaim)
 		return FLUSH_HIGHPRI | FLUSH_STABLE;
-	if (wbc->for_kupdate || wbc->for_background)
-		return FLUSH_LOWPRI | FLUSH_COND_STABLE;
-	return FLUSH_COND_STABLE;
+	if (wbc->sync_mode == WB_SYNC_ALL)
+		ret = FLUSH_COND_STABLE;
+	return ret;
 }
 
 /*
