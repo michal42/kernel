@@ -706,8 +706,8 @@ static int _acpi_map_lsapic(acpi_handle handle, int *pcpu)
 	return _acpi_map_lsapic2(handle, physid, pcpu);
 }
 #else
-#define _acpi_map_lsapic2(h, i, p) (-EINVAL)
 #define _acpi_map_lsapic(h, p) (-EINVAL)
+#define _acpi_map_lsapic2(h, i, p) (-EINVAL)
 #endif
 
 int __ref acpi_map_lsapic2(acpi_handle handle, int physid, int *pcpu)

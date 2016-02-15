@@ -218,9 +218,38 @@ int acpi_get_apicid(acpi_handle handle, int type, u32 acpi_id)
 
 int acpi_map_cpuid(int apic_id, u32 acpi_id)
 {
-#ifdef CONFIG_SMP
+#if defined(CONFIG_SMP) && !defined(CONFIG_PROCESSOR_EXTERNAL_CONTROL)
 	int i;
+#endif
 
+	if (apic_id == -1) {
+		/*
+		 * On UP processor, there is no _MAT or MADT table.
+		 * So above apic_id is always set to -1.
+		 *
+		 * BIOS may define multiple CPU handles even for UP processor.
+		 * For example,
+		 *
+		 * Scope (_PR)
+                 * {
+		 *     Processor (CPU0, 0x00, 0x00000410, 0x06) {}
+		 *     Processor (CPU1, 0x01, 0x00000410, 0x06) {}
+		 *     Processor (CPU2, 0x02, 0x00000410, 0x06) {}
+		 *     Processor (CPU3, 0x03, 0x00000410, 0x06) {}
+		 * }
+		 *
+		 * Ignores apic_id and always returns 0 for the processor
+		 * handle with acpi id 0 if nr_cpu_ids is 1.
+		 * This should be the case if SMP tables are not found.
+		 * Return -1 for other CPU's handle.
+		 */
+		if (nr_cpu_ids <= 1 && acpi_id == 0)
+			return acpi_id;
+		else
+			return apic_id;
+	}
+
+#ifdef CONFIG_SMP
 #ifndef CONFIG_PROCESSOR_EXTERNAL_CONTROL
 	for_each_possible_cpu(i) {
 		if (cpu_physical_id(i) == apic_id)
@@ -245,43 +274,9 @@ int acpi_map_cpuid(int apic_id, u32 acpi_id)
 
 int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 {
-	int apic_id, i = 0;
-
-	if (type < 0) {
-		if (!processor_cntl_external())
-			return -1;
-		type = ~type;
-		i = 1;
-	}
+	int apic_id;
 
 	apic_id = acpi_get_apicid(handle, type, acpi_id);
-
-	if (apic_id == -1 || i) {
-		/*
-		 * On UP processor, there is no _MAT or MADT table.
-		 * So above apic_id is always set to -1.
-		 *
-		 * BIOS may define multiple CPU handles even for UP processor.
-		 * For example,
-		 *
-		 * Scope (_PR)
-                 * {
-		 *     Processor (CPU0, 0x00, 0x00000410, 0x06) {}
-		 *     Processor (CPU1, 0x01, 0x00000410, 0x06) {}
-		 *     Processor (CPU2, 0x02, 0x00000410, 0x06) {}
-		 *     Processor (CPU3, 0x03, 0x00000410, 0x06) {}
-		 * }
-		 *
-		 * Ignores apic_id and always returns 0 for the processor
-		 * handle with acpi id 0 if nr_cpu_ids is 1.
-		 * This should be the case if SMP tables are not found.
-		 * Return -1 for other CPU's handle.
-		 */
-		if (nr_cpu_ids <= 1 && acpi_id == 0 && !i)
-			return acpi_id;
-		else
-			return apic_id;
-	}
 
 	return acpi_map_cpuid(apic_id, acpi_id);
 }

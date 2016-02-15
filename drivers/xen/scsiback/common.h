@@ -97,10 +97,8 @@ struct vscsibk_info {
 
 	struct pending_req *preq;
 
-	union {
-		struct gnttab_map_grant_ref   *gmap;
-		struct gnttab_unmap_grant_ref *gunmap;
-	};
+	struct gnttab_map_grant_ref   *gmap;
+	struct gnttab_unmap_grant_ref *gunmap;
 };
 
 typedef struct pending_req {

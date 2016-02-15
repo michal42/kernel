@@ -364,6 +364,7 @@ static inline void crash_kexec(struct pt_regs *regs) {
 
 		VOID(HYPERVISOR_kexec_op(KEXEC_CMD_kexec, &xke));
 	}
+#define __crash_kexec(regs) crash_kexec(regs)
 #endif
 }
 static inline int kexec_should_crash(struct task_struct *p) { return 0; }
