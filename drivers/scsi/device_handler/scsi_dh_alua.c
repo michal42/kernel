@@ -1149,12 +1149,8 @@ static int alua_prep_fn(struct scsi_device *sdev, struct request *req)
 
 	rcu_read_lock();
 	pg = rcu_dereference(h->pg);
-	if (pg) {
+	if (pg)
 		state = pg->state;
-		/* Defer I/O while rtpg_work is active */
-		if (pg->rtpg_sdev)
-			state = TPGS_STATE_TRANSITIONING;
-	}
 	rcu_read_unlock();
 	if (state == TPGS_STATE_TRANSITIONING)
 		ret = BLKPREP_DEFER;
