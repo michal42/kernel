@@ -52,6 +52,14 @@
 #define SHUTDOWN_TIMEOUT	(shutdown_timeout * HZ)
 #define IOD_TIMEOUT		(retry_time * HZ)
 
+/*
+ * We handle AEN commands ourselves and don't even let the
+ * block layer know about them.
+ */
+#define NVME_AQ_DEPTH 256
+#define NVME_NR_AEN_COMMANDS   1
+#define NVME_AQ_BLKMQ_DEPTH    (NVME_AQ_DEPTH - NVME_NR_AEN_COMMANDS)
+
 static unsigned char admin_timeout = 60;
 module_param(admin_timeout, byte, 0644);
 MODULE_PARM_DESC(admin_timeout, "timeout in seconds for admin commands");
@@ -913,7 +921,9 @@ static int nvme_process_cq(struct nvme_queue *nvmeq)
 		void *ctx;
 		nvme_completion_fn fn;
 		struct nvme_completion cqe = nvmeq->cqes[head];
-		if ((le16_to_cpu(cqe.status) & 1) != phase)
+		u16 status = le16_to_cpu(cqe.status);
+
+		if ((status & 1) != phase)
 			break;
 		nvmeq->sq_head = le16_to_cpu(cqe.sq_head);
 		if (++head == nvmeq->q_depth) {
@@ -922,6 +932,17 @@ static int nvme_process_cq(struct nvme_queue *nvmeq)
 		}
 
 		ctx = free_cmdid(nvmeq, cqe.command_id, &fn);
+		/*
+		 * AEN requests are special as they don't time out and can
+		 * survive any kind of queue freeze and often don't respond to
+		 * aborts.  We don't even bother to allocate a struct request
+		 * for them but rather special case them here.
+		 */
+		if (unlikely(nvmeq->qid == 0 &&
+			     cqe.command_id >= NVME_AQ_BLKMQ_DEPTH)) {
+			async_completion(nvmeq, ctx, &cqe);
+			continue;
+		}
 		fn(nvmeq, ctx, &cqe);
 	}
 
