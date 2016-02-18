@@ -1558,9 +1558,7 @@ dm_open_by_handle_rvp(
 		return(-EBADF);
 	}
 
-	mntget(mfilp->f_path.mnt);
-
-	/* Create file pointer */
+	/* Create file pointer; dentry_open takes its own references. */
 	path.mnt = mfilp->f_path.mnt;
 	path.dentry = dentry;
 
