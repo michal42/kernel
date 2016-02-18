@@ -1318,7 +1318,6 @@ xfs_create(
 	xfs_qm_dqrele(pdqp);
 
 	*ipp = ip;
-	return 0;
 
 	/* Fallthrough to std_return with error = 0  */
  std_return:
