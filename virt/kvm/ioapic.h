@@ -40,9 +40,14 @@ struct kvm_vcpu;
 #define RTC_GSI -1U
 #endif
 
+struct dest_map {
+	DECLARE_BITMAP(map, KVM_MAX_VCPUS);
+};
+
+
 struct rtc_status {
 	int pending_eoi;
-	DECLARE_BITMAP(dest_map, KVM_MAX_VCPUS);
+	struct dest_map dest_map;
 };
 
 struct kvm_ioapic {
@@ -91,7 +96,8 @@ int kvm_ioapic_set_irq(struct kvm_ioapic *ioapic, int irq, int irq_source_id,
 void kvm_ioapic_clear_all(struct kvm_ioapic *ioapic, int irq_source_id);
 void kvm_ioapic_reset(struct kvm_ioapic *ioapic);
 int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
-		struct kvm_lapic_irq *irq, unsigned long *dest_map);
+			     struct kvm_lapic_irq *irq,
+			     struct dest_map *dest_map);
 int kvm_get_ioapic(struct kvm *kvm, struct kvm_ioapic_state *state);
 int kvm_set_ioapic(struct kvm *kvm, struct kvm_ioapic_state *state);
 void kvm_vcpu_request_scan_ioapic(struct kvm *kvm);
