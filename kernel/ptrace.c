@@ -20,7 +20,9 @@
 #include <linux/uio.h>
 #include <linux/audit.h>
 #include <linux/pid_namespace.h>
+#ifndef __GENKSYMS__
 #include <linux/user_namespace.h>
+#endif
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/regset.h>
