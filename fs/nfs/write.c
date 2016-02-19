@@ -270,6 +270,8 @@ static void nfs_end_page_writeback(struct page *page)
 		clear_bdi_congested(&nfss->backing_dev_info, BLK_RW_ASYNC);
 }
 
+static void nfs_clear_request_commit(struct nfs_page *req);
+
 static struct nfs_page *nfs_find_and_lock_request(struct page *page, bool nonblock)
 {
 	struct inode *inode = page_file_mapping(page)->host;
@@ -281,8 +283,10 @@ static struct nfs_page *nfs_find_and_lock_request(struct page *page, bool nonblo
 		req = nfs_page_find_request_locked(NFS_I(inode), page);
 		if (req == NULL)
 			break;
-		if (nfs_lock_request(req))
+		if (nfs_lock_request(req)) {
+			nfs_clear_request_commit(req);
 			break;
+		}
 		/* Note: If we hold the page lock, as is the case in nfs_writepage,
 		 *	 then the call to nfs_lock_request() will always
 		 *	 succeed provided that someone hasn't already marked the
