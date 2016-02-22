@@ -916,7 +916,10 @@ static void ceph_msg_data_sg_cursor_init(struct ceph_msg_data_cursor *cursor,
 	cursor->resid = min_t(u64, length, data->sgl_length);
 	cursor->sg = sg;
 	cursor->sg_consumed = data->sgl_init_offset;
-	cursor->last_piece = cursor->resid <= sg->length;
+	if (cursor->resid <= (sg->length - data->sgl_init_offset))
+		cursor->last_piece = true;
+	else
+		cursor->last_piece = false;
 }
 
 static struct page *ceph_msg_data_sg_next(struct ceph_msg_data_cursor *cursor,
