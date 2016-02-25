@@ -51,10 +51,10 @@ struct vscsibk_info *vscsibk_info_alloc(domid_t domid)
 	if (!info)
 		return ERR_PTR(-ENOMEM);
 
-	info->gmap = kcalloc(max(sizeof(*info->gmap), sizeof(*info->gunmap)),
-			     vscsiif_segs, GFP_KERNEL);
-	if (!info->gmap) {
-		kfree(info);
+	info->gmap = kcalloc(sizeof(*info->gmap), vscsiif_segs, GFP_KERNEL);
+	info->gunmap = kcalloc(sizeof(*info->gunmap), vscsiif_segs, GFP_KERNEL);
+	if (!info->gmap || !info->gunmap) {
+		scsiback_free(info);
 		return ERR_PTR(-ENOMEM);
 	}
 
@@ -130,6 +130,7 @@ void scsiback_disconnect(struct vscsibk_info *info)
 void scsiback_free(struct vscsibk_info *info)
 {
 	kfree(info->gmap);
+	kfree(info->gunmap);
 	kmem_cache_free(scsiback_cachep, info);
 }
 
