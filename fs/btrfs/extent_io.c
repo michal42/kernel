@@ -136,6 +136,8 @@ static void add_extent_changeset(struct extent_state *state, unsigned bits,
 		return;
 	if (set && (state->state & bits) == bits)
 		return;
+	if (!set && (state->state & bits) == 0)
+		return;
 	changeset->bytes_changed += state->end - state->start + 1;
 	ret = ulist_add(changeset->range_changed, state->start, state->end,
 			GFP_ATOMIC);
@@ -526,7 +528,8 @@ static struct extent_state *next_state(struct extent_state *state)
  */
 static struct extent_state *clear_state_bit(struct extent_io_tree *tree,
 					    struct extent_state *state,
-					    unsigned long *bits, int wake)
+					    unsigned long *bits, int wake,
+					    struct extent_changeset *changeset)
 {
 	struct extent_state *next;
 	unsigned long bits_to_clear = *bits & ~EXTENT_CTLBITS;
@@ -537,6 +540,7 @@ static struct extent_state *clear_state_bit(struct extent_io_tree *tree,
 		tree->dirty_bytes -= range;
 	}
 	clear_state_cb(tree, state, bits);
+	add_extent_changeset(state, bits_to_clear, changeset, 0);
 	state->state &= ~bits_to_clear;
 	if (wake)
 		wake_up(&state->wq);
@@ -584,10 +588,10 @@ static void extent_io_tree_panic(struct extent_io_tree *tree, int err)
  *
  * This takes the tree lock, and returns 0 on success and < 0 on error.
  */
-int clear_extent_bit(struct extent_io_tree *tree, u64 start, u64 end,
-		     unsigned long bits, int wake, int delete,
-		     struct extent_state **cached_state,
-		     gfp_t mask)
+int __clear_extent_bit(struct extent_io_tree *tree, u64 start, u64 end,
+		       unsigned long bits, int wake, int delete,
+		       struct extent_state **cached_state,
+		       gfp_t mask, struct extent_changeset *changeset)
 {
 	struct extent_state *state;
 	struct extent_state *cached;
@@ -681,7 +685,8 @@ hit_next:
 		if (err)
 			goto out;
 		if (state->end <= end) {
-			state = clear_state_bit(tree, state, &bits, wake);
+			state = clear_state_bit(tree, state, &bits, wake,
+						changeset);
 			goto next;
 		}
 		goto search_again;
@@ -702,13 +707,13 @@ hit_next:
 		if (wake)
 			wake_up(&state->wq);
 
-		clear_state_bit(tree, prealloc, &bits, wake);
+		clear_state_bit(tree, prealloc, &bits, wake, changeset);
 
 		prealloc = NULL;
 		goto out;
 	}
 
-	state = clear_state_bit(tree, state, &bits, wake);
+	state = clear_state_bit(tree, state, &bits, wake, changeset);
 next:
 	if (last_end == (u64)-1)
 		goto out;
@@ -1143,7 +1148,7 @@ hit_next:
 	if (state->start == start && state->end <= end) {
 		set_state_bits(tree, state, &bits, NULL);
 		cache_state(state, cached_state);
-		state = clear_state_bit(tree, state, &clear_bits, 0);
+		state = clear_state_bit(tree, state, &clear_bits, 0, NULL);
 		if (last_end == (u64)-1)
 			goto out;
 		start = last_end + 1;
@@ -1184,7 +1189,8 @@ hit_next:
 		if (state->end <= end) {
 			set_state_bits(tree, state, &bits, NULL);
 			cache_state(state, cached_state);
-			state = clear_state_bit(tree, state, &clear_bits, 0);
+			state = clear_state_bit(tree, state, &clear_bits, 0,
+						NULL);
 			if (last_end == (u64)-1)
 				goto out;
 			start = last_end + 1;
@@ -1246,7 +1252,7 @@ hit_next:
 
 		set_state_bits(tree, prealloc, &bits, NULL);
 		cache_state(prealloc, cached_state);
-		clear_state_bit(tree, prealloc, &clear_bits, 0);
+		clear_state_bit(tree, prealloc, &clear_bits, 0, NULL);
 		prealloc = NULL;
 		goto out;
 	}
@@ -1301,10 +1307,32 @@ int set_record_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
 				changeset);
 }
 
+int clear_extent_bit(struct extent_io_tree *tree, u64 start, u64 end,
+		     unsigned long bits, int wake, int delete,
+		     struct extent_state **cached, gfp_t mask)
+{
+	return __clear_extent_bit(tree, start, end, bits, wake, delete,
+				  cached, mask, NULL);
+}
+
 int clear_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
 		      unsigned long bits, gfp_t mask)
 {
 	return clear_extent_bit(tree, start, end, bits, 0, 0, NULL, mask);
+}
+
+int clear_record_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
+			     unsigned bits, gfp_t mask,
+			     struct extent_changeset *changeset)
+{
+	/*
+	 * Don't support EXTENT_LOCKED case, same reason as
+	 * set_record_extent_bits().
+	 */
+	BUG_ON(bits & EXTENT_LOCKED);
+
+	return __clear_extent_bit(tree, start, end, bits, 0, 0, NULL, mask,
+				  changeset);
 }
 
 int set_extent_delalloc(struct extent_io_tree *tree, u64 start, u64 end,
