@@ -1646,8 +1646,8 @@ static void btrfs_clear_bit_hook(struct inode *inode,
 
 		if (root->root_key.objectid != BTRFS_DATA_RELOC_TREE_OBJECTID
 		    && do_list && !(state->state & EXTENT_NORESERVE))
-			__btrfs_free_reserved_data_space(inode, state->start,
-							 len);
+			btrfs_free_reserved_data_space(inode, state->start,
+						       len);
 
 		__percpu_counter_add(&root->fs_info->delalloc_bytes, -len,
 				     root->fs_info->delalloc_batch);
@@ -1866,8 +1866,8 @@ again:
 		goto again;
 	}
 
-	ret = __btrfs_delalloc_reserve_space(inode, page_start,
-					     PAGE_CACHE_SIZE);
+	ret = btrfs_delalloc_reserve_space(inode, page_start,
+					   PAGE_CACHE_SIZE);
 	if (ret) {
 		mapping_set_error(page->mapping, ret);
 		end_extent_writepage(page, ret, page_start, page_end);
@@ -4384,7 +4384,7 @@ int btrfs_truncate_page(struct inode *inode, loff_t from, loff_t len,
 	if ((offset & (blocksize - 1)) == 0 &&
 	    (!len || ((len & (blocksize - 1)) == 0)))
 		goto out;
-	ret = __btrfs_delalloc_reserve_space(inode,
+	ret = btrfs_delalloc_reserve_space(inode,
 			round_down(from, PAGE_CACHE_SIZE), PAGE_CACHE_SIZE);
 	if (ret)
 		goto out;
@@ -4392,7 +4392,7 @@ int btrfs_truncate_page(struct inode *inode, loff_t from, loff_t len,
 again:
 	page = find_or_create_page(mapping, index, mask);
 	if (!page) {
-		__btrfs_delalloc_release_space(inode,
+		btrfs_delalloc_release_space(inode,
 				round_down(from, PAGE_CACHE_SIZE),
 				PAGE_CACHE_SIZE);
 		ret = -ENOMEM;
@@ -4462,8 +4462,8 @@ again:
 
 out_unlock:
 	if (ret)
-		__btrfs_delalloc_release_space(inode, page_start,
-					       PAGE_CACHE_SIZE);
+		btrfs_delalloc_release_space(inode, page_start,
+					     PAGE_CACHE_SIZE);
 	unlock_page(page);
 	page_cache_release(page);
 out:
@@ -7639,7 +7639,7 @@ static ssize_t btrfs_direct_IO(int rw, struct kiocb *iocb,
 			mutex_unlock(&inode->i_mutex);
 			relock = true;
 		}
-		ret = __btrfs_delalloc_reserve_space(inode, offset, count);
+		ret = btrfs_delalloc_reserve_space(inode, offset, count);
 		if (ret)
 			goto out;
 	} else if (unlikely(test_bit(BTRFS_INODE_READDIO_NEED_LOCK,
@@ -7655,10 +7655,10 @@ static ssize_t btrfs_direct_IO(int rw, struct kiocb *iocb,
 			btrfs_submit_direct, flags);
 	if (rw & WRITE) {
 		if (ret < 0 && ret != -EIOCBQUEUED)
-			__btrfs_delalloc_release_space(inode, offset, count);
+			btrfs_delalloc_release_space(inode, offset, count);
 		else if (ret >= 0 && (size_t)ret < count)
-			__btrfs_delalloc_release_space(inode, offset,
-						       count - (size_t)ret);
+			btrfs_delalloc_release_space(inode, offset,
+						     count - (size_t)ret);
 		else
 			btrfs_delalloc_release_metadata(inode, 0);
 	}
@@ -7871,8 +7871,8 @@ int btrfs_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	page_start = page_offset(page);
 	page_end = page_start + PAGE_CACHE_SIZE - 1;
 
-	ret = __btrfs_delalloc_reserve_space(inode, page_start,
-					     PAGE_CACHE_SIZE);
+	ret = btrfs_delalloc_reserve_space(inode, page_start,
+					   PAGE_CACHE_SIZE);
 	if (!ret) {
 		ret = file_update_time(vma->vm_file);
 		reserved = 1;
@@ -7967,7 +7967,7 @@ out_unlock:
 	}
 	unlock_page(page);
 out:
-	__btrfs_delalloc_release_space(inode, page_start, PAGE_CACHE_SIZE);
+	btrfs_delalloc_release_space(inode, page_start, PAGE_CACHE_SIZE);
 out_noreserve:
 	sb_end_pagefault(inode->i_sb);
 	return ret;
