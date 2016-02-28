@@ -2895,7 +2895,7 @@ again:
 	if (ret)
 		goto out_unlock;
 
-	btrfs_double_extent_lock(src, loff, dst, dst_loff, len, false);
+	ret = btrfs_double_extent_lock(src, loff, dst, dst_loff, len, false);
 
 	/*
 	 * If one of the inodes has dirty pages in the respective range or
