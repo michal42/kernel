@@ -2920,8 +2920,13 @@ again:
 		 * pages before waiting for all IO to complete.
 		 */
 		btrfs_cmp_data_free(&cmp);
-		btrfs_wait_ordered_range(src, loff, len);
-		btrfs_wait_ordered_range(dst, dst_loff, len);
+		if (same_inode) {
+			btrfs_wait_ordered_range(src, same_lock_start,
+						 same_lock_len);
+		} else {
+			btrfs_wait_ordered_range(src, loff, len);
+			btrfs_wait_ordered_range(dst, dst_loff, len);
+		}
 		goto again;
 	}
 	ASSERT(ret == 0);
