@@ -2,6 +2,7 @@
 #define __EXTENTIO__
 
 #include <linux/rbtree.h>
+#include "ulist.h"
 
 /* bits for the extent state */
 #define EXTENT_DIRTY 1
@@ -20,6 +21,7 @@
 #define EXTENT_NEED_WAIT (1 << 13)
 #define EXTENT_DAMAGED (1 << 14)
 #define EXTENT_NORESERVE (1 << 15)
+#define EXTENT_QGROUP_RESERVED	(1U << 16)
 #define EXTENT_IOBITS (EXTENT_LOCKED | EXTENT_WRITEBACK)
 #define EXTENT_CTLBITS (EXTENT_DO_ACCOUNTING | EXTENT_FIRST_DELALLOC)
 
@@ -166,6 +168,17 @@ struct extent_buffer {
 #endif
 };
 
+/*
+ * Structure to record how many bytes and which ranges are set/cleared
+ */
+struct extent_changeset {
+	/* How many bytes are set/cleared in this operation */
+	u64 bytes_changed;
+
+	/* Changed ranges */
+	struct ulist *range_changed;
+};
+
 static inline void extent_set_compress_type(unsigned long *bio_flags,
 					    int compress_type)
 {
@@ -215,11 +228,17 @@ int test_range_bit(struct extent_io_tree *tree, u64 start, u64 end,
 		   struct extent_state *cached_state);
 int clear_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
 		      unsigned long bits, gfp_t mask);
+int clear_record_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
+			     unsigned bits, gfp_t mask,
+			     struct extent_changeset *changeset);
 int clear_extent_bit(struct extent_io_tree *tree, u64 start, u64 end,
 		     unsigned long bits, int wake, int delete,
 		     struct extent_state **cached, gfp_t mask);
 int set_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
 		    unsigned long bits, gfp_t mask);
+int set_record_extent_bits(struct extent_io_tree *tree, u64 start, u64 end,
+			   unsigned bits, gfp_t mask,
+			   struct extent_changeset *changeset);
 int set_extent_bit(struct extent_io_tree *tree, u64 start, u64 end,
 		   unsigned long bits, u64 *failed_start,
 		   struct extent_state **cached_state, gfp_t mask);

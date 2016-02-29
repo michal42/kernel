@@ -1075,7 +1075,8 @@ static int cluster_pages_for_defrag(struct inode *inode,
 	page_cnt = min_t(u64, (u64)num_pages, (u64)file_end - start_index + 1);
 
 	ret = btrfs_delalloc_reserve_space(inode,
-					   page_cnt << PAGE_CACHE_SHIFT);
+			start_index << PAGE_CACHE_SHIFT,
+			page_cnt << PAGE_CACHE_SHIFT);
 	if (ret)
 		return ret;
 	i_done = 0;
@@ -1165,7 +1166,8 @@ again:
 		BTRFS_I(inode)->outstanding_extents++;
 		spin_unlock(&BTRFS_I(inode)->lock);
 		btrfs_delalloc_release_space(inode,
-				     (page_cnt - i_done) << PAGE_CACHE_SHIFT);
+				start_index << PAGE_CACHE_SHIFT,
+				(page_cnt - i_done) << PAGE_CACHE_SHIFT);
 	}
 
 
@@ -1190,7 +1192,9 @@ out:
 		unlock_page(pages[i]);
 		page_cache_release(pages[i]);
 	}
-	btrfs_delalloc_release_space(inode, page_cnt << PAGE_CACHE_SHIFT);
+	btrfs_delalloc_release_space(inode,
+			start_index << PAGE_CACHE_SHIFT,
+			page_cnt << PAGE_CACHE_SHIFT);
 	return ret;
 
 }
@@ -2897,10 +2901,11 @@ again:
 		goto out_unlock;
 
 	if (same_inode)
-		lock_extent_range(src, same_lock_start, same_lock_len, false);
+		ret = lock_extent_range(src, same_lock_start, same_lock_len,
+					false);
 	else
-		btrfs_double_extent_lock(src, loff, dst, dst_loff, len, false);
-
+		ret = btrfs_double_extent_lock(src, loff, dst, dst_loff, len,
+					       false);
 	/*
 	 * If one of the inodes has dirty pages in the respective range or
 	 * ordered extents, we need to flush dellaloc and wait for all ordered
