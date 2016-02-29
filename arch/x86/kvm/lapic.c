@@ -435,10 +435,10 @@ int kvm_lapic_find_highest_irr(struct kvm_vcpu *vcpu)
 
 static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			     int vector, int level, int trig_mode,
-			     unsigned long *dest_map);
+			     struct dest_map *dest_map);
 
 int kvm_apic_set_irq(struct kvm_vcpu *vcpu, struct kvm_lapic_irq *irq,
-		unsigned long *dest_map)
+		     struct dest_map *dest_map)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
 
@@ -609,7 +609,7 @@ int kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
 }
 
 bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
-		struct kvm_lapic_irq *irq, int *r, unsigned long *dest_map)
+		struct kvm_lapic_irq *irq, int *r, struct dest_map *dest_map)
 {
 	struct kvm_apic_map *map;
 	unsigned long bitmap = 1;
@@ -680,7 +680,7 @@ out:
  */
 static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			     int vector, int level, int trig_mode,
-			     unsigned long *dest_map)
+			     struct dest_map *dest_map)
 {
 	int result = 0;
 	struct kvm_vcpu *vcpu = apic->vcpu;
@@ -695,8 +695,10 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 
 		result = 1;
 
-		if (dest_map)
-			__set_bit(vcpu->vcpu_id, dest_map);
+		if (dest_map) {
+			__set_bit(vcpu->vcpu_id, dest_map->map);
+			dest_map->vectors[vcpu->vcpu_id] = vector;
+		}
 
 		if (kvm_x86_ops->deliver_posted_interrupt)
 			kvm_x86_ops->deliver_posted_interrupt(vcpu, vector);
@@ -776,14 +778,20 @@ int kvm_apic_compare_prio(struct kvm_vcpu *vcpu1, struct kvm_vcpu *vcpu2)
 	return vcpu1->arch.apic_arb_prio - vcpu2->arch.apic_arb_prio;
 }
 
+static bool kvm_ioapic_handles_vector(struct kvm_lapic *apic, int vector)
+{
+	return test_bit(vector, (ulong *)apic->vcpu->arch.eoi_exit_bitmap);
+}
+
 static void kvm_ioapic_send_eoi(struct kvm_lapic *apic, int vector)
 {
-	if (kvm_ioapic_handles_vector(apic->vcpu->kvm, vector)) {
+	if (kvm_ioapic_handles_vector(apic, vector)) {
 		int trigger_mode;
 		if (apic_test_vector(vector, apic->regs + APIC_TMR))
 			trigger_mode = IOAPIC_LEVEL_TRIG;
 		else
 			trigger_mode = IOAPIC_EDGE_TRIG;
+
 		kvm_ioapic_update_eoi(apic->vcpu, vector, trigger_mode);
 	}
 }
@@ -1743,7 +1751,7 @@ static void apic_sync_pv_eoi_to_guest(struct kvm_vcpu *vcpu,
 	    /* Cache not set: could be safe but we don't bother. */
 	    apic->highest_isr_cache == -1 ||
 	    /* Need EOI to update ioapic. */
-	    kvm_ioapic_handles_vector(vcpu->kvm, apic->highest_isr_cache)) {
+	    kvm_ioapic_handles_vector(apic, apic->highest_isr_cache)) {
 		/*
 		 * PV EOI was disabled by apic_sync_pv_eoi_from_guest
 		 * so we need not do anything here.

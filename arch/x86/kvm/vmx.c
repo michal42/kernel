@@ -6943,8 +6943,9 @@ static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 	vmx_set_rvi(max_irr);
 }
 
-static void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
+static void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu)
 {
+	u64 *eoi_exit_bitmap = vcpu->arch.eoi_exit_bitmap;
 	if (!vmx_vm_has_apicv(vcpu->kvm))
 		return;
 
