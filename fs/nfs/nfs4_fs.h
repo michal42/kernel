@@ -118,6 +118,17 @@ enum {
  * LOCK: one nfs4_state (LOCK) to hold the lock stateid nfs4_state(OPEN)
  */
 
+struct nfs4_lock_owner {
+	unsigned int lo_type;
+#define NFS4_ANY_LOCK_TYPE	(0U)
+#define NFS4_FLOCK_LOCK_TYPE	(1U << 0)
+#define NFS4_POSIX_LOCK_TYPE	(1U << 1)
+	union {
+		fl_owner_t posix_owner;
+		pid_t flock_owner;
+	} lo_u;
+};
+
 struct nfs4_lock_state {
 	struct list_head	ls_locks;	/* Other lock stateids */
 	struct nfs4_state *	ls_state;	/* Pointer to open state */
@@ -127,7 +138,12 @@ struct nfs4_lock_state {
 	struct nfs_seqid_counter	ls_seqid;
 	nfs4_stateid		ls_stateid;
 	atomic_t		ls_count;
-	fl_owner_t		ls_owner;
+#ifdef __GENKSYMS__
+	struct nfs4_lock_owner	ls_owner;
+#else
+	struct nfs4_lock_owner	__ls_owner;
+#define ls_owner __ls_owner.lo_u.posix_owner
+#endif
 };
 
 /* bits for nfs4_state->flags */
