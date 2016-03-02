@@ -47,17 +47,45 @@
 #include <linux/list.h>
 
 #include <xen/xen.h>
+#if !defined(CONFIG_XEN) && !defined(HAVE_XEN_PLATFORM_COMPAT_H)
 #include <xen/xenbus.h>
 #include <xen/grant_table.h>
 #include <xen/events.h>
 #include <xen/page.h>
 #include <xen/platform_pci.h>
+#include <asm/xen/hypervisor.h>
+#else
+#include <xen/barrier.h>
+#include <xen/evtchn.h>
+#include <xen/gnttab.h>
+#include <xen/xenbus.h>
+#ifdef HAVE_XEN_PLATFORM_COMPAT_H
+#include <xen/platform-compat.h>
+#undef HAVE_XEN_PLATFORM_COMPAT_H
+#define _HAVE_XEN_PLATFORM_COMPAT_H
+#endif
+#define CONFIG_PARAVIRT_XEN
+#include <xen/interface/io/blkif.h>
+#undef CONFIG_PARAVIRT_XEN
+#ifdef _HAVE_XEN_PLATFORM_COMPAT_H
+#define HAVE_XEN_PLATFORM_COMPAT_H
+#endif
+#define blkif_request_segment_aligned blkif_request_segment
+#define bind_evtchn_to_irqhandler bind_caller_port_to_irqhandler
+#define gnttab_end_foreign_access(ref, ro, page) \
+	((void)(ro), gnttab_end_foreign_access(ref, page))
+#define xen_has_pv_disk_devices() true
+#ifdef CONFIG_XEN
+#define xen_has_pv_and_legacy_disk_devices() false
+#else
+#include <xen/xen_pvonhvm.h>
+#define xen_has_pv_and_legacy_disk_devices() (!xen_pvonhvm_unplugged_disks)
+#endif
+#endif
 
 #include <xen/interface/grant_table.h>
 #include <xen/interface/io/blkif.h>
 #include <xen/interface/io/protocols.h>
-
-#include <asm/xen/hypervisor.h>
 
 enum blkif_state {
 	BLKIF_STATE_DISCONNECTED,
@@ -95,8 +123,10 @@ static const struct block_device_operations xlvbd_block_fops;
  */
 
 static unsigned int xen_blkif_max_segments = 32;
-module_param_named(max, xen_blkif_max_segments, int, S_IRUGO);
-MODULE_PARM_DESC(max, "Maximum amount of segments in indirect requests (default is 32)");
+module_param_named(max_indirect_segments, xen_blkif_max_segments, uint,
+		   S_IRUGO);
+MODULE_PARM_DESC(max_indirect_segments,
+		 "Maximum amount of segments in indirect requests (default is 32)");
 
 #define BLK_RING_SIZE __CONST_RING_SIZE(blkif, PAGE_SIZE)
 
