@@ -62,6 +62,12 @@ extern struct nsproxy init_nsproxy;
  *
  */
 
+/* XXX: SLE12 backward compatibility */
+static inline struct nsproxy *task_nsproxy(struct task_struct *tsk)
+{
+	return tsk->nsproxy;
+}
+
 int copy_namespaces(unsigned long flags, struct task_struct *tsk);
 void exit_task_namespaces(struct task_struct *tsk);
 void switch_task_namespaces(struct task_struct *tsk, struct nsproxy *new);
