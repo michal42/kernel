@@ -19,6 +19,9 @@
  *
  */
 
+/* kabi hack */
+#define __KVM_X86_C
+
 #include <linux/kvm_host.h>
 #include "irq.h"
 #include "mmu.h"

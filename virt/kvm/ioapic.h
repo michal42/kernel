@@ -54,7 +54,11 @@ struct dest_map {
 
 struct rtc_status {
 	int pending_eoi;
+#if defined(__GENKSYMS__) && defined(__KVM_X86_C)
+	DECLARE_BITMAP(dest_map, KVM_MAX_VCPUS);
+#else
 	struct dest_map dest_map;
+#endif
 };
 
 struct kvm_ioapic {
@@ -69,6 +73,9 @@ struct kvm_ioapic {
 	struct kvm *kvm;
 	void (*ack_notifier)(void *opaque, int irq);
 	spinlock_t lock;
+#if defined(__GENKSYMS__) && defined(__KVM_X86_C)
+	DECLARE_BITMAP(handled_vectors, 256);
+#endif
 	struct rtc_status rtc_status;
 };
 
