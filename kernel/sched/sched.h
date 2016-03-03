@@ -482,9 +482,15 @@ struct rq {
 
 	unsigned long cpu_power;
 
+#ifndef __GENKSYMS__
+	struct callback_head *balance_callback;
+#endif
+
 	unsigned char idle_balance;
 	/* For active balancing */
+#ifdef __GENKSYMS__
 	int post_schedule;
+#endif
 	int active_balance;
 	int push_cpu;
 	struct cpu_stop_work active_balance_work;
@@ -584,6 +590,21 @@ extern int migrate_swap(struct task_struct *, struct task_struct *);
 #endif /* CONFIG_NUMA_BALANCING */
 
 #ifdef CONFIG_SMP
+
+static inline void
+queue_balance_callback(struct rq *rq,
+		       struct callback_head *head,
+		       void (*func)(struct rq *rq))
+{
+	lockdep_assert_held(&rq->lock);
+
+	if (unlikely(head->next))
+		return;
+
+	head->func = (void (*)(struct callback_head *))func;
+	head->next = rq->balance_callback;
+	rq->balance_callback = head;
+}
 
 #define rcu_dereference_check_sched_domain(p) \
 	rcu_dereference_check((p), \
@@ -1029,7 +1050,9 @@ struct sched_class {
 	void (*migrate_task_rq)(struct task_struct *p, int next_cpu);
 
 	void (*pre_schedule) (struct rq *this_rq, struct task_struct *task);
+#ifdef __GENKSYMS__
 	void (*post_schedule) (struct rq *this_rq);
+#endif
 	void (*task_waking) (struct task_struct *task);
 	void (*task_woken) (struct rq *this_rq, struct task_struct *task);
 

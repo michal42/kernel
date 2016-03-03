@@ -29,7 +29,15 @@
 /* A few generic types ... taken from ses-2 */
 enum enclosure_component_type {
 	ENCLOSURE_COMPONENT_DEVICE = 0x01,
+#ifndef __GENKSYMS__
+	ENCLOSURE_COMPONENT_CONTROLLER_ELECTRONICS = 0x07,
+	ENCLOSURE_COMPONENT_SCSI_TARGET_PORT = 0x14,
+	ENCLOSURE_COMPONENT_SCSI_INITIATOR_PORT = 0x15,
+#endif
 	ENCLOSURE_COMPONENT_ARRAY_DEVICE = 0x17,
+#ifndef __GENKSYMS__
+	ENCLOSURE_COMPONENT_SAS_EXPANDER = 0x18,
+#endif
 };
 
 /* ses-2 common element status */

@@ -529,7 +529,7 @@ struct se_cmd {
 #ifdef __GENKSYMS__
 	sense_reason_t (*transport_complete_callback)(struct se_cmd *);
 #else
-	sense_reason_t (*transport_complete_callback)(struct se_cmd *, bool);
+	sense_reason_t (*transport_complete_callback)(struct se_cmd *, bool, int *);
 #endif
 
 	unsigned char		*t_task_cdb;
