@@ -138,7 +138,12 @@ struct nfs4_lock_state {
 	struct nfs_seqid_counter	ls_seqid;
 	nfs4_stateid		ls_stateid;
 	atomic_t		ls_count;
+#ifdef __GENKSYMS__
 	struct nfs4_lock_owner	ls_owner;
+#else
+	struct nfs4_lock_owner	__ls_owner;
+#define ls_owner __ls_owner.lo_u.posix_owner
+#endif
 };
 
 /* bits for nfs4_state->flags */

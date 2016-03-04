@@ -11,6 +11,8 @@ enum xen_domain_type {
 extern enum xen_domain_type xen_domain_type;
 #elif defined(CONFIG_XEN)
 #define xen_domain_type		XEN_PV_DOMAIN
+#elif defined(HAVE_XEN_PLATFORM_COMPAT_H)
+#define xen_domain_type		XEN_HVM_DOMAIN
 #else
 #define xen_domain_type		XEN_NATIVE
 #endif

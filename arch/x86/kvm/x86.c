@@ -19,6 +19,9 @@
  *
  */
 
+/* kabi hack */
+#define __KVM_X86_C
+
 #include <linux/kvm_host.h>
 #include "irq.h"
 #include "mmu.h"
@@ -5898,17 +5901,16 @@ static void process_nmi(struct kvm_vcpu *vcpu)
 
 static void vcpu_scan_ioapic(struct kvm_vcpu *vcpu)
 {
-	u64 eoi_exit_bitmap[4];
 	u32 tmr[8];
 
 	if (!kvm_apic_hw_enabled(vcpu->arch.apic))
 		return;
 
-	memset(eoi_exit_bitmap, 0, 32);
+	memset(vcpu->arch.eoi_exit_bitmap, 0, 256 / 8);
 	memset(tmr, 0, 32);
 
-	kvm_ioapic_scan_entry(vcpu, eoi_exit_bitmap, tmr);
-	kvm_x86_ops->load_eoi_exitmap(vcpu, eoi_exit_bitmap);
+	kvm_ioapic_scan_entry(vcpu, vcpu->arch.eoi_exit_bitmap, tmr);
+	kvm_x86_ops->load_eoi_exitmap(vcpu);
 	kvm_apic_update_tmr(vcpu, tmr);
 }
 

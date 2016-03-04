@@ -40,9 +40,25 @@ struct kvm_vcpu;
 #define RTC_GSI -1U
 #endif
 
+struct dest_map {
+	/* vcpu bitmap where IRQ has been sent */
+	DECLARE_BITMAP(map, KVM_MAX_VCPUS);
+
+	/*
+	 * Vector sent to a given vcpu, only valid when
+	 * the vcpu's bit in map is set
+	 */
+	u8 vectors[KVM_MAX_VCPUS];
+};
+
+
 struct rtc_status {
 	int pending_eoi;
+#if defined(__GENKSYMS__) && defined(__KVM_X86_C)
 	DECLARE_BITMAP(dest_map, KVM_MAX_VCPUS);
+#else
+	struct dest_map dest_map;
+#endif
 };
 
 struct kvm_ioapic {
@@ -57,7 +73,9 @@ struct kvm_ioapic {
 	struct kvm *kvm;
 	void (*ack_notifier)(void *opaque, int irq);
 	spinlock_t lock;
+#if defined(__GENKSYMS__) && defined(__KVM_X86_C)
 	DECLARE_BITMAP(handled_vectors, 256);
+#endif
 	struct rtc_status rtc_status;
 };
 
@@ -85,7 +103,6 @@ int kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
 int kvm_apic_compare_prio(struct kvm_vcpu *vcpu1, struct kvm_vcpu *vcpu2);
 void kvm_ioapic_update_eoi(struct kvm_vcpu *vcpu, int vector,
 			int trigger_mode);
-bool kvm_ioapic_handles_vector(struct kvm *kvm, int vector);
 int kvm_ioapic_init(struct kvm *kvm);
 void kvm_ioapic_destroy(struct kvm *kvm);
 int kvm_ioapic_set_irq(struct kvm_ioapic *ioapic, int irq, int irq_source_id,
@@ -93,7 +110,8 @@ int kvm_ioapic_set_irq(struct kvm_ioapic *ioapic, int irq, int irq_source_id,
 void kvm_ioapic_clear_all(struct kvm_ioapic *ioapic, int irq_source_id);
 void kvm_ioapic_reset(struct kvm_ioapic *ioapic);
 int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
-		struct kvm_lapic_irq *irq, unsigned long *dest_map);
+			     struct kvm_lapic_irq *irq,
+			     struct dest_map *dest_map);
 int kvm_get_ioapic(struct kvm *kvm, struct kvm_ioapic_state *state);
 int kvm_set_ioapic(struct kvm *kvm, struct kvm_ioapic_state *state);
 void kvm_vcpu_request_scan_ioapic(struct kvm *kvm);
