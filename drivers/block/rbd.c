@@ -2327,13 +2327,24 @@ static bool rbd_img_obj_end_request(struct rbd_obj_request *obj_request)
 	result = obj_request->result;
 	if (result) {
 		struct rbd_device *rbd_dev = img_request->rbd_dev;
+		enum obj_operation_type op_type
+					= rbd_img_request_op_type(img_request);
 
-		rbd_warn(rbd_dev, "%s %llx at %llx (%llx)",
-			obj_op_name(rbd_img_request_op_type(img_request)),
-			obj_request->length, obj_request->img_offset,
-			obj_request->offset);
-		rbd_warn(rbd_dev, "  result %d xferred %x",
-			result, xferred);
+		if ((op_type == OBJ_OP_CMP_AND_WRITE)
+		 && (result == -EILSEQ)) {
+			dout("%s: miscompare rbd_dev %p %s %llx at %llx "
+			     "(%llx)\n", __func__, rbd_dev,
+			     obj_op_name(op_type),
+			     obj_request->length, obj_request->img_offset,
+			     obj_request->offset);
+		} else {
+			rbd_warn(rbd_dev, "%s %llx at %llx (%llx)",
+				 obj_op_name(op_type),
+				 obj_request->length, obj_request->img_offset,
+				 obj_request->offset);
+			rbd_warn(rbd_dev, "  result %d xferred %x",
+				 result, xferred);
+		}
 		if (!img_request->result)
 			img_request->result = result;
 		/*

@@ -426,8 +426,8 @@ static void tcm_rbd_cmp_and_write_callback(struct rbd_img_request *img_request)
 					   &miscompare_off, 0,
 					   sizeof(miscompare_off));
 		cmd->sense_info = (u32)le64_to_cpu(miscompare_off);
-		pr_err("COMPARE_AND_WRITE: miscompare at offset %llu\n",
-		       (unsigned long long)cmd->bad_sector);
+		pr_notice("COMPARE_AND_WRITE: miscompare at offset %llu\n",
+			  (unsigned long long)cmd->bad_sector);
 		sense_reason = TCM_MISCOMPARE_VERIFY;
 	}
 	kfree(tcm_rbd_dev->cmp_and_write_sg);
