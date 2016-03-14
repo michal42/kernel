@@ -1064,12 +1064,13 @@ xfs_alloc_file_space(
 			(attr_flags & XFS_ATTR_DMI) == 0  &&
 			DM_EVENT_ENABLED(ip, DM_EVENT_WRITE)) {
 		xfs_off_t           end_dmi_offset;
+		int iolock = XFS_IOLOCK_EXCL;
 
 		end_dmi_offset = offset+len;
 		if (end_dmi_offset > XFS_ISIZE(ip))
 			end_dmi_offset = XFS_ISIZE(ip);
 		error = XFS_SEND_DATA(mp, DM_EVENT_WRITE, ip, offset,
-				      end_dmi_offset - offset, 0, NULL);
+				      end_dmi_offset - offset, 0, &iolock);
 		if (error)
 			return error;
 	}
@@ -1348,19 +1349,21 @@ xfs_free_file_space(
 	end_dmi_offset = offset + len;
 	endoffset_fsb = XFS_B_TO_FSBT(mp, end_dmi_offset);
 
+	if (attr_flags & XFS_ATTR_NOLOCK)
+		need_iolock = 0;
+
 	if (offset < XFS_ISIZE(ip) && (attr_flags & XFS_ATTR_DMI) == 0 &&
 	    DM_EVENT_ENABLED(ip, DM_EVENT_WRITE)) {
+		int iolock = need_iolock ? 0 : XFS_IOLOCK_EXCL;
 		if (end_dmi_offset > XFS_ISIZE(ip))
 			end_dmi_offset = XFS_ISIZE(ip);
 		error = XFS_SEND_DATA(mp, DM_EVENT_WRITE, ip,
 				offset, end_dmi_offset - offset,
-				AT_DELAY_FLAG(attr_flags), NULL);
+				AT_DELAY_FLAG(attr_flags), &iolock);
 		if (error)
 			return error;
 	}
 
-	if (attr_flags & XFS_ATTR_NOLOCK)
-		need_iolock = 0;
 	if (need_iolock) {
 		xfs_ilock(ip, XFS_IOLOCK_EXCL);
 		/* wait for the completion of any pending DIOs */
