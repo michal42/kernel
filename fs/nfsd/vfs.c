@@ -481,8 +481,8 @@ nfsd_setattr(struct svc_rqst *rqstp, struct svc_fh *fhp, struct iattr *iap,
 	fh_unlock(fhp);
 
 	/* to get NFSERR_JUKEBOX on the wire, need -ETIMEDOUT */
-	if (err == -EAGAIN)
-		err = -ETIMEDOUT;
+	if (host_err == -EAGAIN)
+		host_err = -ETIMEDOUT;
 
 out_put_write_access_nfserror:
 	err = nfserrno(host_err);
