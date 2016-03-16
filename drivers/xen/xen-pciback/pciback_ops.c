@@ -75,6 +75,13 @@ static void xen_pcibk_control_isr(struct pci_dev *dev, int reset)
 		enable ? "enable" : "disable");
 
 	if (enable) {
+		/*
+		 * The MSI or MSI-X should not have an IRQ handler. Otherwise
+		 * if the guest terminates we BUG_ON in free_msi_irqs.
+		 */
+		if (dev->msi_enabled || dev->msix_enabled)
+			goto out;
+
 		rc = request_irq(dev_data->irq,
 				xen_pcibk_guest_interrupt, IRQF_SHARED,
 				dev_data->irq_name, dev);
@@ -326,12 +333,12 @@ int xen_pcibk_disable_msix(struct xen_pcibk_device *pdev,
 	 * an undefined IRQ value of zero.
 	 */
 	op->value = dev->irq ? xen_pirq_from_irq(dev->irq) : 0;
-	if (unlikely(verbose_request))
-		printk(KERN_DEBUG DRV_NAME ": %s: MSI-X: %d\n",
-		       pci_name(dev), op->value);
 #else
 	op->value = dev->irq;
 #endif
+	if (unlikely(verbose_request))
+		printk(KERN_DEBUG DRV_NAME ": %s: MSI-X: %d\n",
+		       pci_name(dev), op->value);
 	return 0;
 }
 #endif
