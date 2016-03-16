@@ -1297,6 +1297,10 @@ static int wacom_probe(struct usb_interface *intf, const struct usb_device_id *i
 	strlcat(wacom->phys, "/input0", sizeof(wacom->phys));
 
 	endpoint = &intf->cur_altsetting->endpoint[0].desc;
+	if (!endpoint) {
+		error = -ENODEV;
+		goto fail3;
+	}
 
 	/* set the default size in case we do not get them from hid */
 	wacom_set_default_phy(features);
