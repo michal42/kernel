@@ -21,6 +21,9 @@ struct scm_creds {
 struct scm_fp_list {
 	short			count;
 	short			max;
+#ifndef __GENKSYMS__
+	struct user_struct	*user;
+#endif
 	struct file		*fp[SCM_MAX_FD];
 };
 
