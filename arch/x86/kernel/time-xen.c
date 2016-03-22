@@ -32,10 +32,6 @@
 #include <xen/interface/vcpu.h>
 
 #ifdef CONFIG_X86_64
-#include <asm/pvclock.h>
-#include <asm/vgtod.h>
-
-struct pvclock_vsyscall_time_info *__read_mostly pvclock_vsyscall_time;
 __visible volatile unsigned long jiffies __cacheline_aligned = INITIAL_JIFFIES;
 #endif
 
@@ -524,42 +520,8 @@ void setup_runstate_area(unsigned int cpu)
 	}
 }
 
-void setup_vsyscall_time_area(unsigned int cpu)
-{
-#ifdef CONFIG_X86_64
-	if (pvclock_vsyscall_time) {
-		struct vcpu_register_time_memory_area area = {
-			.addr.v = &pvclock_vsyscall_time[cpu].pvti
-		};
-
-		if (HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_time_memory_area,
-				       cpu, &area)) {
-			clocksource_xen.archdata.vclock_mode = VCLOCK_NONE;
-			vsyscall_gtod_data.vclock_mode = VCLOCK_NONE;
-		}
-	}
-#endif
-}
-
 static void __init _late_time_init(void)
 {
-#ifdef CONFIG_X86_64
-	unsigned int size = ALIGN(PVTI_SIZE * NR_CPUS, PAGE_SIZE);
-	struct pvclock_vsyscall_time_info *array
-		= alloc_pages_exact(size, GFP_KERNEL);
-	struct vcpu_register_time_memory_area area = {
-		.addr.v = &array->pvti
-	};
-
-	if (array && pvclock_init_vsyscall(array, size) == 0
-	    && HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_time_memory_area,
-				  0, &area) == 0) {
-		pvclock_vsyscall_time = array;
-		clocksource_xen.archdata.vclock_mode = VCLOCK_PVCLOCK;
-		vsyscall_gtod_data.vclock_mode = VCLOCK_PVCLOCK;
-	} else if (area.addr.v)
-		free_pages_exact(array, size);
-#endif
 	update_wallclock();
 	xen_clockevents_init();
 }

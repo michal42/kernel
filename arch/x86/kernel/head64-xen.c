@@ -218,6 +218,7 @@ void __init x86_64_start_reservations(char *real_mode_data)
 {
 	copy_bootdata(__va(real_mode_data));
 
+#ifdef CONFIG_XEN
 #ifdef CONFIG_BLK_DEV_INITRD
 	/* Reserve INITRD if needed. */
 	if (xen_start_info->flags & SIF_MOD_START_PFN)
@@ -231,6 +232,15 @@ void __init x86_64_start_reservations(char *real_mode_data)
 	else if (xen_start_info->mfn_list < __START_KERNEL_map)
 		memblock_reserve(PFN_PHYS(xen_start_info->first_p2m_pfn),
 				 PFN_PHYS(xen_start_info->nr_p2m_frames));
+#else
+	switch (boot_params.hdr.hardware_subarch) {
+	case X86_SUBARCH_INTEL_MID:
+		x86_intel_mid_early_setup();
+		break;
+	default:
+		break;
+	}
+#endif
 
 	start_kernel();
 }

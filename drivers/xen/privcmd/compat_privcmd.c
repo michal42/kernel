@@ -19,6 +19,7 @@
  */
 
 #include <linux/compat.h>
+#include <linux/fs.h>
 #include <linux/ioctl.h>
 #include <linux/syscalls.h>
 #include <asm/hypervisor.h>
@@ -26,7 +27,7 @@
 #include <xen/public/privcmd.h>
 #include <xen/compat_ioctl.h>
 
-int privcmd_ioctl_32(int fd, unsigned int cmd, void __user *arg)
+int privcmd_ioctl_32(struct file *file, unsigned int cmd, void __user *arg)
 {
 	int ret;
 
@@ -43,7 +44,8 @@ int privcmd_ioctl_32(int fd, unsigned int cmd, void __user *arg)
 		    put_user(compat_ptr(n32.entry), &p->entry))
 			return -EFAULT;
 		
-		ret = sys_ioctl(fd, IOCTL_PRIVCMD_MMAP, (unsigned long)p);
+		ret = compat_do_ioctl(file, IOCTL_PRIVCMD_MMAP,
+				      (unsigned long)p);
 	}
 		break;
 	case IOCTL_PRIVCMD_MMAPBATCH_32: {
@@ -80,7 +82,8 @@ int privcmd_ioctl_32(int fd, unsigned int cmd, void __user *arg)
 			return -EFAULT;
 #endif
 		
-		ret = sys_ioctl(fd, IOCTL_PRIVCMD_MMAPBATCH, (unsigned long)p);
+		ret = compat_do_ioctl(file, IOCTL_PRIVCMD_MMAPBATCH,
+				      (unsigned long)p);
 
 #ifdef xen_pfn32_t
 		for (i = 0; !ret && i < n32.num; ++i) {
@@ -129,7 +132,8 @@ int privcmd_ioctl_32(int fd, unsigned int cmd, void __user *arg)
 			return -EFAULT;
 #endif
 
-		ret = sys_ioctl(fd, IOCTL_PRIVCMD_MMAPBATCH_V2, (unsigned long)p);
+		ret = compat_do_ioctl(file, IOCTL_PRIVCMD_MMAPBATCH_V2,
+				      (unsigned long)p);
 	}
 		break;
 	default:

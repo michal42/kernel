@@ -20,7 +20,7 @@ typedef unsigned long paddr_t;
 typedef unsigned long maddr_t;
 #endif
 
-#ifdef CONFIG_XEN
+#if defined(CONFIG_XEN) && !defined(BUILD_VDSO32_64)
 
 extern unsigned long *phys_to_machine_mapping;
 extern unsigned long max_mapnr;
@@ -143,7 +143,12 @@ static inline paddr_t machine_to_phys(maddr_t machine)
 #define phys_to_machine(phys) ((maddr_t)(phys))
 #define machine_to_phys(mach) ((paddr_t)(mach))
 #define pfn_pte_ma(pfn, prot) pfn_pte(pfn, prot)
-#define __pte_ma(x) __pte(x)
+#ifndef BUILD_VDSO32_64
+# define __pte_ma(x) __pte(x)
+#else
+# define pte_phys_to_machine(phys) ((maddr_t)(phys))
+# define pte_machine_to_phys(mach) ((paddr_t)(mach))
+#endif
 
 #endif /* !CONFIG_XEN */
 

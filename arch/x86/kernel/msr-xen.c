@@ -170,7 +170,7 @@ static int pmsr_open(struct inode *inode, struct file *file)
  */
 static const struct file_operations pmsr_fops = {
 	.owner = THIS_MODULE,
-	.llseek = msr_seek,
+	.llseek = no_seek_end_llseek,
 	.read = pmsr_read,
 	.write = pmsr_write,
 	.open = pmsr_open,

@@ -699,6 +699,7 @@ static void network_tx_buf_gc(struct net_device *dev)
 	unsigned short id;
 	struct netfront_info *np = netdev_priv(dev);
 	struct sk_buff *skb;
+	bool more_to_do;
 
 	BUG_ON(!netfront_carrier_ok(np));
 
@@ -731,18 +732,8 @@ static void network_tx_buf_gc(struct net_device *dev)
 
 		np->tx.rsp_cons = prod;
 
-		/*
-		 * Set a new event, then check for race with update of tx_cons.
-		 * Note that it is essential to schedule a callback, no matter
-		 * how few buffers are pending. Even if there is space in the
-		 * transmit ring, higher layers may be blocked because too much
-		 * data is outstanding: in such cases notification from Xen is
-		 * likely to be the only kick that we'll get.
-		 */
-		np->tx.sring->rsp_event =
-			prod + ((np->tx.sring->req_prod - prod) >> 1) + 1;
-		mb();
-	} while ((cons == prod) && (prod != np->tx.sring->rsp_prod));
+		RING_FINAL_CHECK_FOR_RESPONSES(&np->tx, more_to_do);
+	} while (more_to_do);
 
 	network_maybe_wake_tx(dev);
 }

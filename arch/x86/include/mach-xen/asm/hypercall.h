@@ -165,7 +165,7 @@ int __must_check HYPERVISOR_event_channel_op_compat(int, void *);
 int __must_check HYPERVISOR_physdev_op_compat(int, void *);
 #endif
 
-#ifdef CONFIG_X86_32
+#if defined(CONFIG_X86_32) && !defined(BUILD_VDSO32_64)
 # include "hypercall_32.h"
 #else
 # include "hypercall_64.h"

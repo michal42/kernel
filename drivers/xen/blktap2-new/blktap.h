@@ -7,7 +7,6 @@
 #include <linux/cdev.h>
 #include <linux/init.h>
 #include <linux/scatterlist.h>
-#include <xen/barrier.h>
 #include <xen/blkif.h>
 
 extern int blktap_debug_level;

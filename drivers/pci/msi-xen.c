@@ -939,11 +939,6 @@ int pci_msi_enabled(void)
 }
 EXPORT_SYMBOL(pci_msi_enabled);
 
-void pci_msi_init_pci_dev(struct pci_dev *dev)
-{
-	INIT_LIST_HEAD(&dev->msi_list);
-}
-
 /**
  * pci_enable_msi_range - configure device's MSI capability structure
  * @dev: device to configure

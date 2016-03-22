@@ -45,6 +45,7 @@ static struct apic apic_xen = {
 	.phys_pkg_id			= xen_phys_pkg_id,
 
 #ifdef CONFIG_SMP
+	.send_IPI			= xen_send_IPI_single,
 	.send_IPI_mask			= xen_send_IPI_mask,
 	.send_IPI_mask_allbutself	= xen_send_IPI_mask_allbutself,
 	.send_IPI_allbutself		= xen_send_IPI_allbutself,

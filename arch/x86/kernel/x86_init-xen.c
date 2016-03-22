@@ -70,7 +70,6 @@ struct x86_init_ops x86_init __initdata = {
 
 	.timers = {
 		.setup_percpu_clockev	= NULL,
-		.tsc_pre_init		= x86_init_noop,
 		.timer_init		= x86_init_noop,
 		.wallclock_init		= x86_init_noop,
 	},

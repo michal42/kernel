@@ -345,8 +345,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	if (rc)
 		return rc;
 
-	setup_vsyscall_time_area(cpu);
-
 	rc = xen_smp_intr_init(cpu);
 	if (rc)
 		return rc;

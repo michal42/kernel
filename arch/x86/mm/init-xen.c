@@ -702,18 +702,10 @@ void free_init_pages(char *what, unsigned long begin, unsigned long end)
 	if (begin >= __START_KERNEL_map) {
 		unsigned long addr;
 
-		for (addr = begin; addr < end; addr += PAGE_SIZE) {
-			paddr_t pa = __pa_symbol(addr);
-
-			/* make_readonly() reports all kernel addresses. */
-			if (HYPERVISOR_update_va_mapping((unsigned long)__va(pa),
-							 pfn_pte(pa >> PAGE_SHIFT,
-								 PAGE_KERNEL),
-							 0))
-				BUG();
+		for (addr = begin; addr < end; addr += PAGE_SIZE)
 			if (HYPERVISOR_update_va_mapping(addr, __pte(0), 0))
 				BUG();
-		}
+
 		begin = (unsigned long)__va(__pa_symbol(begin));
 		end = (unsigned long)__va(__pa_symbol(end));
 	}

@@ -18,13 +18,6 @@
 
 	.section .entry.text, "ax"
 
-#ifdef CONFIG_PARAVIRT
-ENTRY(native_usergs_sysret32)
-	swapgs
-	sysretl
-ENDPROC(native_usergs_sysret32)
-#endif
-
 /*
  * 32-bit SYSENTER instruction entry.
  *

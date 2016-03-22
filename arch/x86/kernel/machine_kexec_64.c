@@ -368,6 +368,7 @@ int arch_kimage_file_post_load_cleanup(struct kimage *image)
 	return image->fops->cleanup(image->image_loader_data);
 }
 
+#ifdef CONFIG_KEXEC_VERIFY_SIG
 int arch_kexec_kernel_verify_sig(struct kimage *image, void *kernel,
 				 unsigned long kernel_len)
 {
@@ -378,6 +379,7 @@ int arch_kexec_kernel_verify_sig(struct kimage *image, void *kernel,
 
 	return image->fops->verify_sig(kernel, kernel_len);
 }
+#endif
 
 /*
  * Apply purgatory relocations.

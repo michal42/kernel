@@ -124,12 +124,12 @@ void xen_smp_send_reschedule(int cpu)
 		WARN_ON(1);
 		return;
 	}
-	xen_send_IPI_mask(cpumask_of(cpu), RESCHEDULE_VECTOR);
+	xen_send_IPI_single(cpu, RESCHEDULE_VECTOR);
 }
 
 void xen_send_call_func_single_ipi(int cpu)
 {
-	xen_send_IPI_mask(cpumask_of(cpu), CALL_FUNC_SINGLE_VECTOR);
+	xen_send_IPI_single(cpu, CALL_FUNC_SINGLE_VECTOR);
 }
 
 void xen_send_call_func_ipi(const struct cpumask *mask)

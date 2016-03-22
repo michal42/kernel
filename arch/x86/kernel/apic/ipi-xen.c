@@ -7,6 +7,14 @@
 #ifdef CONFIG_SMP
 #include <xen/evtchn.h>
 
+/*
+ * Helper function for APICs which insist on cpumasks
+ */
+void xen_send_IPI_single(int cpu, int vector)
+{
+	notify_remote_via_ipi(vector, cpu);
+}
+
 void xen_send_IPI_mask_allbutself(const struct cpumask *cpumask, int vector)
 {
 	unsigned int cpu, this_cpu = smp_processor_id();

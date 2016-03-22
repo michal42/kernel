@@ -6,7 +6,7 @@ xen-privcmd_$(CONFIG_PARAVIRT_XEN) := xen-privcmd.o
 
 obj-$(CONFIG_HOTPLUG_CPU)	+= $(xen-hotplug-y)
 obj-$(CONFIG_X86)		+= fallback.o
-obj-$(CONFIG_PARAVIRT_XEN)	+= grant-table.o features.o balloon.o manage.o preempt.o
+obj-$(CONFIG_PARAVIRT_XEN)	+= grant-table.o features.o balloon.o manage.o preempt.o time.o
 obj-$(CONFIG_PARAVIRT_XEN)	+= events/
 
 xen-balloon_$(CONFIG_XEN)	:= balloon/

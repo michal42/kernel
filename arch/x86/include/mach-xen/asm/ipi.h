@@ -4,6 +4,7 @@
 #include <asm/hw_irq.h>
 #include <asm/smp.h>
 
+void xen_send_IPI_single(int cpu, int vector);
 void xen_send_IPI_mask(const struct cpumask *, int vector);
 void xen_send_IPI_mask_allbutself(const struct cpumask *, int vector);
 void xen_send_IPI_allbutself(int vector);

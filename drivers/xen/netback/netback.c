@@ -120,7 +120,7 @@ static inline void netif_set_pg_ext(struct page *pg, unsigned int group,
 }
 
 #define netif_get_pg_ext(pg, netbk, index) do { \
-	const struct page *pg__ = (pg); \
+	/*const*/ struct page *pg__ = (pg); \
 	union pg_ext ext__ = { .mapping = pg__->mapping }; \
 	unsigned int grp__ = ext__.e.grp - 1; \
 	unsigned int idx__ = index = ext__.e.idx; \
@@ -578,7 +578,7 @@ struct netrx_pending_operations {
 	struct netbk_rx_meta *meta;
 };
 
-static void set_copy_source(gnttab_copy_t *cop, const struct page *page)
+static void set_copy_source(gnttab_copy_t *cop, /*const*/ struct page *page)
 {
 	struct xen_netbk *netbk;
 	unsigned int idx;

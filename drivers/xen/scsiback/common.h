@@ -47,7 +47,6 @@
 #include <scsi/scsi_dbg.h>
 #include <scsi/scsi_eh.h>
 #include <asm/hypervisor.h>
-#include <xen/barrier.h>
 #include <xen/xenbus.h>
 #include <xen/interface/io/ring.h>
 #include <xen/interface/io/vscsiif.h>
@@ -96,11 +95,8 @@ struct vscsibk_info {
 	struct page **mmap_pages;
 
 	struct pending_req *preq;
-
-	union {
-		struct gnttab_map_grant_ref   *gmap;
-		struct gnttab_unmap_grant_ref *gunmap;
-	};
+	struct gnttab_map_grant_ref   *gmap;
+	struct gnttab_unmap_grant_ref *gunmap;
 };
 
 typedef struct pending_req {

@@ -33,7 +33,6 @@
 #ifndef NETFRONT_H
 #define NETFRONT_H
 
-#include <xen/barrier.h>
 #include <xen/interface/io/netif.h>
 #include <linux/slab.h>
 #include <linux/netdevice.h>

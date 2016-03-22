@@ -920,7 +920,6 @@ int pmdp_set_access_flags(struct vm_area_struct *vma,
 
 	if (changed && dirty) {
 		*pmdp = entry;
-		pmd_update_defer(vma->vm_mm, address, pmdp);
 		/*
 		 * We had a write-protection fault here and changed the pmd
 		 * to to more permissive. No need to flush the TLB for that,
@@ -958,9 +957,6 @@ int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 		ret = test_and_clear_bit(_PAGE_BIT_ACCESSED,
 					 (unsigned long *)pmdp);
 
-	if (ret)
-		pmd_update(vma->vm_mm, addr, pmdp);
-
 	return ret;
 }
 #endif
@@ -993,20 +989,6 @@ int pmdp_clear_flush_young(struct vm_area_struct *vma,
 		flush_tlb_range(vma, address, address + HPAGE_PMD_SIZE);
 
 	return young;
-}
-
-void pmdp_splitting_flush(struct vm_area_struct *vma,
-			  unsigned long address, pmd_t *pmdp)
-{
-	int set;
-	VM_BUG_ON(address & ~HPAGE_PMD_MASK);
-	set = !test_and_set_bit(_PAGE_BIT_SPLITTING,
-				(unsigned long *)pmdp);
-	if (set) {
-		pmd_update(vma->vm_mm, address, pmdp);
-		/* need tlb flush only to serialize against gup-fast */
-		flush_tlb_range(vma, address, address + HPAGE_PMD_SIZE);
-	}
 }
 #endif
 
@@ -1045,11 +1027,10 @@ void xen_set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t flags)
 
 #ifdef CONFIG_X86_VSYSCALL_EMULATION
 	case VSYSCALL_PAGE:
-#endif
-	case PVCLOCK_FIXMAP_BEGIN ... PVCLOCK_FIXMAP_END:
 		pte = pfn_pte(phys >> PAGE_SHIFT, flags);
 		set_pte_vaddr_pud(level3_user_pgt, address, pte);
 		break;
+#endif
 	case FIX_EARLYCON_MEM_BASE:
 	case FIX_SHARED_INFO:
 	case FIX_ISAMAP_END ... FIX_ISAMAP_BEGIN:

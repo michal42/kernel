@@ -1243,6 +1243,8 @@ void __init setup_arch(char **cmdline_p)
 				 PFN_PHYS(max_pfn - xen_start_info->nr_pages));
 #endif
 
+	max_possible_pfn = max_pfn;
+
 #ifdef CONFIG_X86_32
 	/* max_low_pfn get updated here */
 	find_low_pfn_range();

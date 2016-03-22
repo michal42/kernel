@@ -798,9 +798,7 @@ ENTRY(error_entry)
 	 * (which can take locks).
 	 */
 	TRACE_IRQS_OFF
-#ifdef CONFIG_CONTEXT_TRACKING
-	call enter_from_user_mode
-#endif
+	CALL_enter_from_user_mode
 	ret
 
 .Lerror_entry_done:

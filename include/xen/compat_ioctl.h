@@ -29,7 +29,8 @@
 #define xen_pfn32_t __u32
 #endif
 
-extern int privcmd_ioctl_32(int fd, unsigned int cmd, void __user *arg);
+int privcmd_ioctl_32(struct file *, unsigned int cmd, void __user *arg);
+
 struct privcmd_mmap_32 {
 	int num;
 	domid_t dom;
