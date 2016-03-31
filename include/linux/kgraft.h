@@ -37,6 +37,8 @@ struct kgr_patch;
  *
  * @name: function to patch
  * @new_fun: function with the new body
+ * @objname: parent object of the function to patch (module name or NULL for
+ *	     vmlinux)
  * @loc_name: cache of @name's fentry
  * @loc_old: cache of the last entry for @name in the patches list
  * @loc_new: cache of @new_name's fentry
@@ -48,6 +50,7 @@ struct kgr_patch_fun {
 
 	const char *name;
 	void *new_fun;
+	const char *objname;
 
 	bool abort_if_missing;
 	enum kgr_patch_state {
@@ -101,6 +104,13 @@ struct kgr_patch {
 #define KGR_PATCH(_name, _new_function, abort)	{			\
 		.name = #_name,						\
 		.new_fun = _new_function,				\
+		.objname = NULL,					\
+		.abort_if_missing = abort,				\
+	}
+#define KGR_PATCH_OBJ(_name, _new_function, _objname, abort)	{	\
+		.name = #_name,						\
+		.new_fun = _new_function,				\
+		.objname = _objname,					\
 		.abort_if_missing = abort,				\
 	}
 #define KGR_PATCH_END				{ }
