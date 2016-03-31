@@ -174,6 +174,11 @@ static void kgr_remove_patches_fast(void)
 	}
 }
 
+static const char *kgr_get_objname(const struct kgr_patch_fun *pf)
+{
+	return pf->objname ? pf->objname : "vmlinux";
+}
+
 /*
  * In case of replace_all patch we need to finalize also reverted functions in
  * all previous patches. All previous patches contain only functions either in
@@ -211,8 +216,9 @@ static void kgr_finalize_replaced_funs(void)
 				 * kgr_switch_fops called by kgr_patch_code. But
 				 * leave it here to be sure.
 				 */
-				pr_err("kgr: finalization for %s failed (%d). System in inconsistent state with no way out.\n",
-					pf->name, ret);
+				pr_err("kgr: finalization for %s:%s,%lu failed (%d). System in inconsistent state with no way out.\n",
+					kgr_get_objname(pf), pf->name,
+					pf->sympos, ret);
 				BUG();
 			}
 		}
@@ -229,8 +235,9 @@ static void kgr_finalize(void)
 		ret = kgr_patch_code(patch_fun, true, kgr_revert, false);
 
 		if (ret < 0) {
-			pr_err("kgr: finalization for %s failed (%d). System in inconsistent state with no way out.\n",
-				patch_fun->name, ret);
+			pr_err("kgr: finalization for %s:%s,%lu failed (%d). System in inconsistent state with no way out.\n",
+				kgr_get_objname(patch_fun), patch_fun->name,
+				patch_fun->sympos, ret);
 			BUG();
 		}
 
@@ -444,14 +451,14 @@ static unsigned long kgr_kallsyms_lookup(const struct kgr_patch_fun *pf)
 	 * otherwise ensure the symbol position count matches sympos.
 	 */
 	if (args.addr == 0)
-		pr_err("kgr: function %s not resolved\n", pf->name);
+		pr_err("kgr: function %s:%s,%lu not resolved\n",
+			kgr_get_objname(pf), pf->name, pf->sympos);
 	else if (pf->sympos == 0 && args.count > 1)
 		pr_err("kgr: unresolvable ambiguity for function %s in object %s\n",
-			pf->name, pf->objname ? pf->objname : "vmlinux");
+			pf->name, kgr_get_objname(pf));
 	else if (pf->sympos > 0 && pf->sympos != args.count)
 		pr_err("kgr: position %lu for function %s in object %s not found\n",
-			pf->sympos, pf->name,
-			pf->objname ? pf->objname : "vmlinux");
+			pf->sympos, pf->name, kgr_get_objname(pf));
 	else
 		return args.addr;
 
@@ -476,8 +483,8 @@ static unsigned long kgr_get_fentry_loc(const struct kgr_patch_fun *pf)
 
 	check_name = kallsyms_lookup(fentry_loc, NULL, NULL, NULL, check_buf);
 	if (strcmp(check_name, pf->name)) {
-		pr_err("kgr: we got out of bounds the intended function (%s -> %s)\n",
-				pf->name, check_name);
+		pr_err("kgr: we got out of bounds of the intended function (%s:%s,%lu -> %s)\n",
+			kgr_get_objname(pf), pf->name, pf->sympos, check_name);
 		return -EINVAL;
 	}
 
@@ -649,8 +656,9 @@ static int kgr_switch_fops(struct kgr_patch_fun *patch_fun,
 	if (new_fops) {
 		err = kgr_ftrace_enable(patch_fun, new_fops);
 		if (err) {
-			pr_err("kgr: cannot enable ftrace function for %s (%lx, %d)\n",
-				patch_fun->name, patch_fun->loc_old, err);
+			pr_err("kgr: cannot enable ftrace function for %s:%s,%lu (%lx, %d)\n",
+				kgr_get_objname(patch_fun), patch_fun->name,
+				patch_fun->sympos, patch_fun->loc_old, err);
 			return err;
 		}
 	}
@@ -664,8 +672,9 @@ static int kgr_switch_fops(struct kgr_patch_fun *patch_fun,
 	if (unreg_fops) {
 		err = kgr_ftrace_disable(patch_fun, unreg_fops);
 		if (err) {
-			pr_err("kgr: disabling ftrace function for %s failed (%d)\n",
-				patch_fun->name, err);
+			pr_err("kgr: disabling ftrace function for %s:%s,%lu failed (%d)\n",
+				kgr_get_objname(patch_fun), patch_fun->name,
+				patch_fun->sympos, err);
 			/*
 			 * In case of failure we do not know which state we are
 			 * in. There is something wrong going on in kGraft of
@@ -704,16 +713,18 @@ static int kgr_init_ftrace_ops(struct kgr_patch_fun *patch_fun)
 	if (IS_ERR_VALUE(fentry_loc))
 		return fentry_loc;
 
-	pr_debug("kgr: storing %lx to loc_name for %s\n",
-			fentry_loc, patch_fun->name);
+	pr_debug("kgr: storing %lx to loc_name for %s:%s,%lu\n",
+		fentry_loc, kgr_get_objname(patch_fun), patch_fun->name,
+		patch_fun->sympos);
 	patch_fun->loc_name = fentry_loc;
 
 	fentry_loc = kgr_get_old_fun(patch_fun);
 	if (IS_ERR_VALUE(fentry_loc))
 		return fentry_loc;
 
-	pr_debug("kgr: storing %lx to loc_old for %s\n",
-			fentry_loc, patch_fun->name);
+	pr_debug("kgr: storing %lx to loc_old for %s:%s,%lu\n",
+		fentry_loc, kgr_get_objname(patch_fun), patch_fun->name,
+		patch_fun->sympos);
 	patch_fun->loc_old = fentry_loc;
 
 	fops = &patch_fun->ftrace_ops_fast;
@@ -819,7 +830,8 @@ static int kgr_patch_code(struct kgr_patch_fun *patch_fun, bool final,
 
 	patch_fun->state = next_state;
 
-	pr_debug("kgr: redirection for %s done\n", patch_fun->name);
+	pr_debug("kgr: redirection for %s:%s,%lu done\n",
+		kgr_get_objname(patch_fun), patch_fun->name, patch_fun->sympos);
 
 	return 0;
 }
@@ -868,8 +880,9 @@ static void kgr_patch_code_failed(struct kgr_patch_fun *patch_fun)
 			 * This should not happen. loc_old had been correctly
 			 * set before (by kgr_init_ftrace_ops).
 			 */
-			WARN(!old_fun, "kgr: loc_old is set incorrectly for %s. Do not revert anything!",
-				patch_fun->name);
+			WARN(!old_fun, "kgr: loc_old is set incorrectly for %s:%s,%lu. Do not revert anything!",
+				kgr_get_objname(patch_fun), patch_fun->name,
+				patch_fun->sympos);
 			patch_fun->loc_old = old_fun;
 		}
 		next_state = KGR_PATCH_APPLIED;
@@ -994,8 +1007,9 @@ static int kgr_revert_replaced_funs(struct kgr_patch *patch)
 
 				ret = kgr_patch_code(pf, false, true, true);
 				if (ret < 0) {
-					pr_err("kgr: cannot revert function %s in patch %s (%d)\n",
-					      pf->name, p->name, ret);
+					pr_err("kgr: cannot revert function %s:%s,%lu in patch %s (%d)\n",
+						kgr_get_objname(pf), pf->name,
+						pf->sympos, p->name, ret);
 					pf->loc_old = loc_old_temp;
 					kgr_patching_failed(p, pf, true);
 					return ret;
@@ -1228,14 +1242,16 @@ static int kgr_patch_code_delayed(struct kgr_patch_fun *patch_fun)
 	if (new_ops) {
 		err = kgr_ftrace_enable(patch_fun, new_ops);
 		if (err) {
-			pr_err("kgr: enabling of ftrace function for the originally skipped %lx (%s) failed with %d\n",
-			       patch_fun->loc_old, patch_fun->name, err);
+			pr_err("kgr: enabling of ftrace function for the originally skipped %lx (%s:%s,%lu) failed with %d\n",
+				patch_fun->loc_old, kgr_get_objname(patch_fun),
+				patch_fun->name, patch_fun->sympos, err);
 			return err;
 		}
 	}
 
 	patch_fun->state = next_state;
-	pr_debug("kgr: delayed redirection for %s done\n", patch_fun->name);
+	pr_debug("kgr: delayed redirection for %s:%s,%lu done\n",
+		kgr_get_objname(patch_fun), patch_fun->name, patch_fun->sympos);
 	return 0;
 }
 
@@ -1370,8 +1386,9 @@ static int kgr_forced_code_patch_removal(struct kgr_patch_fun *patch_fun)
 	if (ops) {
 		err = kgr_ftrace_disable(patch_fun, ops);
 		if (err) {
-			pr_err("kgr: forced disabling of ftrace function for %s failed (%d)\n",
-				patch_fun->name, err);
+			pr_err("kgr: forced disabling of ftrace function for %s:%s,%lu failed (%d)\n",
+				kgr_get_objname(patch_fun), patch_fun->name,
+				patch_fun->sympos, err);
 			/*
 			 * Cannot remove stubs for leaving module. This is very
 			 * suspicious situation, so we better BUG here.
@@ -1381,7 +1398,8 @@ static int kgr_forced_code_patch_removal(struct kgr_patch_fun *patch_fun)
 	}
 
 	patch_fun->state = KGR_PATCH_SKIPPED;
-	pr_debug("kgr: forced disabling for %s done\n", patch_fun->name);
+	pr_debug("kgr: forced disabling for %s:%s,%lu done\n",
+		kgr_get_objname(patch_fun), patch_fun->name, patch_fun->sympos);
 	return 0;
 }
 
