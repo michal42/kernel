@@ -334,7 +334,12 @@ struct module
 #else
 	struct mod_kallsyms *kallsyms;
 	struct mod_kallsyms core_kallsyms;
-	char dummy_kabi[8];
+	union {
+#ifdef CONFIG_KGRAFT
+		bool kgr_alive;
+#endif
+		char dummy_kabi[8];
+	};
 #endif
 
 	/* Section attributes */
@@ -373,10 +378,6 @@ struct module
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD
 	unsigned int num_ftrace_callsites;
 	unsigned long *ftrace_callsites;
-#endif
-
-#ifdef CONFIG_KGRAFT
-	bool kgr_alive;
 #endif
 
 #ifdef CONFIG_MODULE_UNLOAD
