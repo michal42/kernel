@@ -334,7 +334,12 @@ struct module
 #else
 	struct mod_kallsyms *kallsyms;
 	struct mod_kallsyms core_kallsyms;
-	char dummy_kabi[8];
+	union {
+#ifdef CONFIG_KGRAFT
+		bool kgr_alive;
+#endif
+		char dummy_kabi[8];
+	};
 #endif
 
 	/* Section attributes */
