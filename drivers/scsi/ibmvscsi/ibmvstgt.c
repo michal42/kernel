@@ -445,7 +445,6 @@ static int process_mad_iu(struct iu_entry *iue)
 {
 	union viosrp_iu *iu = vio_iu(iue);
 	struct viosrp_adapter_info *info;
-	struct viosrp_host_config *conf;
 
 	switch (iu->mad.empty_iu.common.type) {
 	case VIOSRP_EMPTY_IU_TYPE:
@@ -461,11 +460,6 @@ static int process_mad_iu(struct iu_entry *iue)
 		info->common.status = send_adapter_info(iue, info->buffer,
 							info->common.length);
 		send_iu(iue, sizeof(*info), VIOSRP_MAD_FORMAT);
-		break;
-	case VIOSRP_HOST_CONFIG_TYPE:
-		conf = &iu->mad.host_config;
-		conf->common.status = 1;
-		send_iu(iue, sizeof(*conf), VIOSRP_MAD_FORMAT);
 		break;
 	default:
 		eprintk("Unknown type %u\n", iu->srp.rsp.opcode);
