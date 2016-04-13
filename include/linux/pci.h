@@ -345,6 +345,7 @@ struct pci_dev {
 	unsigned int	broken_intx_masking:1;
 	unsigned int	io_window_1k:1;	/* Intel P2P bridge 1K I/O windows */
 #ifndef __GENKSYMS__
+	unsigned int	non_compliant_bars:1;	/* broken BARs; ignore them */
 	unsigned int	no_64bit_msi:1; /* device may only use 32-bit MSIs */
 #endif
 	pci_dev_flags_t dev_flags;

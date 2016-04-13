@@ -731,8 +731,8 @@ static inline void entering_irq(void)
 #ifndef CONFIG_XEN
 static inline void entering_ack_irq(void)
 {
-	ack_APIC_irq();
 	entering_irq();
+	ack_APIC_irq();
 }
 #endif
 
