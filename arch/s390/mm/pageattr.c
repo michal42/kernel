@@ -72,7 +72,7 @@ static void change_page_attr(unsigned long addr, int numpages,
 		*ptep = set(*ptep);
 		addr += PAGE_SIZE;
 	}
-	__tlb_flush_kernel();
+	__tlb_flush_global();
 }
 
 int set_memory_ro(unsigned long addr, int numpages)
