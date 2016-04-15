@@ -1671,14 +1671,15 @@ static void fib6_prune_clones(struct net *net, struct fib6_node *fn,
  *	Garbage collection
  */
 
-static struct fib6_gc_args
+struct fib6_gc_args
 {
 	int			timeout;
 	int			more;
-} gc_args;
+};
 
 static int fib6_age(struct rt6_info *rt, void *arg)
 {
+	struct fib6_gc_args *gc_args = arg;
 	unsigned long now = jiffies;
 
 	/*
@@ -1694,10 +1695,10 @@ static int fib6_age(struct rt6_info *rt, void *arg)
 			RT6_TRACE("expiring %p\n", rt);
 			return -1;
 		}
-		gc_args.more++;
+		gc_args->more++;
 	} else if (rt->rt6i_flags & RTF_CACHE) {
 		if (atomic_read(&rt->dst.__refcnt) == 0 &&
-		    time_after_eq(now, rt->dst.lastuse + gc_args.timeout)) {
+		    time_after_eq(now, rt->dst.lastuse + gc_args->timeout)) {
 			RT6_TRACE("aging clone %p\n", rt);
 			return -1;
 		} else if (rt->rt6i_flags & RTF_GATEWAY) {
@@ -1715,7 +1716,7 @@ static int fib6_age(struct rt6_info *rt, void *arg)
 				return -1;
 			}
 		}
-		gc_args.more++;
+		gc_args->more++;
 	}
 
 	return 0;
@@ -1725,6 +1726,7 @@ static DEFINE_SPINLOCK(fib6_gc_lock);
 
 void fib6_run_gc(unsigned long expires, struct net *net, bool force)
 {
+	struct fib6_gc_args gc_args;
 	unsigned long now;
 
 	if (force) {
@@ -1738,7 +1740,7 @@ void fib6_run_gc(unsigned long expires, struct net *net, bool force)
 
 	gc_args.more = icmp6_dst_gc();
 
-	fib6_clean_all(net, fib6_age, 0, NULL);
+	fib6_clean_all(net, fib6_age, 0, &gc_args);
 	now = jiffies;
 	net->ipv6.ip6_rt_last_gc = now;
 
