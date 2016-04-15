@@ -50,7 +50,9 @@ struct netns_ipv6 {
 	struct timer_list       ip6_fib_timer;
 	struct hlist_head       *fib_table_hash;
 	struct fib6_table       *fib6_main_tbl;
+	struct list_head	fib6_walkers;
 	struct dst_ops		ip6_dst_ops;
+	rwlock_t		fib6_walker_lock;
 	unsigned int		 ip6_rt_gc_expire;
 	__u32			fib6_sernum;
 	unsigned long		 ip6_rt_last_gc;
