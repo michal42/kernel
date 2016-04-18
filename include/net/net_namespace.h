@@ -123,6 +123,10 @@ struct net {
 	atomic_t		fnhe_genid;
 #ifndef __GENKSYMS__
 	struct sock  * __percpu	*tcp_sk;
+	struct list_head	fib6_walkers;
+	rwlock_t		fib6_walker_lock;
+	spinlock_t		fib6_gc_lock;
+	__u32			fib6_sernum;
 #endif
 };
 
