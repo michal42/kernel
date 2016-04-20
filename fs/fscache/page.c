@@ -214,7 +214,7 @@ int __fscache_attr_changed(struct fscache_cookie *cookie)
 		return -ENOMEM;
 	}
 
-	fscache_operation_init(op, fscache_attr_changed_op, NULL, NULL);
+	fscache_operation_init(op, fscache_attr_changed_op, NULL);
 	op->flags = FSCACHE_OP_ASYNC | (1 << FSCACHE_OP_EXCLUSIVE);
 
 	spin_lock(&cookie->lock);
@@ -244,7 +244,7 @@ EXPORT_SYMBOL(__fscache_attr_changed);
 /*
  * Handle cancellation of a pending retrieval op
  */
-static void fscache_do_cancel_retrieval(struct fscache_operation *_op)
+void fscache_do_cancel_retrieval(struct fscache_operation *_op)
 {
 	struct fscache_retrieval *op =
 		container_of(_op, struct fscache_retrieval, op);
@@ -255,7 +255,7 @@ static void fscache_do_cancel_retrieval(struct fscache_operation *_op)
 /*
  * release a retrieval op reference
  */
-static void fscache_release_retrieval_op(struct fscache_operation *_op)
+void fscache_release_retrieval_op(struct fscache_operation *_op)
 {
 	struct fscache_retrieval *op =
 		container_of(_op, struct fscache_retrieval, op);
@@ -289,9 +289,7 @@ static struct fscache_retrieval *fscache_alloc_retrieval(
 		return NULL;
 	}
 
-	fscache_operation_init(&op->op, NULL,
-			       fscache_do_cancel_retrieval,
-			       fscache_release_retrieval_op);
+	fscache_operation_init(&op->op, NULL, fscache_release_retrieval_op);
 	atomic_inc(&cookie->n_active);
 	op->op.flags	= FSCACHE_OP_MYTHREAD |
 		(1UL << FSCACHE_OP_WAITING) |
@@ -923,7 +921,7 @@ int __fscache_write_page(struct fscache_cookie *cookie,
 	if (!op)
 		goto nomem;
 
-	fscache_operation_init(&op->op, fscache_write_op, NULL,
+	fscache_operation_init(&op->op, fscache_write_op,
 			       fscache_release_write_op);
 	op->op.flags = FSCACHE_OP_ASYNC |
 		(1 << FSCACHE_OP_WAITING) |
