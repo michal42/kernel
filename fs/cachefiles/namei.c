@@ -192,7 +192,7 @@ try_again:
 	/* an old object from a previous incarnation is hogging the slot - we
 	 * need to wait for it to be destroyed */
 wait_for_old_object:
-	if (fscache_object_is_live(&object->fscache)) {
+	if (fscache_object_is_live(&xobject->fscache)) {
 		printk(KERN_ERR "\n");
 		printk(KERN_ERR "CacheFiles: Error:"
 		       " Unexpected object collision\n");
