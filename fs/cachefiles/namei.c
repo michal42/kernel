@@ -138,7 +138,8 @@ found_dentry:
 		cachefiles_printk_object(object, NULL);
 	} else {
 		if (why != FSCACHE_OBJECT_IS_STALE)
-			fscache_object_mark_killed(&object->fscache, why);
+			set_bit(FSCACHE_OBJECT_KILLED_BY_CACHE,
+				&object->fscache.flags);
 	}
 
 	write_unlock(&cache->active_lock);
@@ -623,7 +624,6 @@ lookup_again:
 				goto delete_error;
 
 			_debug("redo lookup");
-			fscache_object_retrying_stale(&object->fscache);
 			goto lookup_again;
 		}
 	}
@@ -677,7 +677,7 @@ lookup_again:
 	return 0;
 
 no_space_error:
-	fscache_object_mark_killed(&object->fscache, FSCACHE_OBJECT_NO_SPACE);
+	set_bit(FSCACHE_OBJECT_KILLED_BY_CACHE, &object->fscache.flags);
 create_error:
 	_debug("create error %d", ret);
 	if (ret == -EIO)
