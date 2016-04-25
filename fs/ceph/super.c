@@ -144,7 +144,13 @@ enum {
 	Opt_ino32,
 	Opt_noino32,
 	Opt_fscache,
-	Opt_nofscache
+	Opt_nofscache,
+	Opt_poolperm,
+	Opt_nopoolperm,
+#ifdef CONFIG_CEPH_FS_POSIX_ACL
+	Opt_acl,
+#endif
+	Opt_noacl,
 };
 
 static match_table_t fsopt_tokens = {
@@ -172,6 +178,12 @@ static match_table_t fsopt_tokens = {
 	{Opt_noino32, "noino32"},
 	{Opt_fscache, "fsc"},
 	{Opt_nofscache, "nofsc"},
+	{Opt_poolperm, "poolperm"},
+	{Opt_nopoolperm, "nopoolperm"},
+#ifdef CONFIG_CEPH_FS_POSIX_ACL
+	{Opt_acl, "acl"},
+#endif
+	{Opt_noacl, "noacl"},
 	{-1, NULL}
 };
 
@@ -271,6 +283,21 @@ static int parse_fsopt_token(char *c, void *private)
 	case Opt_nofscache:
 		fsopt->flags &= ~CEPH_MOUNT_OPT_FSCACHE;
 		break;
+	case Opt_poolperm:
+		fsopt->flags &= ~CEPH_MOUNT_OPT_NOPOOLPERM;
+		printk ("pool perm");
+		break;
+	case Opt_nopoolperm:
+		fsopt->flags |= CEPH_MOUNT_OPT_NOPOOLPERM;
+		break;
+#ifdef CONFIG_CEPH_FS_POSIX_ACL
+	case Opt_acl:
+		fsopt->sb_flags |= MS_POSIXACL;
+		break;
+#endif
+	case Opt_noacl:
+		fsopt->sb_flags &= ~MS_POSIXACL;
+		break;
 	default:
 		BUG_ON(token);
 	}
@@ -340,6 +367,11 @@ static int parse_mount_options(struct ceph_mount_options **pfsopt,
 	fsopt->rsize = CEPH_RSIZE_DEFAULT;
 	fsopt->rasize = CEPH_RASIZE_DEFAULT;
 	fsopt->snapdir_name = kstrdup(CEPH_SNAPDIRNAME_DEFAULT, GFP_KERNEL);
+	if (!fsopt->snapdir_name) {
+		err = -ENOMEM;
+		goto out;
+	}
+
 	fsopt->caps_wanted_delay_min = CEPH_CAPS_WANTED_DELAY_MIN_DEFAULT;
 	fsopt->caps_wanted_delay_max = CEPH_CAPS_WANTED_DELAY_MAX_DEFAULT;
 	fsopt->cap_release_safety = CEPH_CAP_RELEASE_SAFETY_DEFAULT;
@@ -409,6 +441,10 @@ static int ceph_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",noshare");
 	if (opt->flags & CEPH_OPT_NOCRC)
 		seq_puts(m, ",nocrc");
+	if (opt->flags & CEPH_OPT_NOMSGAUTH)
+		seq_puts(m, ",nocephx_require_signatures");
+	if ((opt->flags & CEPH_OPT_TCP_NODELAY) == 0)
+		seq_puts(m, ",notcp_nodelay");
 
 	if (opt->name)
 		seq_printf(m, ",name=%s", opt->name);
@@ -416,12 +452,12 @@ static int ceph_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",secret=<hidden>");
 
 	if (opt->mount_timeout != CEPH_MOUNT_TIMEOUT_DEFAULT)
-		seq_printf(m, ",mount_timeout=%d", opt->mount_timeout);
+		seq_printf(m, ",mount_timeout=%lu", opt->mount_timeout/HZ);
 	if (opt->osd_idle_ttl != CEPH_OSD_IDLE_TTL_DEFAULT)
-		seq_printf(m, ",osd_idle_ttl=%d", opt->osd_idle_ttl);
+		seq_printf(m, ",osd_idle_ttl=%lu", opt->osd_idle_ttl/HZ);
 	if (opt->osd_keepalive_timeout != CEPH_OSD_KEEPALIVE_DEFAULT)
-		seq_printf(m, ",osdkeepalivetimeout=%d",
-			   opt->osd_keepalive_timeout);
+		seq_printf(m, ",osdkeepalivetimeout=%lu",
+			   opt->osd_keepalive_timeout/HZ);
 
 	if (fsopt->flags & CEPH_MOUNT_OPT_DIRSTAT)
 		seq_puts(m, ",dirstat");
@@ -429,14 +465,19 @@ static int ceph_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",norbytes");
 	if (fsopt->flags & CEPH_MOUNT_OPT_NOASYNCREADDIR)
 		seq_puts(m, ",noasyncreaddir");
-	if (fsopt->flags & CEPH_MOUNT_OPT_DCACHE)
-		seq_puts(m, ",dcache");
-	else
+	if ((fsopt->flags & CEPH_MOUNT_OPT_DCACHE) == 0)
 		seq_puts(m, ",nodcache");
 	if (fsopt->flags & CEPH_MOUNT_OPT_FSCACHE)
 		seq_puts(m, ",fsc");
+	if (fsopt->flags & CEPH_MOUNT_OPT_NOPOOLPERM)
+		seq_puts(m, ",nopoolperm");
+
+#ifdef CONFIG_CEPH_FS_POSIX_ACL
+	if (fsopt->sb_flags & MS_POSIXACL)
+		seq_puts(m, ",acl");
 	else
-		seq_puts(m, ",nofsc");
+		seq_puts(m, ",noacl");
+#endif
 
 	if (fsopt->wsize)
 		seq_printf(m, ",wsize=%d", fsopt->wsize);
@@ -490,9 +531,10 @@ static struct ceph_fs_client *create_fs_client(struct ceph_mount_options *fsopt,
 					struct ceph_options *opt)
 {
 	struct ceph_fs_client *fsc;
-	const unsigned supported_features =
+	const u64 supported_features =
 		CEPH_FEATURE_FLOCK |
-		CEPH_FEATURE_DIRLAYOUTHASH;
+		CEPH_FEATURE_DIRLAYOUTHASH |
+		CEPH_FEATURE_MDS_INLINE_DATA;
 	const unsigned required_features = 0;
 	int page_count;
 	size_t size;
@@ -601,6 +643,7 @@ static void destroy_fs_client(struct ceph_fs_client *fsc)
  */
 struct kmem_cache *ceph_inode_cachep;
 struct kmem_cache *ceph_cap_cachep;
+struct kmem_cache *ceph_cap_flush_cachep;
 struct kmem_cache *ceph_dentry_cachep;
 struct kmem_cache *ceph_file_cachep;
 
@@ -626,6 +669,10 @@ static int __init init_caches(void)
 				     SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD);
 	if (ceph_cap_cachep == NULL)
 		goto bad_cap;
+	ceph_cap_flush_cachep = KMEM_CACHE(ceph_cap_flush,
+					   SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD);
+	if (ceph_cap_flush_cachep == NULL)
+		goto bad_cap_flush;
 
 	ceph_dentry_cachep = KMEM_CACHE(ceph_dentry_info,
 					SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD);
@@ -644,6 +691,8 @@ static int __init init_caches(void)
 bad_file:
 	kmem_cache_destroy(ceph_dentry_cachep);
 bad_dentry:
+	kmem_cache_destroy(ceph_cap_flush_cachep);
+bad_cap_flush:
 	kmem_cache_destroy(ceph_cap_cachep);
 bad_cap:
 	kmem_cache_destroy(ceph_inode_cachep);
@@ -660,6 +709,7 @@ static void destroy_caches(void)
 
 	kmem_cache_destroy(ceph_inode_cachep);
 	kmem_cache_destroy(ceph_cap_cachep);
+	kmem_cache_destroy(ceph_cap_flush_cachep);
 	kmem_cache_destroy(ceph_dentry_cachep);
 	kmem_cache_destroy(ceph_file_cachep);
 
@@ -679,6 +729,7 @@ static void ceph_umount_begin(struct super_block *sb)
 	if (!fsc)
 		return;
 	fsc->mount_state = CEPH_MOUNT_SHUTDOWN;
+	ceph_mdsc_force_umount(fsc->mdsc);
 	return;
 }
 
@@ -686,6 +737,7 @@ static const struct super_operations ceph_super_ops = {
 	.alloc_inode	= ceph_alloc_inode,
 	.destroy_inode	= ceph_destroy_inode,
 	.write_inode    = ceph_write_inode,
+	.drop_inode	= ceph_drop_inode,
 	.sync_fs        = ceph_sync_fs,
 	.put_super	= ceph_put_super,
 	.show_options   = ceph_show_options,
@@ -712,10 +764,15 @@ static struct dentry *open_root_dentry(struct ceph_fs_client *fsc,
 	if (IS_ERR(req))
 		return ERR_CAST(req);
 	req->r_path1 = kstrdup(path, GFP_NOFS);
+	if (!req->r_path1) {
+		root = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+
 	req->r_ino1.ino = CEPH_INO_ROOT;
 	req->r_ino1.snap = CEPH_NOSNAP;
 	req->r_started = started;
-	req->r_timeout = fsc->client->options->mount_timeout * HZ;
+	req->r_timeout = fsc->client->options->mount_timeout;
 	req->r_args.getattr.mask = cpu_to_le32(CEPH_STAT_CAP_INODE);
 	req->r_num_caps = 2;
 	err = ceph_mdsc_do_request(mdsc, NULL, req);
@@ -819,6 +876,7 @@ static int ceph_set_super(struct super_block *s, void *data)
 	s->s_flags = fsc->mount_options->sb_flags;
 	s->s_maxbytes = 1ULL << 40;  /* temp value until we get mdsmap */
 
+	s->s_xattr = ceph_xattr_handlers;
 	s->s_fs_info = fsc;
 	fsc->sb = s;
 
@@ -906,6 +964,10 @@ static struct dentry *ceph_mount(struct file_system_type *fs_type,
 	struct ceph_options *opt = NULL;
 
 	dout("ceph_mount\n");
+
+#ifdef CONFIG_CEPH_FS_POSIX_ACL
+	flags |= MS_POSIXACL;
+#endif
 	err = parse_mount_options(&fsopt, &opt, flags, data, dev_name, &path);
 	if (err < 0) {
 		res = ERR_PTR(err);
@@ -988,25 +1050,28 @@ static struct file_system_type ceph_fs_type = {
 };
 MODULE_ALIAS_FS("ceph");
 
-#define _STRINGIFY(x) #x
-#define STRINGIFY(x) _STRINGIFY(x)
-
 static int __init init_ceph(void)
 {
 	int ret = init_caches();
 	if (ret)
 		goto out;
 
+	ceph_flock_init();
 	ceph_xattr_init();
+	ret = ceph_snap_init();
+	if (ret)
+		goto out_xattr;
 	ret = register_filesystem(&ceph_fs_type);
 	if (ret)
-		goto out_icache;
+		goto out_snap;
 
 	pr_info("loaded (mds proto %d)\n", CEPH_MDSC_PROTOCOL);
 
 	return 0;
 
-out_icache:
+out_snap:
+	ceph_snap_exit();
+out_xattr:
 	ceph_xattr_exit();
 	destroy_caches();
 out:
@@ -1017,6 +1082,7 @@ static void __exit exit_ceph(void)
 {
 	dout("exit_ceph\n");
 	unregister_filesystem(&ceph_fs_type);
+	ceph_snap_exit();
 	ceph_xattr_exit();
 	destroy_caches();
 }
