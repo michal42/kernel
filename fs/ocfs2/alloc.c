@@ -2526,21 +2526,6 @@ static int ocfs2_update_edge_lengths(handle_t *handle,
 	struct ocfs2_extent_block *eb;
 	u32 range;
 
-	/*
-	 * In normal tree rotation process, we will never touch the
-	 * tree branch above subtree_index and ocfs2_extend_rotate_transaction
-	 * doesn't reserve the credits for them either.
-	 *
-	 * But we do have a special case here which will update the rightmost
-	 * records for all the bh in the path.
-	 * So we have to allocate extra credits and access them.
-	 */
-	ret = ocfs2_extend_trans(handle, subtree_index);
-	if (ret) {
-		mlog_errno(ret);
-		goto out;
-	}
-
 	ret = ocfs2_journal_access_path(et->et_ci, handle, path);
 	if (ret) {
 		mlog_errno(ret);
@@ -2966,7 +2951,7 @@ static int __ocfs2_rotate_tree_left(handle_t *handle,
 		     right_path->p_node[subtree_root].bh->b_blocknr,
 		     right_path->p_tree_depth);
 
-		ret = ocfs2_extend_rotate_transaction(handle, subtree_root,
+		ret = ocfs2_extend_rotate_transaction(handle, 0,
 						      orig_credits, left_path);
 		if (ret) {
 			mlog_errno(ret);
@@ -3039,21 +3024,9 @@ static int ocfs2_remove_rightmost_path(handle_t *handle,
 	struct ocfs2_extent_block *eb;
 	struct ocfs2_extent_list *el;
 
-
 	ret = ocfs2_et_sanity_check(et);
 	if (ret)
 		goto out;
-	/*
-	 * There's two ways we handle this depending on
-	 * whether path is the only existing one.
-	 */
-	ret = ocfs2_extend_rotate_transaction(handle, 0,
-					      handle->h_buffer_credits,
-					      path);
-	if (ret) {
-		mlog_errno(ret);
-		goto out;
-	}
 
 	ret = ocfs2_journal_access_path(et->et_ci, handle, path);
 	if (ret) {
@@ -3127,6 +3100,30 @@ static int ocfs2_remove_rightmost_path(handle_t *handle,
 
 out:
 	ocfs2_free_path(left_path);
+	return ret;
+}
+
+static int ocfs2_remove_rightmost_empty_extent(struct ocfs2_super *osb,
+				struct ocfs2_extent_tree *et,
+				struct ocfs2_path *path,
+				struct ocfs2_cached_dealloc_ctxt *dealloc)
+{
+	handle_t *handle;
+	int ret;
+	int credits = path->p_tree_depth * 2 + 1;
+
+	handle = ocfs2_start_trans(osb, credits);
+	if (IS_ERR(handle)) {
+		ret = PTR_ERR(handle);
+		mlog_errno(ret);
+		return ret;
+	}
+
+	ret = ocfs2_remove_rightmost_path(handle, et, path, dealloc);
+	if (ret)
+		mlog_errno(ret);
+
+	ocfs2_commit_trans(osb, handle);
 	return ret;
 }
 
@@ -3628,6 +3625,14 @@ static int ocfs2_merge_rec_left(struct ocfs2_path *right_path,
 		 */
 		if (le16_to_cpu(right_rec->e_leaf_clusters) == 0 &&
 		    le16_to_cpu(el->l_next_free_rec) == 1) {
+			/* extend credit for ocfs2_remove_rightmost_path */
+			ret = ocfs2_extend_rotate_transaction(handle, 0,
+					handle->h_buffer_credits,
+					right_path);
+			if (ret) {
+				mlog_errno(ret);
+				goto out;
+			}
 
 			ret = ocfs2_remove_rightmost_path(handle, et,
 							  right_path,
@@ -3667,6 +3672,14 @@ static int ocfs2_try_to_merge_extent(handle_t *handle,
 	BUG_ON(ctxt->c_contig_type == CONTIG_NONE);
 
 	if (ctxt->c_split_covers_rec && ctxt->c_has_empty_extent) {
+		/* extend credit for ocfs2_remove_rightmost_path */
+		ret = ocfs2_extend_rotate_transaction(handle, 0,
+				handle->h_buffer_credits,
+				path);
+		if (ret) {
+			mlog_errno(ret);
+			goto out;
+		}
 		/*
 		 * The merge code will need to create an empty
 		 * extent to take the place of the newly
@@ -3715,6 +3728,15 @@ static int ocfs2_try_to_merge_extent(handle_t *handle,
 		 */
 		BUG_ON(!ocfs2_is_empty_extent(&el->l_recs[0]));
 
+		/* extend credit for ocfs2_remove_rightmost_path */
+		ret = ocfs2_extend_rotate_transaction(handle, 0,
+					handle->h_buffer_credits,
+					path);
+		if (ret) {
+			mlog_errno(ret);
+			goto out;
+		}
+
 		/* The merge left us with an empty extent, remove it. */
 		ret = ocfs2_rotate_tree_left(handle, et, path, dealloc);
 		if (ret) {
@@ -3731,6 +3753,15 @@ static int ocfs2_try_to_merge_extent(handle_t *handle,
 		ret = ocfs2_merge_rec_left(path, handle, et, rec,
 					   dealloc, split_index);
 
+		if (ret) {
+			mlog_errno(ret);
+			goto out;
+		}
+
+		/* extend credit for ocfs2_remove_rightmost_path */
+		ret = ocfs2_extend_rotate_transaction(handle, 0,
+				handle->h_buffer_credits,
+				path);
 		if (ret) {
 			mlog_errno(ret);
 			goto out;
@@ -3771,6 +3802,16 @@ static int ocfs2_try_to_merge_extent(handle_t *handle,
 		}
 
 		if (ctxt->c_split_covers_rec) {
+			/* extend credit for ocfs2_remove_rightmost_path */
+			ret = ocfs2_extend_rotate_transaction(handle, 0,
+					handle->h_buffer_credits,
+					path);
+			if (ret) {
+				mlog_errno(ret);
+				ret = 0;
+				goto out;
+			}
+
 			/*
 			 * The merge may have left an empty extent in
 			 * our leaf. Try to rotate it away.
@@ -5300,6 +5341,15 @@ static int ocfs2_truncate_rec(handle_t *handle,
 	struct ocfs2_extent_block *eb;
 
 	if (ocfs2_is_empty_extent(&el->l_recs[0]) && index > 0) {
+		/* extend credit for ocfs2_remove_rightmost_path */
+		ret = ocfs2_extend_rotate_transaction(handle, 0,
+				handle->h_buffer_credits,
+				path);
+		if (ret) {
+			mlog_errno(ret);
+			goto out;
+		}
+
 		ret = ocfs2_rotate_tree_left(handle, et, path, dealloc);
 		if (ret) {
 			mlog_errno(ret);
@@ -5885,16 +5935,6 @@ static int ocfs2_replay_truncate_records(struct ocfs2_super *osb,
 
 		ocfs2_journal_dirty(handle, tl_bh);
 
-		/* TODO: Perhaps we can calculate the bulk of the
-		 * credits up front rather than extending like
-		 * this. */
-		status = ocfs2_extend_trans(handle,
-					    OCFS2_TRUNCATE_LOG_FLUSH_ONE_REC);
-		if (status < 0) {
-			mlog_errno(status);
-			goto bail;
-		}
-
 		rec = tl->tl_recs[i];
 		start_blk = ocfs2_clusters_to_blocks(data_alloc_inode->i_sb,
 						    le32_to_cpu(rec.t_start));
@@ -5914,6 +5954,13 @@ static int ocfs2_replay_truncate_records(struct ocfs2_super *osb,
 				mlog_errno(status);
 				goto bail;
 			}
+		}
+
+		status = ocfs2_extend_trans(handle,
+				OCFS2_TRUNCATE_LOG_FLUSH_ONE_REC);
+		if (status < 0) {
+			mlog_errno(status);
+			goto bail;
 		}
 		i--;
 	}
@@ -5973,7 +6020,7 @@ int __ocfs2_flush_truncate_log(struct ocfs2_super *osb)
 		goto out_mutex;
 	}
 
-	handle = ocfs2_start_trans(osb, OCFS2_TRUNCATE_LOG_UPDATE);
+	handle = ocfs2_start_trans(osb, OCFS2_TRUNCATE_LOG_FLUSH_ONE_REC);
 	if (IS_ERR(handle)) {
 		status = PTR_ERR(handle);
 		mlog_errno(status);
@@ -7047,15 +7094,23 @@ start:
 		 * to check it up here before changing the tree.
 		*/
 		if (root_el->l_tree_depth && rec->e_int_clusters == 0) {
-			ocfs2_error(inode->i_sb, "Inode %lu has an empty "
+			mlog(ML_ERROR, "Inode %lu has an empty "
 				    "extent record, depth %u\n", inode->i_ino,
 				    le16_to_cpu(root_el->l_tree_depth));
-			status = -EROFS;
-			goto bail;
+			status = ocfs2_remove_rightmost_empty_extent(osb,
+					&et, path, &dealloc);
+			if (status) {
+				mlog_errno(status);
+				goto bail;
+			}
+
+			ocfs2_reinit_path(path, 1);
+			goto start;
+		} else {
+			trunc_cpos = le32_to_cpu(rec->e_cpos);
+			trunc_len = 0;
+			blkno = 0;
 		}
-		trunc_cpos = le32_to_cpu(rec->e_cpos);
-		trunc_len = 0;
-		blkno = 0;
 	} else if (le32_to_cpu(rec->e_cpos) >= new_highest_cpos) {
 		/*
 		 * Truncate entire record.
