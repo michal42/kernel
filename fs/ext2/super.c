@@ -1539,9 +1539,15 @@ static struct file_system_type ext2_fs_type = {
 };
 MODULE_ALIAS_FS("ext2");
 
+extern bool ext4_used_for_ext2;
+
 static int __init init_ext2_fs(void)
 {
-	int err = init_ext2_xattr();
+	int err;
+
+	if (ext4_used_for_ext2)
+		return 0;
+	err = init_ext2_xattr();
 	if (err)
 		return err;
 	err = init_inodecache();
@@ -1560,6 +1566,8 @@ out1:
 
 static void __exit exit_ext2_fs(void)
 {
+	if (ext4_used_for_ext2)
+		return;
 	unregister_filesystem(&ext2_fs_type);
 	destroy_inodecache();
 	exit_ext2_xattr();
