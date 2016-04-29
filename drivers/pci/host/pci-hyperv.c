@@ -951,7 +951,12 @@ static int hv_set_affinity(struct irq_data *data, const struct cpumask *dest,
 	struct hv_pcibus_device *hbus;
 	struct pci_bus *pbus;
 	struct pci_dev *pdev;
-	int cpu;
+	int cpu, ret;
+	unsigned int dest_id;
+
+	ret = suse_ms_hyperv_set_affinity(data, dest, &dest_id);
+	if (ret)
+		return ret;
 
 	pdev = msi_desc_to_pci_dev(data->msi_desc);
 	pbus = pdev->bus;

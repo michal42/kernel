@@ -25,4 +25,7 @@ void hv_setup_kexec_handler(void (*handler)(void));
 void hv_remove_kexec_handler(void);
 void hv_setup_crash_handler(void (*handler)(struct pt_regs *regs));
 void hv_remove_crash_handler(void);
+int suse_ms_hyperv_set_affinity(struct irq_data *data,
+				const struct cpumask *mask,
+				unsigned int *dest_id);
 #endif

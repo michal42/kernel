@@ -193,6 +193,17 @@ static void __init ms_hyperv_init_platform(void)
 	mark_tsc_unstable("running on Hyper-V");
 }
 
+struct irq_data;
+int suse_ms_hyperv_set_affinity(struct irq_data *data,
+				const struct cpumask *mask,
+				unsigned int *dest_id)
+{
+	if (x86_hyper != &x86_hyper_ms_hyperv)
+		return -ENODEV;
+	return __ioapic_set_affinity(data, mask, dest_id);
+}
+EXPORT_SYMBOL(suse_ms_hyperv_set_affinity);
+
 const __refconst struct hypervisor_x86 x86_hyper_ms_hyperv = {
 	.name			= "Microsoft HyperV",
 	.detect			= ms_hyperv_platform,
