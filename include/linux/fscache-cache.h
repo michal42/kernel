@@ -119,27 +119,9 @@ extern void fscache_op_work_func(struct work_struct *work);
 extern void fscache_enqueue_operation(struct fscache_operation *);
 extern void fscache_op_complete(struct fscache_operation *, bool);
 extern void fscache_put_operation(struct fscache_operation *);
-
-/**
- * fscache_operation_init - Do basic initialisation of an operation
- * @op: The operation to initialise
- * @release: The release function to assign
- *
- * Do basic initialisation of an operation.  The caller must still set flags,
- * object and processor if needed.
- */
-static inline void fscache_operation_init(struct fscache_operation *op,
-					fscache_operation_processor_t processor,
-					fscache_operation_release_t release)
-{
-	INIT_WORK(&op->work, fscache_op_work_func);
-	atomic_set(&op->usage, 1);
-	op->state = FSCACHE_OP_ST_INITIALISED;
-	op->debug_id = atomic_inc_return(&fscache_op_debug_id);
-	op->processor = processor;
-	op->release = release;
-	INIT_LIST_HEAD(&op->pend_link);
-}
+extern void fscache_operation_init(struct fscache_operation *,
+				   fscache_operation_processor_t,
+				   fscache_operation_release_t);
 
 /*
  * data read operation
@@ -400,6 +382,7 @@ struct fscache_object {
 #define FSCACHE_OBJECT_IS_LIVE		3	/* T if object is not withdrawn or relinquished */
 #define FSCACHE_OBJECT_IS_LOOKED_UP	4	/* T if object has been looked up */
 #define FSCACHE_OBJECT_IS_AVAILABLE	5	/* T if object has become active */
+#define FSCACHE_OBJECT_KILLED_BY_CACHE	7	/* T if object was killed by the cache */
 
 	struct list_head	cache_link;	/* link in cache->object_list */
 	struct hlist_node	cookie_link;	/* link in cookie->backing_objects */
@@ -439,17 +422,16 @@ static inline bool fscache_object_is_available(struct fscache_object *object)
 	return test_bit(FSCACHE_OBJECT_IS_AVAILABLE, &object->flags);
 }
 
+static inline bool fscache_cache_is_broken(struct fscache_object *object)
+{
+	return test_bit(FSCACHE_IOERROR, &object->cache->flags);
+}
+
 static inline bool fscache_object_is_active(struct fscache_object *object)
 {
 	return fscache_object_is_available(object) &&
 		fscache_object_is_live(object) &&
-		!test_bit(FSCACHE_IOERROR, &object->cache->flags);
-}
-
-static inline bool fscache_object_is_dead(struct fscache_object *object)
-{
-	return fscache_object_is_dying(object) &&
-		test_bit(FSCACHE_IOERROR, &object->cache->flags);
+		!fscache_cache_is_broken(object);
 }
 
 /**
@@ -565,4 +547,10 @@ extern enum fscache_checkaux fscache_check_aux(struct fscache_object *object,
 					       const void *data,
 					       uint16_t datalen);
 
+enum fscache_why_object_killed {
+	FSCACHE_OBJECT_IS_STALE,
+	FSCACHE_OBJECT_NO_SPACE,
+	FSCACHE_OBJECT_WAS_RETIRED,
+	FSCACHE_OBJECT_WAS_CULLED,
+};
 #endif /* _LINUX_FSCACHE_CACHE_H */

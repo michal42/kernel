@@ -44,6 +44,19 @@ void __fscache_wait_on_page_write(struct fscache_cookie *cookie, struct page *pa
 EXPORT_SYMBOL(__fscache_wait_on_page_write);
 
 /*
+ * wait for a page to finish being written to the cache. Put a timeout here
+ * since we might be called recursively via parent fs.
+ */
+static
+bool release_page_wait_timeout(struct fscache_cookie *cookie, struct page *page)
+{
+	wait_queue_head_t *wq = bit_waitqueue(&cookie->flags, 0);
+
+	return wait_event_timeout(*wq, !__fscache_check_page_write(cookie, page),
+				  HZ);
+}
+
+/*
  * decide whether a page can be released, possibly by cancelling a store to it
  * - we're allowed to sleep if __GFP_WAIT is flagged
  */
@@ -115,7 +128,10 @@ page_busy:
 	}
 
 	fscache_stat(&fscache_n_store_vmscan_wait);
-	__fscache_wait_on_page_write(cookie, page);
+	if (!release_page_wait_timeout(cookie, page))
+		_debug("fscache writeout timeout page: %p{%lx}",
+			page, page->index);
+
 	gfp &= ~__GFP_WAIT;
 	goto try_again;
 }
@@ -218,7 +234,7 @@ int __fscache_attr_changed(struct fscache_cookie *cookie)
 
 nobufs:
 	spin_unlock(&cookie->lock);
-	kfree(op);
+	fscache_put_operation(op);
 	fscache_stat(&fscache_n_attr_changed_nobufs);
 	_leave(" = %d", -ENOBUFS);
 	return -ENOBUFS;
@@ -226,9 +242,20 @@ nobufs:
 EXPORT_SYMBOL(__fscache_attr_changed);
 
 /*
+ * Handle cancellation of a pending retrieval op
+ */
+void fscache_do_cancel_retrieval(struct fscache_operation *_op)
+{
+	struct fscache_retrieval *op =
+		container_of(_op, struct fscache_retrieval, op);
+
+	atomic_set(&op->n_pages, 0);
+}
+
+/*
  * release a retrieval op reference
  */
-static void fscache_release_retrieval_op(struct fscache_operation *_op)
+void fscache_release_retrieval_op(struct fscache_operation *_op)
 {
 	struct fscache_retrieval *op =
 		container_of(_op, struct fscache_retrieval, op);
@@ -309,24 +336,12 @@ int fscache_wait_for_deferred_lookup(struct fscache_cookie *cookie)
 }
 
 /*
- * Handle cancellation of a pending retrieval op
- */
-static void fscache_do_cancel_retrieval(struct fscache_operation *_op)
-{
-	struct fscache_retrieval *op =
-		container_of(_op, struct fscache_retrieval, op);
-
-	atomic_set(&op->n_pages, 0);
-}
-
-/*
  * wait for an object to become active (or dead)
  */
 int fscache_wait_for_operation_activation(struct fscache_object *object,
 					  struct fscache_operation *op,
 					  atomic_t *stat_op_waits,
-					  atomic_t *stat_object_dead,
-					  void (*do_cancel)(struct fscache_operation *))
+					  atomic_t *stat_object_dead)
 {
 	int ret;
 
@@ -339,7 +354,7 @@ int fscache_wait_for_operation_activation(struct fscache_object *object,
 	if (wait_on_bit(&op->flags, FSCACHE_OP_WAITING,
 			fscache_wait_bit_interruptible,
 			TASK_INTERRUPTIBLE) != 0) {
-		ret = fscache_cancel_op(op, do_cancel);
+		ret = fscache_cancel_op(op, false);
 		if (ret == 0)
 			return -ERESTARTSYS;
 
@@ -357,11 +372,13 @@ check_if_dead:
 		_leave(" = -ENOBUFS [cancelled]");
 		return -ENOBUFS;
 	}
-	if (unlikely(fscache_object_is_dead(object))) {
-		pr_err("%s() = -ENOBUFS [obj dead %d]\n", __func__, op->state);
-		fscache_cancel_op(op, do_cancel);
+	if (unlikely(fscache_object_is_dying(object) ||
+		     fscache_cache_is_broken(object))) {
+		enum fscache_operation_state state = op->state;
+		fscache_cancel_op(op, true);
 		if (stat_object_dead)
 			fscache_stat(stat_object_dead);
+		_leave(" = -ENOBUFS [obj dead %d]", state);
 		return -ENOBUFS;
 	}
 	return 0;
@@ -439,8 +456,7 @@ int __fscache_read_or_alloc_page(struct fscache_cookie *cookie,
 	ret = fscache_wait_for_operation_activation(
 		object, &op->op,
 		__fscache_stat(&fscache_n_retrieval_op_waits),
-		__fscache_stat(&fscache_n_retrievals_object_dead),
-		fscache_do_cancel_retrieval);
+		__fscache_stat(&fscache_n_retrievals_object_dead));
 	if (ret < 0)
 		goto error;
 
@@ -478,7 +494,7 @@ nobufs_unlock_dec:
 nobufs_unlock:
 	spin_unlock(&cookie->lock);
 	atomic_dec(&cookie->n_active);
-	kfree(op);
+	fscache_put_retrieval(op);
 nobufs:
 	fscache_stat(&fscache_n_retrievals_nobufs);
 	_leave(" = -ENOBUFS");
@@ -565,8 +581,7 @@ int __fscache_read_or_alloc_pages(struct fscache_cookie *cookie,
 	ret = fscache_wait_for_operation_activation(
 		object, &op->op,
 		__fscache_stat(&fscache_n_retrieval_op_waits),
-		__fscache_stat(&fscache_n_retrievals_object_dead),
-		fscache_do_cancel_retrieval);
+		__fscache_stat(&fscache_n_retrievals_object_dead));
 	if (ret < 0)
 		goto error;
 
@@ -604,7 +619,7 @@ nobufs_unlock_dec:
 nobufs_unlock:
 	spin_unlock(&cookie->lock);
 	atomic_dec(&cookie->n_active);
-	kfree(op);
+	fscache_put_retrieval(op);
 nobufs:
 	fscache_stat(&fscache_n_retrievals_nobufs);
 	_leave(" = -ENOBUFS");
@@ -667,8 +682,7 @@ int __fscache_alloc_page(struct fscache_cookie *cookie,
 	ret = fscache_wait_for_operation_activation(
 		object, &op->op,
 		__fscache_stat(&fscache_n_alloc_op_waits),
-		__fscache_stat(&fscache_n_allocs_object_dead),
-		fscache_do_cancel_retrieval);
+		__fscache_stat(&fscache_n_allocs_object_dead));
 	if (ret < 0)
 		goto error;
 
@@ -692,7 +706,7 @@ error:
 nobufs_unlock:
 	spin_unlock(&cookie->lock);
 	atomic_dec(&cookie->n_active);
-	kfree(op);
+	fscache_put_retrieval(op);
 nobufs:
 	fscache_stat(&fscache_n_allocs_nobufs);
 	_leave(" = -ENOBUFS");
@@ -978,7 +992,7 @@ already_pending:
 	spin_unlock(&object->lock);
 	spin_unlock(&cookie->lock);
 	radix_tree_preload_end();
-	kfree(op);
+	fscache_put_operation(&op->op);
 	fscache_stat(&fscache_n_stores_ok);
 	_leave(" = 0");
 	return 0;
@@ -998,13 +1012,13 @@ nobufs_unlock_obj:
 nobufs:
 	spin_unlock(&cookie->lock);
 	radix_tree_preload_end();
-	kfree(op);
+	fscache_put_operation(&op->op);
 	fscache_stat(&fscache_n_stores_nobufs);
 	_leave(" = -ENOBUFS");
 	return -ENOBUFS;
 
 nomem_free:
-	kfree(op);
+	fscache_put_operation(&op->op);
 nomem:
 	fscache_stat(&fscache_n_stores_oom);
 	_leave(" = -ENOMEM");
