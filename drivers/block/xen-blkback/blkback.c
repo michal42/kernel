@@ -608,8 +608,9 @@ int xen_blkif_schedule(void *arg)
 		if (ret > 0)
 			blkif->waiting_reqs = 1;
 		if (ret == -EACCES)
-			wait_event_interruptible(blkif->shutdown_wq,
-						 kthread_should_stop());
+			wait_event_interruptible(blkif->shutdown_wq, ({
+					klp_kgraft_mark_task_safe(current);
+					kthread_should_stop(); }));
 
 purge_gnt_list:
 		if (blkif->vbd.feature_gnt_persistent &&
