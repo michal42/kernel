@@ -899,7 +899,7 @@ int gfs2_logd(void *data)
 			if (!gfs2_ail_flush_reqd(sdp) &&
 			    !gfs2_jrnl_flush_reqd(sdp) &&
 			    !kthread_should_stop()) {
-				klp_kgraft_mark_task_safe(current);
+				kgr_task_safe(current);
 				t = schedule_timeout(t);
 			}
 		} while(t && !gfs2_ail_flush_reqd(sdp) &&
