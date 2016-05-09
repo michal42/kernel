@@ -168,7 +168,7 @@ static int kvp_handle_handshake(struct hv_kvp_msg *msg)
 	 */
 	cancel_delayed_work_sync(&kvp_host_handshake_work);
 
-	kvp_transaction.state = HVUTIL_READY;
+	hv_poll_channel(kvp_transaction.recv_channel, kvp_poll_wrapper);
 
 	return 0;
 }
