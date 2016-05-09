@@ -167,8 +167,7 @@ static int kvp_handle_handshake(struct hv_kvp_msg *msg)
 	 * work to not poll the channel twice.
 	 */
 	cancel_delayed_work_sync(&kvp_host_handshake_work);
-
-	kvp_transaction.state = HVUTIL_READY;
+	hv_poll_channel(kvp_transaction.recv_channel, kvp_poll_wrapper);
 
 	return 0;
 }
@@ -668,7 +667,6 @@ void hv_kvp_onchannelcallback(void *context)
 			 */
 
 			kvp_transaction.recv_len = recvlen;
-			kvp_transaction.recv_channel = channel;
 			kvp_transaction.recv_req_id = requestid;
 			kvp_transaction.kvp_msg = kvp_msg;
 
@@ -718,6 +716,7 @@ int
 hv_kvp_init(struct hv_util_service *srv)
 {
 	recv_buffer = srv->recv_buffer;
+	kvp_transaction.recv_channel = srv->channel;
 
 	/*
 	 * When this driver loads, the user level daemon that
@@ -738,6 +737,7 @@ hv_kvp_init(struct hv_util_service *srv)
 void hv_kvp_deinit(void)
 {
 	kvp_transaction.state = HVUTIL_DEVICE_DYING;
+	cancel_delayed_work_sync(&kvp_host_handshake_work);
 	cancel_delayed_work_sync(&kvp_timeout_work);
 	cancel_work_sync(&kvp_sendkey_work);
 	hvutil_transport_destroy(hvt);
