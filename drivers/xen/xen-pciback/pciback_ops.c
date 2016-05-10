@@ -338,12 +338,12 @@ int xen_pcibk_disable_msix(struct xen_pcibk_device *pdev,
 	 * an undefined IRQ value of zero.
 	 */
 	op->value = dev->irq ? xen_pirq_from_irq(dev->irq) : 0;
-#else
-	op->value = dev->irq;
-#endif
 	if (unlikely(verbose_request))
 		printk(KERN_DEBUG DRV_NAME ": %s: MSI-X: %d\n",
 		       pci_name(dev), op->value);
+#else
+	op->value = dev->irq;
+#endif
 	return 0;
 }
 #endif

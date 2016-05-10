@@ -1351,6 +1351,13 @@ void __init setup_arch(char **cmdline_p)
 	/* Allocate bigger log buffer */
 	setup_log_buf(1);
 
+#ifdef CONFIG_EFI_SECURE_BOOT_SIG_ENFORCE
+	if (efi_enabled(EFI_SECURE_BOOT)) {
+		enforce_signed_modules();
+		pr_info("Secure boot enabled\n");
+	}
+#endif
+
 	reserve_initrd();
 
 #if defined(CONFIG_ACPI) && defined(CONFIG_BLK_DEV_INITRD)
@@ -1360,13 +1367,6 @@ void __init setup_arch(char **cmdline_p)
 	vsmp_init();
 
 	io_delay_init();
-
-#ifdef CONFIG_EFI_SECURE_BOOT_SIG_ENFORCE
-	if (efi_enabled(EFI_SECURE_BOOT)) {
-		enforce_signed_modules();
-		pr_info("Secure boot enabled\n");
-	}
-#endif
 
 #ifdef CONFIG_ACPI
 	if (!is_initial_xendomain()) {
