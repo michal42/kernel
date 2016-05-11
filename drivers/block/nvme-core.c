@@ -3023,8 +3023,17 @@ static void nvme_dead_ctrl(struct nvme_dev *dev)
 
 static void nvme_dev_reset(struct nvme_dev *dev)
 {
+	bool in_probe = work_busy(&dev->probe_work);
+
 	nvme_dev_shutdown(dev);
-	if (nvme_dev_resume(dev)) {
+
+	/* Synchronize with device probe so that work will see failure status
+	 * and exit gracefully without trying to schedule another reset */
+	flush_work(&dev->probe_work);
+
+	/* Fail this device if reset occured during probe to avoid
+	 * infinite initialization loops. */
+	if (in_probe) {
 		dev_err(&dev->pci_dev->dev, "Device failed to resume\n");
 		kref_get(&dev->kref);
 		if (IS_ERR(kthread_run(nvme_remove_dead_ctrl, dev, "nvme%d",
@@ -3033,7 +3042,11 @@ static void nvme_dev_reset(struct nvme_dev *dev)
 				"Failed to start controller remove task\n");
 			kref_put(&dev->kref, nvme_free_dev);
 		}
+		return;
 	}
+	/* Schedule device resume asynchronously so the reset work is available
+	 * to cleanup errors that may occur during reinitialization */
+	schedule_work(&dev->probe_work);
 }
 
 static void nvme_reset_failed_dev(struct work_struct *ws)
