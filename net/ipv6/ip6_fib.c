@@ -681,7 +681,10 @@ static int fib6_commit_metrics(struct dst_entry *dst,
 			if (type > RTAX_MAX)
 				return -EINVAL;
 
-			mp[type - 1] = nla_get_u32(nla);
+			if (type == RTAX_HOPLIMIT && nla_get_u32(nla) > 255)
+				mp[type - 1] = 255;
+			else
+				mp[type - 1] = nla_get_u32(nla);
 		}
 	}
 	return 0;
