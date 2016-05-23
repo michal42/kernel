@@ -146,7 +146,7 @@ extern void reserve_top_address(unsigned long reserve);
 extern int fixmaps_set;
 
 extern pte_t *kmap_pte;
-extern pgprot_t kmap_prot;
+#define kmap_prot PAGE_KERNEL
 extern pte_t *pkmap_page_table;
 
 void xen_set_fixmap(enum fixed_addresses, phys_addr_t, pgprot_t);

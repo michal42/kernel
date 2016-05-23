@@ -156,7 +156,7 @@ static void cpu_bringup(void)
 static void cpu_bringup_and_idle(void)
 {
 	cpu_bringup();
-	cpu_startup_entry(CPUHP_ONLINE);
+	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
 }
 
 static void cpu_initialize_context(unsigned int cpu, unsigned long sp0)
@@ -398,6 +398,7 @@ void __ref play_dead(void)
 	VOID(HYPERVISOR_vcpu_op(VCPUOP_down, smp_processor_id(), NULL));
 	cpu_bringup();
 	tick_nohz_idle_enter();
+	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
 #else
 	BUG();
 #endif

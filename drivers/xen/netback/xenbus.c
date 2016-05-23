@@ -256,11 +256,8 @@ static void frontend_changed(struct xenbus_device *dev,
 
 	switch (frontend_state) {
 	case XenbusStateInitialising:
-		if (dev->state == XenbusStateClosed) {
-			pr_info("%s: %s: prepare for reconnect\n",
-				__func__, dev->nodename);
+		if (dev->state == XenbusStateClosed)
 			xenbus_switch_state(dev, XenbusStateInitWait);
-		}
 		break;
 
 	case XenbusStateInitialised:

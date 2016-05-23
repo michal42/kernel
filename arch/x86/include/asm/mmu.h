@@ -18,11 +18,12 @@ typedef struct {
 	unsigned short ia32_compat;
 #endif
 #ifdef CONFIG_XEN
-	bool has_foreign_mappings:1;
+	bool has_foreign_mappings;
 #endif
 
 	struct mutex lock;
-	void __user *vdso;
+	void __user *vdso;			/* vdso base address */
+	const struct vdso_image *vdso_image;	/* vdso image in use */
 
 #ifndef CONFIG_XEN
 	atomic_t perf_rdpmc_allowed;	/* nonzero if rdpmc is allowed */

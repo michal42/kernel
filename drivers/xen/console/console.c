@@ -30,7 +30,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
@@ -658,7 +657,7 @@ static void xencons_close(struct tty_struct *tty, struct file *filp)
 	tty->closing = 1;
 	tty_wait_until_sent(tty, 0);
 	tty_driver_flush_buffer(tty);
-	if (tty->ldisc->ops->flush_buffer)
+	if (tty->ldisc && tty->ldisc->ops->flush_buffer)
 		tty->ldisc->ops->flush_buffer(tty);
 	tty->closing = 0;
 	spin_lock_irqsave(&xencons_lock, flags);
@@ -773,7 +772,4 @@ static int __init xencons_init(void)
 
 	return 0;
 }
-
-module_init(xencons_init);
-
-MODULE_LICENSE("Dual BSD/GPL");
+__initcall(xencons_init);

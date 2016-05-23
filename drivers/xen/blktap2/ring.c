@@ -1,4 +1,3 @@
-#include <linux/module.h>
 #include <linux/signal.h>
 
 #include "blktap.h"
@@ -329,7 +328,7 @@ blktap_ring_mmap(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_ops = &blktap_ring_vm_operations;
 
 #ifdef CONFIG_X86
-	vma->vm_mm->context.has_foreign_mappings = 1;
+	vma->vm_mm->context.has_foreign_mappings = true;
 #endif
 
 	tap->pid = current->pid;

@@ -417,7 +417,7 @@ static int xenfb_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	vmf->page = page;
 
-	return VM_FAULT_MINOR;
+	return 0;
 }
 
 static const struct vm_operations_struct xenfb_vm_ops = {

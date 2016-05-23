@@ -144,6 +144,11 @@ int xen_limit_pages_to_max_mfn(
 
 bool __cold hypervisor_oom(void);
 
+void make_page_readonly(const void *, unsigned int feature);
+void make_page_writable(const void *, unsigned int feature);
+void make_pages_readonly(const void *, unsigned int nr, unsigned int feature);
+void make_pages_writable(const void *, unsigned int nr, unsigned int feature);
+
 /* Turn jiffies into Xen system time. */
 u64 jiffies_to_st(unsigned long jiffies);
 

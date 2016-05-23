@@ -3,7 +3,6 @@
  *
  *   Author: Ryan Wilson <hap9@epoch.ncsc.mil>
  */
-#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <xen/xenbus.h>
@@ -457,7 +456,6 @@ static const struct xenbus_device_id pcifront_ids[] = {
 	{"pci"},
 	{{0}},
 };
-MODULE_ALIAS("xen:pci");
 
 static DEFINE_XENBUS_DRIVER(pcifront, "pcifront",
 	.probe 			= pcifront_xenbus_probe,

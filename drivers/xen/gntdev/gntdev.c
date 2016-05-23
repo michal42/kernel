@@ -528,7 +528,7 @@ static int gntdev_mmap (struct file *flip, struct vm_area_struct *vma)
 	 * belonging to an L1 pagetable, and the grant unmap operation will
 	 * succeed, even if the process does not exit cleanly.
 	 */
-	vma->vm_mm->context.has_foreign_mappings = 1;
+	vma->vm_mm->context.has_foreign_mappings = true;
 #endif
 
 	exit_ret = -ENOMEM;

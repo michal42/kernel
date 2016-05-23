@@ -1,4 +1,3 @@
-#include <linux/module.h>
 #include <linux/device.h>
 #include <linux/signal.h>
 #include <linux/sched.h>

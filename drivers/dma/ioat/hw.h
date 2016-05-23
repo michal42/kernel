@@ -77,6 +77,8 @@ int system_has_dca_enabled(struct pci_dev *pdev);
 static inline int system_has_dca_enabled(struct pci_dev *pdev) { return 0; }
 #endif
 
+#define IOAT_DESC_SZ	64
+
 struct ioat_dma_descriptor {
 	uint32_t	size;
 	union {

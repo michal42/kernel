@@ -7,7 +7,7 @@
  */
 #include <linux/types.h>
 #include <linux/cache.h>
-#include <linux/module.h>
+#include <linux/export.h>
 
 #ifdef CONFIG_PARAVIRT_XEN
 #include <asm/xen/hypercall.h>

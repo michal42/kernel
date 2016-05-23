@@ -5,7 +5,7 @@
 #include <linux/mm.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/capability.h>
 
 #include <xen/xen.h>
@@ -20,7 +20,10 @@
 
 #include "xenbus_comms.h"
 
+#ifdef MODULE
+#include <linux/module.h>
 MODULE_LICENSE("GPL");
+#endif
 
 static int xenbus_backend_open(struct inode *inode, struct file *filp)
 {
@@ -138,11 +141,14 @@ static int __init xenbus_backend_init(void)
 		pr_err("Could not register xenbus backend device\n");
 	return err;
 }
+#ifdef MODULE
+module_init(xenbus_backend_init);
 
 static void __exit xenbus_backend_exit(void)
 {
 	misc_deregister(&xenbus_backend_dev);
 }
-
-module_init(xenbus_backend_init);
 module_exit(xenbus_backend_exit);
+#else
+device_initcall(xenbus_backend_init);
+#endif

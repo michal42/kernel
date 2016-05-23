@@ -101,7 +101,7 @@ int mtrr_add_page(unsigned long base, unsigned long size,
 static int mtrr_check(unsigned long base, unsigned long size)
 {
 	if ((base & (PAGE_SIZE - 1)) || (size & (PAGE_SIZE - 1))) {
-		pr_warning("mtrr: size and base must be multiples of 4 kiB\n");
+		pr_warn("mtrr: size and base must be multiples of 4 kiB\n");
 		pr_debug("mtrr: size: 0x%lx  base: 0x%lx\n", size, base);
 		dump_stack();
 		return -1;
@@ -149,7 +149,7 @@ int mtrr_del_page(int reg, unsigned long base, unsigned long size)
 		}
 	}
 	if (mtrr_usage_table[reg] < 1) {
-		pr_warning("mtrr: reg: %d has count=0\n", reg);
+		pr_warn("mtrr: reg: %d has count=0\n", reg);
 		goto out;
 	}
 	if (--mtrr_usage_table[reg] < 1) {

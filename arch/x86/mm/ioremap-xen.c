@@ -138,7 +138,7 @@ int direct_remap_pfn_range(struct vm_area_struct *vma,
 		return -EINVAL;
 
 	vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
-	vma->vm_mm->context.has_foreign_mappings = 1;
+	vma->vm_mm->context.has_foreign_mappings = true;
 
 	return __direct_remap_pfn_range(vma->vm_mm, address, mfn, NULL, size,
 					prot, domid, NULL, NULL);
@@ -180,7 +180,7 @@ int direct_remap_pfns_range(struct vm_area_struct *vma,
 		return -EINVAL;
 
 	vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
-	vma->vm_mm->context.has_foreign_mappings = 1;
+	vma->vm_mm->context.has_foreign_mappings = true;
 
 	return __direct_remap_pfn_range(vma->vm_mm, address, *mfns, mfns,
 					size, prot, domid, cb, ctxt);
@@ -725,9 +725,16 @@ void __init __early_set_fixmap(enum fixed_addresses idx,
 	}
 	pte = early_ioremap_pte(addr);
 
-	if (pgprot_val(flags))
-		set_pte(pte, pfn_pte_ma(phys >> PAGE_SHIFT, flags));
-	else
+	if (pgprot_val(flags)) {
+		unsigned long fn = PFN_DOWN(phys);
+
+		/* Try to detect callers mixing up early_{io,mem}remap(). */
+		if(pgprot_val(flags) & _PAGE_IOMAP)
+			WARN_ON(mfn_to_local_pfn(fn) < max_mapnr);
+		else
+			WARN_ON(mfn_to_local_pfn(pfn_to_mfn(fn)) != fn);
+		set_pte(pte, pfn_pte(fn, flags));
+	} else
 		pte_clear(&init_mm, addr, pte);
 	__flush_tlb_one(addr);
 }

@@ -768,7 +768,7 @@ static int blktap_mmap(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_DONTCOPY;
 
 #ifdef CONFIG_X86
-	vma->vm_mm->context.has_foreign_mappings = 1;
+	vma->vm_mm->context.has_foreign_mappings = true;
 #endif
 
 	smp_wmb();

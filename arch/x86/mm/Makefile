@@ -1,3 +1,6 @@
+# Kernel does not boot with instrumentation of tlb.c.
+KCOV_INSTRUMENT_tlb.o	:= n
+
 obj-y	:=  init.o init_$(BITS).o fault.o ioremap.o extable.o pageattr.o mmap.o \
 	    pat.o pgtable.o physaddr.o gup.o setup_nx.o
 
@@ -37,3 +40,5 @@ obj-$(CONFIG_XEN)		+= hypervisor.o
 disabled-obj-$(CONFIG_XEN)	:= gup.o
 
 obj-$(CONFIG_X86_INTEL_MPX)	+= mpx.o
+obj-$(CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS) += pkeys.o
+

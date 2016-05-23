@@ -104,17 +104,23 @@ static inline int desc_empty(const void *ptr)
 #define write_ldt_entry(dt, entry, desc)	native_write_ldt_entry(dt, entry, desc)
 #define write_gdt_entry(dt, entry, desc, type)	native_write_gdt_entry(dt, entry, desc, type)
 #define write_idt_entry(dt, entry, g)		native_write_idt_entry(dt, entry, g)
+#endif
 
 static inline void paravirt_alloc_ldt(struct desc_struct *ldt, unsigned entries)
 {
+	make_pages_readonly(ldt, PFN_UP(entries * LDT_ENTRY_SIZE),
+			    XENFEAT_writable_descriptor_tables);
 }
 
 static inline void paravirt_free_ldt(struct desc_struct *ldt, unsigned entries)
 {
+	make_pages_writable(ldt, PFN_UP(entries * LDT_ENTRY_SIZE),
+			    XENFEAT_writable_descriptor_tables);
 }
 
 #define store_ldt(ldt) asm("sldt %0" : "=m"(ldt))
 
+#ifndef CONFIG_XEN
 static inline void native_write_idt_entry(gate_desc *idt, int entry, const gate_desc *gate)
 {
 	memcpy(&idt[entry], gate, sizeof(*gate));

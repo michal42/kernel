@@ -3,9 +3,9 @@
  *
  *   Author: Ryan Wilson <hap9@epoch.ncsc.mil>
  */
-#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/ktime.h>
+#include <linux/moduleparam.h>
 #include <linux/pci.h>
 #include <linux/spinlock.h>
 #include <asm/bitops.h>

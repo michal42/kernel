@@ -37,7 +37,8 @@ static inline fpu_switch_t xen_switch_fpu_prepare(struct fpu *old_fpu,
 	 * If the task has used the math, pre-load the FPU on xsave processors
 	 * or if the past 5 consecutive context-switches used math.
 	 */
-	fpu.preload = new_fpu->fpstate_active &&
+	fpu.preload = static_cpu_has(X86_FEATURE_FPU) &&
+		      new_fpu->fpstate_active &&
 		      (use_eager_fpu() || new_fpu->counter > 5);
 
 	if (old_fpu->fpregs_active) {

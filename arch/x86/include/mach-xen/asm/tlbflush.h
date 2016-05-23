@@ -195,6 +195,10 @@ extern void flush_tlb_kernel_range(unsigned long start, unsigned long end);
 
 #define flush_tlb()	flush_tlb_current_task()
 
+extern void flush_tlb_others(const struct cpumask *cpumask,
+			     struct mm_struct *mm,
+			     unsigned long start, unsigned long end);
+
 #ifndef CONFIG_XEN
 #define TLBSTATE_OK	1
 #define TLBSTATE_LAZY	2
@@ -207,8 +211,5 @@ static inline void reset_lazy_tlbstate(void)
 #endif
 
 #endif	/* SMP */
-
-/* Simple as there is no TLB accounting on Xen. */
-#define flush_tlb_local local_flush_tlb
 
 #endif /* _ASM_X86_TLBFLUSH_H */

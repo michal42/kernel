@@ -231,24 +231,14 @@ early_ioremap(resource_size_t phys_addr, unsigned long size)
 void __init *
 early_memremap(resource_size_t phys_addr, unsigned long size)
 {
-#ifndef CONFIG_XEN
 	return (__force void *)__early_ioremap(phys_addr, size,
 					       FIXMAP_PAGE_NORMAL);
-#else
-	return (__force void *)__early_ioremap(phys_to_machine(phys_addr),
-					       size, FIXMAP_PAGE_NORMAL);
-#endif
 }
 #ifdef FIXMAP_PAGE_RO
 void __init *
 early_memremap_ro(resource_size_t phys_addr, unsigned long size)
 {
-#ifndef CONFIG_XEN
 	return (__force void *)__early_ioremap(phys_addr, size, FIXMAP_PAGE_RO);
-#else
-	return (__force void *)__early_ioremap(phys_to_machine(phys_addr),
-					       size, FIXMAP_PAGE_RO);
-#endif
 }
 #endif
 

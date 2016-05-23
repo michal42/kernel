@@ -16,7 +16,6 @@
 #endif
 #include <linux/thread_info.h>
 #include <asm/cpumask.h>
-#include <asm/cpufeature.h>
 
 extern unsigned int num_processors;
 
@@ -179,6 +178,7 @@ static inline int wbinvd_on_all_cpus(void)
 	wbinvd();
 	return 0;
 }
+#define smp_num_siblings	1
 #endif /* CONFIG_SMP */
 
 #ifdef CONFIG_XEN

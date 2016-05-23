@@ -20,6 +20,8 @@
 #ifndef _ASM_X86_HYPERVISOR_H
 #define _ASM_X86_HYPERVISOR_H
 
+struct cpuinfo_x86;
+
 #ifdef CONFIG_HYPERVISOR_GUEST
 
 #include <asm/kvm_para.h>

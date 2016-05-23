@@ -45,6 +45,14 @@ extern asmlinkage void deferred_error_interrupt(void);
 extern asmlinkage void call_function_interrupt(void);
 extern asmlinkage void call_function_single_interrupt(void);
 
+#if defined(CONFIG_XEN) && defined(CONFIG_SMP)
+extern void smp_reschedule_interrupt(struct pt_regs *);
+extern void smp_call_function_interrupt(struct pt_regs *);
+extern void smp_call_function_single_interrupt(struct pt_regs *);
+extern void smp_irq_work_interrupt(struct pt_regs *);
+extern void smp_reboot_interrupt(struct pt_regs *);
+#endif
+
 #ifdef CONFIG_TRACING
 /* Interrupt handlers registered during init_IRQ */
 extern void trace_apic_timer_interrupt(void);
@@ -142,6 +150,7 @@ struct irq_alloc_info {
 struct irq_cfg {
 	unsigned int		dest_apicid;
 	u8			vector;
+	u8			old_vector;
 };
 #else
 struct irq_cfg;
@@ -171,24 +180,6 @@ extern atomic_t irq_err_count;
 extern atomic_t irq_mis_count;
 
 extern void elcr_set_level_irq(unsigned int irq);
-
-/* SMP */
-extern __visible void smp_apic_timer_interrupt(struct pt_regs *);
-extern __visible void smp_spurious_interrupt(struct pt_regs *);
-extern __visible void smp_x86_platform_ipi(struct pt_regs *);
-extern __visible void smp_error_interrupt(struct pt_regs *);
-#ifdef CONFIG_X86_IO_APIC
-extern asmlinkage void smp_irq_move_cleanup_interrupt(void);
-#endif
-#ifdef CONFIG_SMP
-extern __visible void smp_reschedule_interrupt(struct pt_regs *);
-extern __visible void smp_call_function_interrupt(struct pt_regs *);
-extern __visible void smp_call_function_single_interrupt(struct pt_regs *);
-extern void smp_irq_work_interrupt(struct pt_regs *);
-#ifdef CONFIG_XEN
-extern void smp_reboot_interrupt(struct pt_regs *);
-#endif
-#endif
 
 #ifndef CONFIG_XEN
 

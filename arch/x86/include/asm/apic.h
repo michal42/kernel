@@ -6,7 +6,6 @@
 
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
-#include <asm/processor.h>
 #include <asm/apicdef.h>
 #include <linux/atomic.h>
 #ifndef CONFIG_XEN
@@ -671,8 +670,8 @@ static inline void entering_irq(void)
 #ifndef CONFIG_XEN
 static inline void entering_ack_irq(void)
 {
-	ack_APIC_irq();
 	entering_irq();
+	ack_APIC_irq();
 }
 
 static inline void ipi_entering_ack_irq(void)

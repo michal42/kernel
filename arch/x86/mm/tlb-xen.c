@@ -9,6 +9,23 @@
 #include <asm/cache.h>
 #include <linux/debugfs.h>
 
+void flush_tlb_others(const struct cpumask *cpumask, struct mm_struct *mm,
+		      unsigned long start, unsigned long end)
+{
+	count_vm_tlb_event(NR_TLB_REMOTE_FLUSH);
+	if (end == TLB_FLUSH_ALL) {
+		xen_tlb_flush_mask(cpumask);
+		trace_tlb_flush(TLB_REMOTE_SHOOTDOWN, TLB_FLUSH_ALL);
+	} else {
+		/* flush range by one by one 'invlpg' */
+		unsigned long addr;
+
+		for (addr = start; addr < end; addr += PAGE_SIZE)
+			xen_invlpg_mask(cpumask, addr);
+		trace_tlb_flush(TLB_REMOTE_SHOOTDOWN, PFN_DOWN(end - start));
+	}
+}
+
 /*
  * See Documentation/x86/tlb.txt for details.  We choose 33
  * because it is large enough to cover the vast majority (at
