@@ -5469,12 +5469,6 @@ static const struct cpumask *cpu_cpu_mask(int cpu)
 	return cpumask_of_node(cpu_to_node(cpu));
 }
 
-struct sd_data {
-	struct sched_domain **__percpu sd;
-	struct sched_group **__percpu sg;
-	struct sched_group_power **__percpu sgp;
-};
-
 struct s_data {
 	struct sched_domain ** __percpu sd;
 	struct root_domain	*rd;
@@ -5485,21 +5479,6 @@ enum s_alloc {
 	sa_sd,
 	sa_sd_storage,
 	sa_none,
-};
-
-struct sched_domain_topology_level;
-
-typedef struct sched_domain *(*sched_domain_init_f)(struct sched_domain_topology_level *tl, int cpu);
-typedef const struct cpumask *(*sched_domain_mask_f)(int cpu);
-
-#define SDTL_OVERLAP	0x01
-
-struct sched_domain_topology_level {
-	sched_domain_init_f init;
-	sched_domain_mask_f mask;
-	int		    flags;
-	int		    numa_level;
-	struct sd_data      data;
 };
 
 /*
@@ -5736,17 +5715,6 @@ int __weak arch_sd_sibling_asym_packing(void)
 # define SD_INIT_NAME(sd, type)		do { } while (0)
 #endif
 
-#define SD_INIT_FUNC(type)						\
-static noinline struct sched_domain *					\
-sd_init_##type(struct sched_domain_topology_level *tl, int cpu) 	\
-{									\
-	struct sched_domain *sd = *per_cpu_ptr(tl->data.sd, cpu);	\
-	*sd = SD_##type##_INIT;						\
-	SD_INIT_NAME(sd, type);						\
-	sd->private = &tl->data;					\
-	return sd;							\
-}
-
 SD_INIT_FUNC(CPU)
 #ifdef CONFIG_SCHED_SMT
  SD_INIT_FUNC(SIBLING)
@@ -5755,7 +5723,7 @@ SD_INIT_FUNC(CPU)
  SD_INIT_FUNC(MC)
 #endif
 #ifdef CONFIG_SCHED_BOOK
- SD_INIT_FUNC(BOOK)
+static SD_INIT_FUNC(BOOK)
 #endif
 
 static int default_relax_domain_level = -1;
@@ -5845,13 +5813,6 @@ static void claim_allocations(int cpu, struct sched_domain *sd)
 		*per_cpu_ptr(sdd->sgp, cpu) = NULL;
 }
 
-#ifdef CONFIG_SCHED_SMT
-static const struct cpumask *cpu_smt_mask(int cpu)
-{
-	return topology_thread_cpumask(cpu);
-}
-#endif
-
 /*
  * Topology list, bottom-up.
  */
@@ -5873,6 +5834,11 @@ static struct sched_domain_topology_level *sched_domain_topology = default_topol
 
 #define for_each_sd_topology(tl)			\
 	for (tl = sched_domain_topology; tl->init; tl++)
+
+void set_sched_topology(struct sched_domain_topology_level *tl)
+{
+	sched_domain_topology = tl;
+}
 
 #ifdef CONFIG_NUMA
 

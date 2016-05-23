@@ -296,4 +296,11 @@ static inline int cpu_to_mem(int cpu)
 #define topology_core_cpumask(cpu)		cpumask_of(cpu)
 #endif
 
+#ifdef CONFIG_SCHED_SMT
+static inline  const struct cpumask *cpu_smt_mask(int cpu)
+{
+	return topology_thread_cpumask(cpu);
+}
+#endif
+
 #endif /* _LINUX_TOPOLOGY_H */
