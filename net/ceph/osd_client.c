@@ -201,6 +201,7 @@ void osd_req_op_extent_osd_data_pages(struct ceph_osd_request *osd_req,
 					 own_pages);
 		break;
 	case CEPH_OSD_OP_WRITE:
+	case CEPH_OSD_OP_WRITEFULL:
 		ceph_osd_data_pages_init(&op->extent.request_data, pages,
 					  length, alignment, pages_from_pool,
 					  own_pages);
@@ -224,6 +225,7 @@ void osd_req_op_extent_osd_data_pagelist(struct ceph_osd_request *osd_req,
 					    pagelist);
 		break;
 	case CEPH_OSD_OP_WRITE:
+	case CEPH_OSD_OP_WRITEFULL:
 		ceph_osd_data_pagelist_init(&op->extent.request_data,
 					    pagelist);
 		break;
@@ -247,6 +249,7 @@ void osd_req_op_extent_osd_data_bio(struct ceph_osd_request *osd_req,
 				       bio_length);
 		break;
 	case CEPH_OSD_OP_WRITE:
+	case CEPH_OSD_OP_WRITEFULL:
 		ceph_osd_data_bio_init(&op->extent.request_data, bio,
 				       bio_length);
 		break;
@@ -272,6 +275,7 @@ void osd_req_op_extent_osd_data_sg(struct ceph_osd_request *osd_req,
 		break;
 	case CEPH_OSD_OP_WRITE:
 	case CEPH_OSD_OP_CMPEXT:
+	case CEPH_OSD_OP_WRITEFULL:
 		ceph_osd_data_sg_init(&op->extent.request_data,
 				      sgl, init_sg_offset, length);
 		break;
