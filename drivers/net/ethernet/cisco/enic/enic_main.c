@@ -2277,6 +2277,7 @@ static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		netdev->hw_features |= NETIF_F_RXCSUM;
 
 	netdev->features |= netdev->hw_features;
+	netdev->vlan_features |= netdev->features;
 
 	if (using_dac)
 		netdev->features |= NETIF_F_HIGHDMA;
