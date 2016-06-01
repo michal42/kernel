@@ -133,6 +133,14 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 				ehci->no_selective_suspend = 1;
 			break;
 		}
+		/*
+		 * on some BayTrail systems the firmware hands over the
+		 * EHCI with interrupts disabled. Just in case, we override.
+		 * Failure to do so renders the affected controllers unusable.
+		 * In later kernels the generic PCI layer does this.
+		 */
+		if (pdev->device == 0x0f34)
+			pci_intx(pdev, 1);
 		break;
 	case PCI_VENDOR_ID_INTEL:
 		if (pdev->device == PCI_DEVICE_ID_INTEL_CE4100_USB)
