@@ -178,6 +178,15 @@ out:
 	return rc;
 }
 
+
+static int ecryptfs_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct dentry *dentry = ecryptfs_dentry_to_lower(file->f_dentry);
+	if (!dentry->d_inode->i_fop->mmap)
+		return -ENODEV;
+	return generic_file_mmap(file, vma);
+}
+
 /**
  * ecryptfs_open
  * @inode: inode speciying file to open
@@ -353,7 +362,7 @@ const struct file_operations ecryptfs_main_fops = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = ecryptfs_compat_ioctl,
 #endif
-	.mmap = generic_file_mmap,
+	.mmap = ecryptfs_mmap,
 	.open = ecryptfs_open,
 	.flush = ecryptfs_flush,
 	.release = ecryptfs_release,
