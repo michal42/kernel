@@ -1,15 +1,15 @@
 /*
    md.h : kernel internal structure of the Linux MD driver
           Copyright (C) 1996-98 Ingo Molnar, Gadi Oxman
-	  
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2, or (at your option)
    any later version.
-   
+
    You should have received a copy of the GNU General Public License
    (for example /usr/src/linux/COPYING); if not, write to the Free
-   Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.  
+   Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #ifndef _MD_MD_H
@@ -57,7 +57,7 @@ struct md_rdev {
 	__u64		sb_events;
 	sector_t	data_offset;	/* start of data in array */
 	sector_t	new_data_offset;/* only relevant while reshaping */
-	sector_t 	sb_start;	/* offset of the super block (in 512byte sectors) */
+	sector_t	sb_start;	/* offset of the super block (in 512byte sectors) */
 	int		sb_size;	/* bytes in the superblock */
 	int		preferred_minor;	/* autorun support */
 
@@ -265,7 +265,7 @@ struct mddev {
 					minor_version,
 					patch_version;
 	int				persistent;
-	int 				external;	/* metadata is
+	int				external;	/* metadata is
 							 * managed externally */
 	char				metadata_type[17]; /* externally set*/
 	int				chunk_sectors;
@@ -274,7 +274,7 @@ struct mddev {
 	char				clevel[16];
 	int				raid_disks;
 	int				max_disks;
-	sector_t			dev_sectors; 	/* used size of
+	sector_t			dev_sectors;	/* used size of
 							 * component devices */
 	sector_t			array_sectors; /* exported array size */
 	int				external_size; /* size managed
@@ -338,7 +338,7 @@ struct mddev {
 	int				parallel_resync;
 
 	int				ok_start_degraded;
-	/* recovery/resync flags 
+	/* recovery/resync flags
 	 * NEEDED:   we might need to start a resync/recover
 	 * RUNNING:  a thread is running, or about to be started
 	 * SYNC:     actually doing a resync, not a recovery
@@ -418,20 +418,20 @@ struct mddev {
 
 	unsigned int			safemode;	/* if set, update "clean" superblock
 							 * when no writes pending.
-							 */ 
+							 */
 	unsigned int			safemode_delay;
 	struct timer_list		safemode_timer;
-	atomic_t			writes_pending; 
+	atomic_t			writes_pending;
 	struct request_queue		*queue;	/* for plugging ... */
 
-	struct bitmap                   *bitmap; /* the bitmap for the device */
+	struct bitmap			*bitmap; /* the bitmap for the device */
 	struct {
 		struct file		*file; /* the bitmap file */
 		loff_t			offset; /* offset from superblock of
 						 * start of bitmap. May be
 						 * negative, but not '0'
 						 * For external metadata, offset
-						 * from start of device. 
+						 * from start of device.
 						 */
 		unsigned long		space; /* space available at this offset */
 		loff_t			default_offset; /* this is the offset to use when
@@ -449,7 +449,7 @@ struct mddev {
 		char                    cluster_name[64]; /* Name of the cluster */
 	} bitmap_info;
 
-	atomic_t 			max_corr_read_errors; /* max read retries */
+	atomic_t			max_corr_read_errors; /* max read retries */
 	struct list_head		all_mddevs;
 
 	struct attribute_group		*to_remove;
@@ -471,7 +471,7 @@ struct mddev {
 
 static inline void md_sync_acct(struct block_device *bdev, unsigned long nr_sectors)
 {
-        atomic_add(nr_sectors, &bdev->bd_contains->bd_disk->sync_io);
+	atomic_add(nr_sectors, &bdev->bd_contains->bd_disk->sync_io);
 }
 
 struct md_personality
@@ -485,7 +485,7 @@ struct md_personality
 	int (*stop)(struct mddev *mddev);
 	void (*status)(struct seq_file *seq, struct mddev *mddev);
 	/* error_handler must set ->faulty and clear ->in_sync
-	 * if appropriate, and should abort recovery if needed 
+	 * if appropriate, and should abort recovery if needed
 	 */
 	void (*error_handler)(struct mddev *mddev, struct md_rdev *rdev);
 	int (*hot_add_disk) (struct mddev *mddev, struct md_rdev *rdev);
@@ -514,7 +514,6 @@ struct md_personality
 	 */
 	void *(*takeover) (struct mddev *mddev);
 };
-
 
 struct md_sysfs_entry {
 	struct attribute attr;
@@ -582,7 +581,7 @@ struct md_thread {
 	void			(*run) (struct md_thread *thread);
 	struct mddev		*mddev;
 	wait_queue_head_t	wqueue;
-	unsigned long           flags;
+	unsigned long		flags;
 	struct task_struct	*tsk;
 	unsigned long		timeout;
 	void			*private;
@@ -621,7 +620,7 @@ extern void md_flush_request(struct mddev *mddev, struct bio *bio);
 extern void md_super_write(struct mddev *mddev, struct md_rdev *rdev,
 			   sector_t sector, int size, struct page *page);
 extern int md_super_wait(struct mddev *mddev);
-extern int sync_page_io(struct md_rdev *rdev, sector_t sector, int size, 
+extern int sync_page_io(struct md_rdev *rdev, sector_t sector, int size,
 			struct page *page, int rw, bool metadata_op);
 extern void md_do_sync(struct md_thread *thread);
 extern void md_new_event(struct mddev *mddev);

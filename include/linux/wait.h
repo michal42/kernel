@@ -199,6 +199,10 @@ do {									\
 	finish_wait(&wq, &__wait);					\
 } while (0)
 
+#define ___wait_is_interruptible(state)					\
+        (!__builtin_constant_p(state) ||				\
+                state == TASK_INTERRUPTIBLE || state == TASK_KILLABLE)  \
+
 /**
  * wait_event - sleep until a condition gets true
  * @wq: the waitqueue to wait on
@@ -216,6 +220,61 @@ do {									\
 	if (condition)	 						\
 		break;							\
 	__wait_event(wq, condition);					\
+} while (0)
+
+/**
+ * wait_event_cmd - sleep until a condition gets true
+ * @wq: the waitqueue to wait on
+ * @condition: a C expression for the event to wait for
+ * cmd1: the command will be executed before sleep
+ * cmd2: the command will be executed after sleep
+ *
+ * The process is put to sleep (TASK_UNINTERRUPTIBLE) until the
+ * @condition evaluates to true. The @condition is checked each time
+ * the waitqueue @wq is woken up.
+ *
+ * wake_up() has to be called after changing any variable that could
+ * change the result of the wait condition.
+ */
+#define wait_event_cmd(wq, condition, cmd1, cmd2)			\
+do {									\
+	DEFINE_WAIT(__wait);						\
+									\
+	for (;;) {							\
+		prepare_to_wait(&wq, &__wait, TASK_UNINTERRUPTIBLE);	\
+		if (condition)						\
+			break;						\
+		cmd1;							\
+		schedule();						\
+		cmd2;							\
+	}								\
+	finish_wait(&wq, &__wait);					\
+} while(0)
+
+/*
+ * rewrite wait_event_exclusive_cmd() based on SLE12-SP1 kernel 
+ */
+#define wait_event_exclusive_cmd(wq, condition, cmd1, cmd2)		\
+do {									\
+	int __state = TASK_UNINTERRUPTIBLE;				\
+	DEFINE_WAIT(__wait);						\
+	__wait.flags = WQ_FLAG_EXCLUSIVE;				\
+									\
+	for (;;) {							\
+		prepare_to_wait(&wq, &__wait, __state);			\
+		if (condition)						\
+			break;						\
+		if (___wait_is_interruptible(__state) &&			\
+		    signal_pending_state(__state, current)) {		\
+			abort_exclusive_wait(&wq, &__wait,		\
+					     __state, NULL);		\
+			break;						\
+		}							\
+		cmd1;							\
+		schedule();						\
+		cmd2;							\
+	}								\
+	finish_wait(&wq, &__wait);					\
 } while (0)
 
 #define __wait_event_timeout(wq, condition, ret)			\
