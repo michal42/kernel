@@ -1925,11 +1925,6 @@ EXPORT_SYMBOL(submit_bio);
 static int blk_cloned_rq_check_limits(struct request_queue *q,
 				      struct request *rq)
 {
-	if (blk_rq_sectors(rq) > blk_queue_get_max_sectors(q, rq->cmd_flags)) {
-		printk(KERN_ERR "%s: over max size limit.\n", __func__);
-		return -EIO;
-	}
-
 	/*
 	 * queue's settings related to segment counting like q->bounce_pfn
 	 * may differ from that of other stacking queues.
