@@ -2739,7 +2739,8 @@ rbd_osd_copyup_callback(struct rbd_obj_request *obj_request)
 	dout("%s: obj %p\n", __func__, obj_request);
 
 	rbd_assert(obj_request->type == OBJ_REQUEST_BIO ||
-		obj_request->type == OBJ_REQUEST_NODATA);
+		obj_request->type == OBJ_REQUEST_NODATA ||
+		obj_request->type == OBJ_REQUEST_SG);
 	rbd_assert(obj_request_img_data_test(obj_request));
 	img_request = obj_request->img_request;
 	rbd_assert(img_request);
