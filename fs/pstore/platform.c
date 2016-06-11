@@ -427,7 +427,6 @@ int pstore_register(struct pstore_info *psi)
 		pr_info("Efi pstore disabled, enforce via pstore.backend=efi");
 		pr_info("On a broken BIOS, this can severely harm your system");
 		pr_info("Only enable efi based pstore when you know what you are doing");
-		spin_unlock(&pstore_lock);
 		return -EINVAL;
 	}
 
