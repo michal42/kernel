@@ -43,8 +43,12 @@ struct screen_info {
 	__u16 pages;		/* 0x32 */
 	__u16 vesa_attributes;	/* 0x34 */
 	__u32 capabilities;     /* 0x36 */
+#ifdef __GENKSYMS__
+	__u8  _reserved[6];	/* 0x3a */
+#else
 	__u32 ext_lfb_base;     /* 0x3a */
 	__u8  _reserved[2];     /* 0x3e */
+#endif
 } __attribute__((packed));
 
 #define VIDEO_TYPE_MDA		0x10	/* Monochrome Text Display	*/
