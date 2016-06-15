@@ -308,6 +308,7 @@ tcm_rbd_execute_cmd(struct se_cmd *cmd, struct rbd_device *rbd_dev,
 		sense = TCM_OUT_OF_RESOURCES;
 		goto free_snapc;
 	}
+	snapc = NULL; /* img_request consumes a ref */
 
 	ret = rbd_img_request_fill(img_request,
 				   sgl ? OBJ_REQUEST_SG : OBJ_REQUEST_NODATA,
@@ -475,6 +476,7 @@ static sense_reason_t tcm_rbd_execute_cmp_and_write(struct se_cmd *cmd)
 		sense = TCM_OUT_OF_RESOURCES;
 		goto free_snapc;
 	}
+	snapc = NULL; /* img_request consumes a ref */
 
 	ret = down_interruptible(&dev->caw_sem);
 	if (ret != 0 || signal_pending(current)) {
