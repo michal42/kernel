@@ -237,7 +237,7 @@ early_param("gbpages", parse_direct_gbpages_on);
  * around without checking the pgd every time.
  */
 
-pteval_t __supported_pte_mask __read_mostly = ~0UL;
+pteval_t __supported_pte_mask __read_mostly = ~_PAGE_GLOBAL;
 EXPORT_SYMBOL_GPL(__supported_pte_mask);
 
 int force_personality32;
@@ -881,6 +881,8 @@ void __init xen_init_pt(void)
 			       || (pa >= pmd_pa && pa < pmd_pa + pmd_sz)
 			       || (pa >= pte_pa && pa < pte_pa + pte_sz)
 			       ? pte_wrprotect(pte_k[i]) : pte_k[i];
+			*pte = pte_set_flags(*pte,
+					     __supported_pte_mask & _PAGE_NX);
 		}
 		early_make_page_readonly(pte - PTRS_PER_PTE,
 					 XENFEAT_writable_page_tables);

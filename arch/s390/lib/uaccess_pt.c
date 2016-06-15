@@ -86,7 +86,7 @@ static unsigned long follow_table(struct mm_struct *mm,
 
 	if (unlikely(address > mm->context.asce_limit - 1))
 		return -0x38UL;
-	switch (mm->context.asce_bits & _ASCE_TYPE_MASK) {
+	switch (mm->context.asce & _ASCE_TYPE_MASK) {
 	case _ASCE_TYPE_REGION1:
 		table = table + ((address >> 53) & 0x7ff);
 		if (unlikely(*table & _REGION_ENTRY_INVALID))

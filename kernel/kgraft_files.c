@@ -14,6 +14,8 @@
  * any later version.
  */
 
+#define pr_fmt(fmt) "kgr: " fmt
+
 #include <linux/kernel.h>
 #include <linux/kgraft.h>
 #include <linux/kobject.h>
@@ -46,14 +48,16 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	const struct kgr_patch_fun *pf;
 	ssize_t size;
 
-	size = snprintf(buf, PAGE_SIZE, "%-20s   Weak  State\n", "Function");
-
+	size = snprintf(buf, PAGE_SIZE, "%-20s  %-20s  Sympos  State\n",
+		"Function", "Object");
 
 	kgr_for_each_patch_fun(p, pf) {
 		size += snprintf(buf + size, PAGE_SIZE - size,
-				"%-20s  %5d  %5d\n", pf->name,
-				 !(pf->abort_if_missing), pf->state);
+				"%-20s  %-20s  %6lu  %5d\n", pf->name,
+				pf->objname ? pf->objname : "vmlinux",
+				pf->sympos, pf->state);
 	}
+
 	return size;
 }
 
@@ -227,13 +231,13 @@ int kgr_add_files(void)
 
 	kgr_sysfs_dir = kobject_create_and_add("kgraft", kernel_kobj);
 	if (!kgr_sysfs_dir) {
-		pr_err("kgr: cannot create kgraft directory in sysfs!\n");
+		pr_err("cannot create kgraft directory in sysfs!\n");
 		return -EIO;
 	}
 
 	ret = sysfs_create_group(kgr_sysfs_dir, &kgr_sysfs_group);
 	if (ret) {
-		pr_err("kgr: cannot create attributes in sysfs\n");
+		pr_err("cannot create attributes in sysfs\n");
 		goto err_put_sysfs;
 	}
 

@@ -761,8 +761,9 @@ xfs_setattr_size(
 	if (DM_EVENT_ENABLED(ip, DM_EVENT_TRUNCATE) &&
 	    !(flags & XFS_ATTR_DMI)) {
 		int dmflags = AT_DELAY_FLAG(flags) | DM_SEM_FLAG_WR;
+		int iolock = (flags & XFS_ATTR_NOLOCK) ? XFS_IOLOCK_EXCL : 0;
 		error = XFS_SEND_DATA(mp, DM_EVENT_TRUNCATE, ip,
-			iattr->ia_size, 0, dmflags, NULL);
+			iattr->ia_size, 0, dmflags, &iolock);
 		if (error) {
 			lock_flags = 0;
 			goto out_unlock;

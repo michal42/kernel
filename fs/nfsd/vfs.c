@@ -481,8 +481,8 @@ nfsd_setattr(struct svc_rqst *rqstp, struct svc_fh *fhp, struct iattr *iap,
 	fh_unlock(fhp);
 
 	/* to get NFSERR_JUKEBOX on the wire, need -ETIMEDOUT */
-	if (err == -EAGAIN)
-		err = -ETIMEDOUT;
+	if (host_err == -EAGAIN)
+		host_err = -ETIMEDOUT;
 
 out_put_write_access_nfserror:
 	err = nfserrno(host_err);
@@ -528,7 +528,7 @@ set_nfsv4_acl_one(struct dentry *dentry, struct posix_acl *pacl, char *key)
 	int error = 0;
 
 	if (!pacl)
-		return vfs_setxattr(dentry, key, NULL, 0, 0);
+		return vfs_removexattr(dentry, key);
 
 	buflen = posix_acl_xattr_size(pacl->a_count);
 	buf = kmalloc(buflen, GFP_KERNEL);

@@ -52,6 +52,14 @@
 #define SHUTDOWN_TIMEOUT	(shutdown_timeout * HZ)
 #define IOD_TIMEOUT		(retry_time * HZ)
 
+/*
+ * We handle AEN commands ourselves and don't even let the
+ * block layer know about them.
+ */
+#define NVME_AQ_DEPTH 256
+#define NVME_NR_AEN_COMMANDS   1
+#define NVME_AQ_BLKMQ_DEPTH    (NVME_AQ_DEPTH - NVME_NR_AEN_COMMANDS)
+
 static unsigned char admin_timeout = 60;
 module_param(admin_timeout, byte, 0644);
 MODULE_PARM_DESC(admin_timeout, "timeout in seconds for admin commands");
@@ -656,6 +664,9 @@ static struct nvme_bio_pair *nvme_bio_split(struct bio *bio, int idx,
 	bp->b1.bi_end_io = nvme_bio_pair_endio;
 	bp->b2.bi_end_io = nvme_bio_pair_endio;
 
+	bp->b1.bi_flags &= ~(1 << BIO_SEG_VALID);
+	bp->b2.bi_flags &= ~(1 << BIO_SEG_VALID);
+
 	bp->parent = bio;
 	atomic_set(&bp->cnt, 2);
 
@@ -910,7 +921,9 @@ static int nvme_process_cq(struct nvme_queue *nvmeq)
 		void *ctx;
 		nvme_completion_fn fn;
 		struct nvme_completion cqe = nvmeq->cqes[head];
-		if ((le16_to_cpu(cqe.status) & 1) != phase)
+		u16 status = le16_to_cpu(cqe.status);
+
+		if ((status & 1) != phase)
 			break;
 		nvmeq->sq_head = le16_to_cpu(cqe.sq_head);
 		if (++head == nvmeq->q_depth) {
@@ -919,6 +932,17 @@ static int nvme_process_cq(struct nvme_queue *nvmeq)
 		}
 
 		ctx = free_cmdid(nvmeq, cqe.command_id, &fn);
+		/*
+		 * AEN requests are special as they don't time out and can
+		 * survive any kind of queue freeze and often don't respond to
+		 * aborts.  We don't even bother to allocate a struct request
+		 * for them but rather special case them here.
+		 */
+		if (unlikely(nvmeq->qid == 0 &&
+			     cqe.command_id >= NVME_AQ_BLKMQ_DEPTH)) {
+			async_completion(nvmeq, ctx, &cqe);
+			continue;
+		}
 		fn(nvmeq, ctx, &cqe);
 	}
 
@@ -1400,12 +1424,9 @@ static struct nvme_queue *nvme_alloc_queue(struct nvme_dev *dev, int qid,
 	snprintf(nvmeq->irqname, sizeof(nvmeq->irqname), "nvme%dq%d",
 			dev->instance, qid);
 	spin_lock_init(&nvmeq->q_lock);
-	nvmeq->cq_head = 0;
-	nvmeq->cq_phase = 1;
 	init_waitqueue_head(&nvmeq->sq_full);
 	bio_list_init(&nvmeq->sq_cong);
 	INIT_LIST_HEAD(&nvmeq->iod_bio);
-	nvmeq->q_db = &dev->dbs[qid * 2 * dev->db_stride];
 	nvmeq->q_depth = depth;
 	nvmeq->qid = qid;
 	nvmeq->q_suspended = 1;
@@ -1469,11 +1490,17 @@ static int nvme_create_queue(struct nvme_queue *nvmeq, int qid)
 	if (result < 0)
 		goto release_cq;
 
+	/*
+	 * Init queue door bell ioremap address before enabling irq, if not,
+	 * a spurious interrupt triggered nvme_process_cq may access invalid
+	 * address
+	 */
+	nvme_init_queue(nvmeq, qid);
+
 	result = queue_request_irq(dev, nvmeq, nvmeq->irqname);
 	if (result < 0)
 		goto release_sq;
 
-	nvme_init_queue(nvmeq, qid);
 	return result;
 
  release_sq:
@@ -1560,9 +1587,13 @@ static int nvme_configure_admin_queue(struct nvme_dev *dev)
 	u32 aqa;
 	u64 cap = readq(&dev->bar->cap);
 	struct nvme_queue *nvmeq;
-	unsigned page_shift = PAGE_SHIFT;
+	/*
+	 * default to a 4K page size, with the intention to update this
+	 * path in the future to accomodate architectures with differing
+	 * kernel and IO page sizes.
+	 */
+	unsigned page_shift = 12;
 	unsigned dev_page_min = NVME_CAP_MPSMIN(cap) + 12;
-	unsigned dev_page_max = NVME_CAP_MPSMAX(cap) + 12;
 
 	if (page_shift < dev_page_min) {
 		dev_err(&dev->pci_dev->dev,
@@ -1570,13 +1601,6 @@ static int nvme_configure_admin_queue(struct nvme_dev *dev)
 				"host (%u)\n", 1 << dev_page_min,
 				1 << page_shift);
 		return -ENODEV;
-	}
-	if (page_shift > dev_page_max) {
-		dev_info(&dev->pci_dev->dev,
-				"Device maximum page size (%u) smaller than "
-				"host (%u); enabling work-around\n",
-				1 << dev_page_max, 1 << page_shift);
-		page_shift = dev_page_max;
 	}
 
 	result = nvme_disable_ctrl(dev, cap);
@@ -1608,6 +1632,7 @@ static int nvme_configure_admin_queue(struct nvme_dev *dev)
 	if (result)
 		return result;
 
+	nvme_init_queue(nvmeq, 0);
 	result = queue_request_irq(dev, nvmeq, nvmeq->irqname);
 	if (result)
 		return result;
@@ -2122,8 +2147,13 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 	ns->lba_shift = id->lbaf[lbaf].ds;
 	ns->ms = le16_to_cpu(id->lbaf[lbaf].ms);
 	blk_queue_logical_block_size(ns->queue, 1 << ns->lba_shift);
-	if (dev->max_hw_sectors)
+	if (dev->max_hw_sectors) {
+		u32 max_segments =
+			(dev->max_hw_sectors / (dev->page_size >> 9)) + 1;
 		blk_queue_max_hw_sectors(ns->queue, dev->max_hw_sectors);
+		blk_queue_max_segments(ns->queue,
+				       min_t(u32, max_segments, USHRT_MAX));
+	}
 	if (dev->vwc & NVME_CTRL_VWC_PRESENT)
 		blk_queue_flush(ns->queue, REQ_FLUSH | REQ_FUA);
 
@@ -2457,6 +2487,9 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	memcpy(dev->firmware_rev, ctrl->fr, sizeof(ctrl->fr));
 	if (ctrl->mdts)
 		dev->max_hw_sectors = 1 << (ctrl->mdts + shift - 9);
+	else
+		dev->max_hw_sectors = UINT_MAX;
+
 	if ((pdev->vendor == PCI_VENDOR_ID_INTEL) &&
 			(pdev->device == 0x0953) && ctrl->vs[3])
 		dev->stripe_size = 1 << (ctrl->vs[3] + shift);
@@ -2925,7 +2958,6 @@ static int nvme_dev_start(struct nvme_dev *dev)
 		result = nvme_thread ? PTR_ERR(nvme_thread) : -EINTR;
 		goto disable;
 	}
-	nvme_init_queue(raw_nvmeq(dev, 0), 0);
 
 	result = nvme_setup_io_queues(dev);
 	if (result)
@@ -2991,8 +3023,17 @@ static void nvme_dead_ctrl(struct nvme_dev *dev)
 
 static void nvme_dev_reset(struct nvme_dev *dev)
 {
+	bool in_probe = work_busy(&dev->probe_work);
+
 	nvme_dev_shutdown(dev);
-	if (nvme_dev_resume(dev)) {
+
+	/* Synchronize with device probe so that work will see failure status
+	 * and exit gracefully without trying to schedule another reset */
+	flush_work(&dev->probe_work);
+
+	/* Fail this device if reset occured during probe to avoid
+	 * infinite initialization loops. */
+	if (in_probe) {
 		dev_err(&dev->pci_dev->dev, "Device failed to resume\n");
 		kref_get(&dev->kref);
 		if (IS_ERR(kthread_run(nvme_remove_dead_ctrl, dev, "nvme%d",
@@ -3001,7 +3042,11 @@ static void nvme_dev_reset(struct nvme_dev *dev)
 				"Failed to start controller remove task\n");
 			kref_put(&dev->kref, nvme_free_dev);
 		}
+		return;
 	}
+	/* Schedule device resume asynchronously so the reset work is available
+	 * to cleanup errors that may occur during reinitialization */
+	schedule_work(&dev->probe_work);
 }
 
 static void nvme_reset_failed_dev(struct work_struct *ws)

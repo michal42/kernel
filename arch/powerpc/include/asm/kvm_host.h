@@ -69,6 +69,11 @@ extern void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
 #define KVM_NR_PAGE_SIZES	1
 #define KVM_PAGES_PER_HPAGE(x)	(1UL<<31)
 
+static inline void kvm_arch_mmu_notifier_invalidate_page(struct kvm *kvm,
+							 unsigned long address)
+{
+}
+
 #define HPTEG_CACHE_NUM			(1 << 15)
 #define HPTEG_HASH_BITS_PTE		13
 #define HPTEG_HASH_BITS_PTE_LONG	12

@@ -10,7 +10,17 @@ struct mnt_namespace {
 	struct user_namespace	*user_ns;
 	u64			seq;	/* Sequence number to prevent loops */
 	wait_queue_head_t poll;
+#ifdef __GENKSYMS__
+	/*
+	 * This is to fix kABI false alarms in fs/ source files where
+	 * the type is fully defined.  It's included in the kABI due to
+	 * task_struct->nsproxy->mnt_namespace but is a forward declared
+	 * (opaque) pointer everywhere else.
+	 */
 	int event;
+#else
+	u64 event;
+#endif
 };
 
 struct mnt_pcp {
@@ -88,6 +98,9 @@ struct proc_mounts {
 	struct mnt_namespace *ns;
 	struct path root;
 	int (*show)(struct seq_file *, struct vfsmount *);
+	void *cached_mount;
+	u64 cached_event;
+	loff_t cached_index;
 };
 
 #define proc_mounts(p) (container_of((p), struct proc_mounts, m))

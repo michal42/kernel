@@ -297,6 +297,9 @@ static int remove_board(struct slot *p_slot)
 struct power_work_info {
 	struct slot *p_slot;
 	struct work_struct work;
+	unsigned int req;
+#define DISABLE_REQ 0
+#define ENABLE_REQ  1
 };
 
 /**
@@ -313,10 +316,8 @@ static void pciehp_power_thread(struct work_struct *work)
 	struct slot *p_slot = info->p_slot;
 	int ret;
 
-	mutex_lock(&p_slot->lock);
-	switch (p_slot->state) {
-	case POWEROFF_STATE:
-		mutex_unlock(&p_slot->lock);
+	switch (info->req) {
+	case DISABLE_REQ:
 		ctrl_dbg(p_slot->ctrl,
 			 "Disabling domain:bus:device=%04x:%02x:00\n",
 			 pci_domain_nr(p_slot->ctrl->pcie->port->subordinate),
@@ -326,9 +327,13 @@ static void pciehp_power_thread(struct work_struct *work)
 		mutex_unlock(&p_slot->hotplug_lock);
 		mutex_lock(&p_slot->lock);
 		p_slot->state = STATIC_STATE;
-		break;
-	case POWERON_STATE:
 		mutex_unlock(&p_slot->lock);
+		break;
+	case ENABLE_REQ:
+		ctrl_dbg(p_slot->ctrl,
+			 "Enabling domain:bus:device=%04x:%02x:00\n",
+			 pci_domain_nr(p_slot->ctrl->pcie->port->subordinate),
+			 p_slot->ctrl->pcie->port->subordinate->number);
 		mutex_lock(&p_slot->hotplug_lock);
 		ret = pciehp_enable_slot(p_slot);
 		mutex_unlock(&p_slot->hotplug_lock);
@@ -336,11 +341,11 @@ static void pciehp_power_thread(struct work_struct *work)
 			pciehp_green_led_off(p_slot);
 		mutex_lock(&p_slot->lock);
 		p_slot->state = STATIC_STATE;
+		mutex_unlock(&p_slot->lock);
 		break;
 	default:
 		break;
 	}
-	mutex_unlock(&p_slot->lock);
 
 	kfree(info);
 }
@@ -363,9 +368,11 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 	switch (p_slot->state) {
 	case BLINKINGOFF_STATE:
 		p_slot->state = POWEROFF_STATE;
+		info->req = DISABLE_REQ;
 		break;
 	case BLINKINGON_STATE:
 		p_slot->state = POWERON_STATE;
+		info->req = ENABLE_REQ;
 		break;
 	default:
 		kfree(info);
@@ -461,10 +468,13 @@ static void handle_surprise_event(struct slot *p_slot)
 	INIT_WORK(&info->work, pciehp_power_thread);
 
 	pciehp_get_adapter_status(p_slot, &getstatus);
-	if (!getstatus)
+	if (!getstatus) {
 		p_slot->state = POWEROFF_STATE;
-	else
+		info->req = DISABLE_REQ;
+	} else {
 		p_slot->state = POWERON_STATE;
+		info->req = ENABLE_REQ;
+	}
 
 	queue_work(p_slot->wq, &info->work);
 }
@@ -484,6 +494,7 @@ static void handle_link_event(struct slot *p_slot, u32 event)
 		return;
 	}
 	info->p_slot = p_slot;
+	info->req = event == INT_LINK_UP ? ENABLE_REQ : DISABLE_REQ;
 	INIT_WORK(&info->work, pciehp_power_thread);
 
 	switch (p_slot->state) {
@@ -622,24 +633,6 @@ int pciehp_disable_slot(struct slot *p_slot)
 
 	if (!p_slot->ctrl)
 		return 1;
-
-	if (!HP_SUPR_RM(p_slot->ctrl)) {
-		ret = pciehp_get_adapter_status(p_slot, &getstatus);
-		if (ret || !getstatus) {
-			ctrl_info(ctrl, "No adapter on slot(%s)\n",
-				  slot_name(p_slot));
-			return -ENODEV;
-		}
-	}
-
-	if (MRL_SENS(p_slot->ctrl)) {
-		ret = pciehp_get_latch_status(p_slot, &getstatus);
-		if (ret || getstatus) {
-			ctrl_info(ctrl, "Latch open on slot(%s)\n",
-				  slot_name(p_slot));
-			return -ENODEV;
-		}
-	}
 
 	if (POWER_CTRL(p_slot->ctrl)) {
 		ret = pciehp_get_power_status(p_slot, &getstatus);

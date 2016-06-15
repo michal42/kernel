@@ -493,6 +493,7 @@ extern enum system_states {
 #define TAINT_FIRMWARE_WORKAROUND	11
 #define TAINT_OOT_MODULE		12
 #define TAINT_UNSIGNED_MODULE		13
+#define TAINT_KGRAFT			15
 #define TAINT_UNSAFE_HIBERNATE		16
 
 #ifdef CONFIG_SUSE_KERNEL_SUPPORTED
@@ -630,7 +631,7 @@ do {							\
 
 #define do_trace_printk(fmt, args...)					\
 do {									\
-	static const char *trace_printk_fmt				\
+	static const char *trace_printk_fmt __used			\
 		__attribute__((section("__trace_printk_fmt"))) =	\
 		__builtin_constant_p(fmt) ? fmt : NULL;			\
 									\
@@ -674,7 +675,7 @@ int __trace_printk(unsigned long ip, const char *fmt, ...);
  */
 
 #define trace_puts(str) ({						\
-	static const char *trace_printk_fmt				\
+	static const char *trace_printk_fmt __used			\
 		__attribute__((section("__trace_printk_fmt"))) =	\
 		__builtin_constant_p(str) ? str : NULL;			\
 									\
@@ -696,7 +697,7 @@ extern void trace_dump_stack(int skip);
 #define ftrace_vprintk(fmt, vargs)					\
 do {									\
 	if (__builtin_constant_p(fmt)) {				\
-		static const char *trace_printk_fmt			\
+		static const char *trace_printk_fmt __used		\
 		  __attribute__((section("__trace_printk_fmt"))) =	\
 			__builtin_constant_p(fmt) ? fmt : NULL;		\
 									\

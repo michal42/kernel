@@ -1953,8 +1953,10 @@ static irqreturn_t e1000_intr_msix_rx(int __always_unused irq, void *data)
 	 * previous interrupt.
 	 */
 	if (rx_ring->set_itr) {
-		writel(1000000000 / (rx_ring->itr_val * 256),
-		       rx_ring->itr_register);
+		u32 itr = rx_ring->itr_val ?
+			  1000000000 / (rx_ring->itr_val * 256) : 0;
+
+		writel(itr, rx_ring->itr_register);
 		rx_ring->set_itr = 0;
 	}
 
@@ -4275,18 +4277,29 @@ static cycle_t e1000e_cyclecounter_read(const struct cyclecounter *cc)
 	struct e1000_adapter *adapter = container_of(cc, struct e1000_adapter,
 						     cc);
 	struct e1000_hw *hw = &adapter->hw;
+	u32 systimel_1, systimel_2, systimeh;
 	cycle_t systim, systim_next;
-	/* SYSTIMH latching upon SYSTIML read does not work well. To fix that
-	 * we don't want to allow overflow of SYSTIML and a change to SYSTIMH
-	 * to occur between reads, so if we read a vale close to overflow, we
-	 * wait for overflow to occur and read both registers when its safe.
+	/* SYSTIMH latching upon SYSTIML read does not work well.
+	 * This means that if SYSTIML overflows after we read it but before
+	 * we read SYSTIMH, the value of SYSTIMH has been incremented and we
+	 * will experience a huge non linear increment in the systime value
+	 * to fix that we test for overflow and if true, we re-read systime.
 	 */
-	u32 systim_overflow_latch_fix = 0x3FFFFFFF;
-
-	do {
-		systim = (cycle_t)er32(SYSTIML);
-	} while (systim > systim_overflow_latch_fix);
-	systim |= (cycle_t)er32(SYSTIMH) << 32;
+	systimel_1 = er32(SYSTIML);
+	systimeh = er32(SYSTIMH);
+	systimel_2 = er32(SYSTIML);
+	/* Check for overflow. If there was no overflow, use the values */
+	if (systimel_1 < systimel_2) {
+		systim = (cycle_t)systimel_1;
+		systim |= (cycle_t)systimeh << 32;
+	} else {
+		/* There was an overflow, read again SYSTIMH, and use
+		 * systimel_2
+		 */
+		systimeh = er32(SYSTIMH);
+		systim = (cycle_t)systimel_2;
+		systim |= (cycle_t)systimeh << 32;
+	}
 
 	if ((hw->mac.type == e1000_82574) || (hw->mac.type == e1000_82583)) {
 		u64 incvalue, time_delta, rem, temp;
@@ -4297,6 +4310,8 @@ static cycle_t e1000e_cyclecounter_read(const struct cyclecounter *cc)
 		 * rate and is a multiple of incvalue
 		 */
 		incvalue = er32(TIMINCA) & E1000_TIMINCA_INCVALUE_MASK;
+		if (!incvalue)
+			return 0;
 		for (i = 0; i < E1000_MAX_82574_SYSTIM_REREADS; i++) {
 			/* latch SYSTIMH on read of SYSTIML */
 			systim_next = (cycle_t)er32(SYSTIML);

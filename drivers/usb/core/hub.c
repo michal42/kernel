@@ -105,6 +105,7 @@ EXPORT_SYMBOL_GPL(ehci_cf_port_reset_rwsem);
 #define HUB_DEBOUNCE_STABLE	 100
 
 static int usb_reset_and_verify_device(struct usb_device *udev);
+static void hub_release(struct kref *kref);
 
 static inline char *portspeed(struct usb_hub *hub, int portstatus)
 {
@@ -1019,10 +1020,20 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 	unsigned delay;
 
 	/* Continue a partial initialization */
-	if (type == HUB_INIT2)
-		goto init2;
-	if (type == HUB_INIT3)
+	if (type == HUB_INIT2 || type == HUB_INIT3) {
+		device_lock(hub->intfdev);
+
+		/* Was the hub disconnected while we were waiting? */
+		if (hub->disconnected) {
+			device_unlock(hub->intfdev);
+			kref_put(&hub->kref, hub_release);
+			return;
+		}
+		if (type == HUB_INIT2)
+			goto init2;
 		goto init3;
+	}
+	kref_get(&hub->kref);
 
 	/* The superspeed hub except for root hub has to use Hub Depth
 	 * value as an offset into the route string to locate the bits
@@ -1220,6 +1231,7 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 			queue_delayed_work(system_power_efficient_wq,
 					&hub->init_work,
 					msecs_to_jiffies(delay));
+			device_unlock(hub->intfdev);
 			return;		/* Continues at init3: below */
 		} else {
 			msleep(delay);
@@ -1241,6 +1253,11 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 	/* Allow autosuspend if it was suppressed */
 	if (type <= HUB_INIT3)
 		usb_autopm_put_interface_async(to_usb_interface(hub->intfdev));
+
+	if (type == HUB_INIT2 || type == HUB_INIT3)
+		device_unlock(hub->intfdev);
+
+	kref_put(&hub->kref, hub_release);
 }
 
 /* Implement the continuations for the delays above */
@@ -3257,7 +3274,7 @@ static int finish_port_resume(struct usb_device *udev)
 /*
  * There are some SS USB devices which take longer time for link training.
  * XHCI specs 4.19.4 says that when Link training is successful, port
- * sets CSC bit to 1. So if SW reads port status before successful link
+ * sets CCS bit to 1. So if SW reads port status before successful link
  * training, then it will not find device to be present.
  * USB Analyzer log with such buggy devices show that in some cases
  * device switch on the RX termination after long delay of host enabling
@@ -3268,14 +3285,17 @@ static int finish_port_resume(struct usb_device *udev)
  * routine implements a 2000 ms timeout for link training. If in a case
  * link trains before timeout, loop will exit earlier.
  *
+ * There are also some 2.0 hard drive based devices and 3.0 thumb
+ * drives that, when plugged into a 2.0 only port, take a long
+ * time to set CCS after VBUS enable.
+ *
  * FIXME: If a device was connected before suspend, but was removed
  * while system was asleep, then the loop in the following routine will
  * only exit at timeout.
  *
- * This routine should only be called when persist is enabled for a SS
- * device.
+ * This routine should only be called when persist is enabled.
  */
-static int wait_for_ss_port_enable(struct usb_device *udev,
+static int wait_for_connected(struct usb_device *udev,
 		struct usb_hub *hub, int *port1,
 		u16 *portchange, u16 *portstatus)
 {
@@ -3288,6 +3308,7 @@ static int wait_for_ss_port_enable(struct usb_device *udev,
 		delay_ms += 20;
 		status = hub_port_status(hub, *port1, portstatus, portchange);
 	}
+	dev_dbg(&udev->dev, "Waited %dms for CONNECT\n", delay_ms);
 	return status;
 }
 
@@ -3387,8 +3408,8 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 		}
 	}
 
-	if (udev->persist_enabled && hub_is_superspeed(hub->hdev))
-		status = wait_for_ss_port_enable(udev, hub, &port1, &portchange,
+	if (udev->persist_enabled)
+		status = wait_for_connected(udev, hub, &port1, &portchange,
 				&portstatus);
 
 	status = check_port_resume_type(udev,
@@ -4200,7 +4221,7 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 {
 	struct usb_device	*hdev = hub->hdev;
 	struct usb_hcd		*hcd = bus_to_hcd(hdev->bus);
-	int			i, j, retval;
+	int			retries, operations, retval, i;
 	unsigned		delay = HUB_SHORT_RESET_TIME;
 	enum usb_device_speed	oldspeed = udev->speed;
 	const char		*speed;
@@ -4303,7 +4324,7 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 	 * first 8 bytes of the device descriptor to get the ep0 maxpacket
 	 * value.
 	 */
-	for (i = 0; i < GET_DESCRIPTOR_TRIES; (++i, msleep(100))) {
+	for (retries = 0; retries < GET_DESCRIPTOR_TRIES; (++retries, msleep(100))) {
 		bool did_new_scheme = false;
 
 		if (use_new_scheme(udev, retry_counter)) {
@@ -4330,7 +4351,7 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 			 * 255 is for WUSB devices, we actually need to use
 			 * 512 (WUSB1.0[4.8.1]).
 			 */
-			for (j = 0; j < 3; ++j) {
+			for (operations = 0; operations < 3; ++operations) {
 				buf->bMaxPacketSize0 = 0;
 				r = usb_control_msg(udev, usb_rcvaddr0pipe(),
 					USB_REQ_GET_DESCRIPTOR, USB_DIR_IN,
@@ -4364,7 +4385,13 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 						r = -EPROTO;
 					break;
 				}
-				if (r == 0)
+				/*
+				 * Some devices time out if they are powered on
+				 * when already connected. They need a second
+				 * reset. But only on the first attempt,
+				 * lest we get into a time out/reset loop
+				 */
+				if (r == 0  || (r == -ETIMEDOUT && retries == 0))
 					break;
 			}
 			udev->descriptor.bMaxPacketSize0 =
@@ -4396,7 +4423,7 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
  		 * authorization will assign the final address.
  		 */
 		if (udev->wusb == 0) {
-			for (j = 0; j < SET_ADDRESS_TRIES; ++j) {
+			for (operations = 0; operations < SET_ADDRESS_TRIES; ++operations) {
 				retval = hub_set_address(udev, devnum);
 				if (retval >= 0)
 					break;

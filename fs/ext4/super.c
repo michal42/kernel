@@ -925,6 +925,7 @@ static void init_once(void *foo)
 	INIT_LIST_HEAD(&ei->i_orphan);
 	init_rwsem(&ei->xattr_sem);
 	init_rwsem(&ei->i_data_sem);
+	init_rwsem(&ei->i_mmap_sem);
 	inode_init_once(&ei->vfs_inode);
 }
 
@@ -1374,9 +1375,9 @@ static const struct mount_opts {
 	{Opt_err_ro, EXT4_MOUNT_ERRORS_RO, MOPT_SET | MOPT_CLEAR_ERR},
 	{Opt_err_cont, EXT4_MOUNT_ERRORS_CONT, MOPT_SET | MOPT_CLEAR_ERR},
 	{Opt_data_err_abort, EXT4_MOUNT_DATA_ERR_ABORT,
-	 MOPT_NO_EXT2 | MOPT_SET},
+	 MOPT_NO_EXT2},
 	{Opt_data_err_ignore, EXT4_MOUNT_DATA_ERR_ABORT,
-	 MOPT_NO_EXT2 | MOPT_CLEAR},
+	 MOPT_NO_EXT2},
 	{Opt_barrier, EXT4_MOUNT_BARRIER, MOPT_SET},
 	{Opt_nobarrier, EXT4_MOUNT_BARRIER, MOPT_CLEAR},
 	{Opt_noauto_da_alloc, EXT4_MOUNT_NO_AUTO_DA_ALLOC, MOPT_SET},
@@ -1623,6 +1624,10 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 		}
 		sbi->s_jquota_fmt = m->mount_opt;
 #endif
+	} else if (token == Opt_data_err_abort) {
+		sbi->s_mount_opt |= m->mount_opt;
+	} else if (token == Opt_data_err_ignore) {
+		sbi->s_mount_opt &= ~m->mount_opt;
 	} else {
 		if (!args->from)
 			arg = 1;
@@ -1826,6 +1831,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 		SEQ_OPTS_PRINT("init_itable=%u", sbi->s_li_wait_mult);
 	if (nodefs || sbi->s_max_dir_size_kb)
 		SEQ_OPTS_PRINT("max_dir_size_kb=%u", sbi->s_max_dir_size_kb);
+	if (test_opt(sb, DATA_ERR_ABORT))
+		SEQ_OPTS_PUTS("data_err=abort");
 
 	ext4_show_quota_options(seq, sb);
 	return 0;
@@ -5119,6 +5126,20 @@ static int ext4_quota_on_mount(struct super_block *sb, int type)
 					EXT4_SB(sb)->s_jquota_fmt, type);
 }
 
+static void lockdep_set_quota_inode(struct inode *inode, int subclass)
+{
+	struct ext4_inode_info *ei = EXT4_I(inode);
+
+	/* The first argument of lockdep_set_subclass has to be
+	 * *exactly* the same as the argument to init_rwsem() --- in
+	 * this case, in init_once() --- or lockdep gets unhappy
+	 * because the name of the lock is set using the
+	 * stringification of the argument to init_rwsem().
+	 */
+	(void) ei;	/* shut up clang warning if !CONFIG_LOCKDEP */
+	lockdep_set_subclass(&ei->i_data_sem, subclass);
+}
+
 /*
  * Standard function to be called on quota_on
  */
@@ -5158,8 +5179,12 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
 		if (err)
 			return err;
 	}
-
-	return dquot_quota_on(sb, type, format_id, path);
+	lockdep_set_quota_inode(path->dentry->d_inode, I_DATA_SEM_QUOTA);
+	err = dquot_quota_on(sb, type, format_id, path);
+	if (err)
+		lockdep_set_quota_inode(path->dentry->d_inode,
+					     I_DATA_SEM_NORMAL);
+	return err;
 }
 
 static int ext4_quota_enable(struct super_block *sb, int type, int format_id,
@@ -5185,8 +5210,11 @@ static int ext4_quota_enable(struct super_block *sb, int type, int format_id,
 
 	/* Don't account quota for quota files to avoid recursion */
 	qf_inode->i_flags |= S_NOQUOTA;
+	lockdep_set_quota_inode(qf_inode, I_DATA_SEM_QUOTA);
 	err = dquot_enable(qf_inode, type, format_id, flags);
 	iput(qf_inode);
+	if (err)
+		lockdep_set_quota_inode(qf_inode, I_DATA_SEM_NORMAL);
 
 	return err;
 }

@@ -199,7 +199,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
 }
 
 static const struct vm_operations_struct ext4_file_vm_ops = {
-	.fault		= filemap_fault,
+	.fault		= ext4_filemap_fault,
 	.page_mkwrite   = ext4_page_mkwrite,
 	.__deprecated_remap_pages	= generic_file_remap_pages2,
 };
@@ -474,6 +474,7 @@ static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 
 		last++;
 		dataoff = (loff_t)last << blkbits;
+		cond_resched();
 	} while (last <= end);
 
 	mutex_unlock(&inode->i_mutex);
@@ -512,6 +513,7 @@ static loff_t ext4_seek_hole(struct file *file, loff_t offset, loff_t maxsize)
 	holeoff = offset;
 
 	do {
+		cond_resched();
 		map.m_lblk = last;
 		map.m_len = end - last + 1;
 		ret = ext4_map_blocks(NULL, inode, &map, 0);

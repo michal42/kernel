@@ -2848,7 +2848,7 @@ lpfc_online(struct lpfc_hba *phba)
 	}
 
 	vports = lpfc_create_vport_work_array(phba);
-	if (vports != NULL)
+	if (vports != NULL) {
 		for (i = 0; i <= phba->max_vports && vports[i] != NULL; i++) {
 			struct Scsi_Host *shost;
 			shost = lpfc_shost_from_vport(vports[i]);
@@ -2865,7 +2865,8 @@ lpfc_online(struct lpfc_hba *phba)
 			}
 			spin_unlock_irq(shost->host_lock);
 		}
-		lpfc_destroy_vport_work_array(phba, vports);
+	}
+	lpfc_destroy_vport_work_array(phba, vports);
 
 	lpfc_unblock_mgmt_io(phba);
 	return 0;
@@ -8681,7 +8682,6 @@ lpfc_sli4_set_affinity(struct lpfc_hba *phba, int vectors)
 	int max_phys_id, min_phys_id;
 	int num_io_channel, first_cpu, chan;
 	struct lpfc_vector_map_info *cpup;
-	struct cpumask *mask;
 	uint8_t chann[LPFC_FCP_IO_CHAN_MAX+1];
 
 	/* If there is no mapping, just return */
@@ -8775,11 +8775,8 @@ found:
 			first_cpu = cpu;
 
 		/* Now affinitize to the selected CPU */
-		mask = &cpup->maskbits;
-		cpumask_clear(mask);
-		cpumask_set_cpu(cpu, mask);
 		i = irq_set_affinity_hint(phba->sli4_hba.msix_entries[idx].
-					  vector, mask);
+					  vector, get_cpu_mask(cpu));
 
 		lpfc_printf_log(phba, KERN_INFO, LOG_INIT,
 				"3330 Set Affinity: CPU %d channel %d "

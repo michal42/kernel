@@ -37,8 +37,11 @@ struct kgr_patch;
  *
  * @name: function to patch
  * @new_fun: function with the new body
+ * @objname: parent object of the function to patch (module name or NULL for
+ *	     vmlinux)
  * @loc_name: cache of @name's function address
  * @loc_old: cache of the last function address  for @name in the patches list
+ * @sympos: symbol position in an object (module or vmlinux) (optional)
  * @ftrace_ops_slow: ftrace ops for slow (temporary) stub
  * @ftrace_ops_fast: ftrace ops for fast () stub
  */
@@ -47,8 +50,8 @@ struct kgr_patch_fun {
 
 	const char *name;
 	void *new_fun;
+	const char *objname;
 
-	bool abort_if_missing;
 	enum kgr_patch_state {
 		KGR_PATCH_INIT,
 		KGR_PATCH_SLOW,
@@ -62,6 +65,14 @@ struct kgr_patch_fun {
 
 	unsigned long loc_name;
 	unsigned long loc_old;
+	/*
+	 * The sympos field is optional and can be used to resolve duplicate
+	 * symbol names in objects (a module or vmlinux). If this field is zero,
+	 * it is expected the symbol is unique, otherwise patching fails. If
+	 * this value is greater than zero then that occurrence of the symbol in
+	 * kallsyms for the given object is used.
+	 */
+	unsigned long sympos;
 
 	struct ftrace_ops ftrace_ops_slow;
 	struct ftrace_ops ftrace_ops_fast;
@@ -96,10 +107,23 @@ struct kgr_patch {
 #define kgr_for_each_patch_fun(p, pf)	\
 	for (pf = p->patches; pf->name; pf++)
 
-#define KGR_PATCH(_name, _new_function, abort)	{			\
+#define KGR_PATCH(_name, _new_function)	{				\
 		.name = #_name,						\
 		.new_fun = _new_function,				\
-		.abort_if_missing = abort,				\
+		.objname = NULL,					\
+		.sympos = 0,						\
+	}
+#define KGR_PATCH_OBJ(_name, _new_function, _objname) {			\
+		.name = #_name,						\
+		.new_fun = _new_function,				\
+		.objname = _objname,					\
+		.sympos = 0,						\
+	}
+#define KGR_PATCH_OBJPOS(_name, _new_function, _objname, _sympos) {	\
+		.name = #_name,						\
+		.new_fun = _new_function,				\
+		.objname = _objname,					\
+		.sympos = _sympos,					\
 	}
 #define KGR_PATCH_END				{ }
 
@@ -111,7 +135,7 @@ extern void kgr_patch_remove(struct kgr_patch *);
 
 extern void kgr_unmark_processes(void);
 extern int kgr_modify_kernel(struct kgr_patch *patch, bool revert);
-extern int kgr_module_init(const struct module *mod);
+extern int kgr_module_init(struct module *mod);
 extern int kgr_patch_dir_add(struct kgr_patch *patch);
 extern void kgr_patch_dir_del(struct kgr_patch *patch);
 extern int kgr_add_files(void);

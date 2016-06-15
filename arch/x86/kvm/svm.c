@@ -1261,7 +1261,8 @@ static struct kvm_vcpu *svm_create_vcpu(struct kvm *kvm, unsigned int id)
 	svm->asid_generation = 0;
 	init_vmcb(svm);
 
-	svm->vcpu.arch.apic_base = 0xfee00000 | MSR_IA32_APICBASE_ENABLE;
+	svm->vcpu.arch.apic_base = APIC_DEFAULT_PHYS_BASE |
+				   MSR_IA32_APICBASE_ENABLE;
 	if (kvm_vcpu_is_bsp(&svm->vcpu))
 		svm->vcpu.arch.apic_base |= MSR_IA32_APICBASE_BSP;
 
@@ -3594,7 +3595,7 @@ static int svm_vm_has_apicv(struct kvm *kvm)
 	return 0;
 }
 
-static void svm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
+static void svm_load_eoi_exitmap(struct kvm_vcpu *vcpu)
 {
 	return;
 }

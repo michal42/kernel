@@ -735,6 +735,7 @@ static u32 vmx_segment_access_rights(struct kvm_segment *var);
 static void vmx_sync_pir_to_irr_dummy(struct kvm_vcpu *vcpu);
 static void copy_vmcs12_to_shadow(struct vcpu_vmx *vmx);
 static void copy_shadow_to_vmcs12(struct vcpu_vmx *vmx);
+static int alloc_identity_pagetable(struct kvm *kvm);
 
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct vmcs *, current_vmcs);
@@ -1567,6 +1568,13 @@ static void add_atomic_switch_msr(struct vcpu_vmx *vmx, unsigned msr,
 			return;
 		}
 		break;
+	case MSR_IA32_PEBS_ENABLE:
+		/* PEBS needs a quiescent period after being disabled (to write
+		 * a record).  Disabling PEBS through VMX MSR swapping doesn't
+		 * provide that period, so a CPU could write host's record into
+		 * guest's memory.
+		 */
+		wrmsrl(MSR_IA32_PEBS_ENABLE, 0);
 	}
 
 	for (i = 0; i < m->nr; ++i)
@@ -3034,8 +3042,16 @@ static __init int hardware_setup(void)
 	if (!cpu_has_vmx_unrestricted_guest())
 		enable_unrestricted_guest = 0;
 
-	if (!cpu_has_vmx_flexpriority())
+	if (!cpu_has_vmx_flexpriority()) {
 		flexpriority_enabled = 0;
+
+		/*
+		 * set_apic_access_page_addr() is used to reload apic access
+		 * page upon invalidation.  No need to do anything if the
+		 * processor does not have the APIC_ACCESS_ADDR VMCS field.
+		 */
+		kvm_x86_ops->set_apic_access_page_addr = NULL;
+	}
 
 	if (!cpu_has_vmx_tpr_shadow())
 		kvm_x86_ops->update_cr8_intercept = NULL;
@@ -3879,21 +3895,25 @@ out:
 
 static int init_rmode_identity_map(struct kvm *kvm)
 {
-	int i, idx, r, ret;
+	int i, idx, r = 0;
 	pfn_t identity_map_pfn;
 	u32 tmp;
 
 	if (!enable_ept)
-		return 1;
-	if (unlikely(!kvm->arch.ept_identity_pagetable)) {
-		printk(KERN_ERR "EPT: identity-mapping pagetable "
-			"haven't been allocated!\n");
 		return 0;
-	}
+
+	/* Protect kvm->arch.ept_identity_pagetable_done. */
+	mutex_lock(&kvm->slots_lock);
+
 	if (likely(kvm->arch.ept_identity_pagetable_done))
-		return 1;
-	ret = 0;
+		goto out2;
+
 	identity_map_pfn = kvm->arch.ept_identity_map_addr >> PAGE_SHIFT;
+
+	r = alloc_identity_pagetable(kvm);
+	if (r < 0)
+		goto out2;
+
 	idx = srcu_read_lock(&kvm->srcu);
 	r = kvm_clear_guest_page(kvm, identity_map_pfn, 0, PAGE_SIZE);
 	if (r < 0)
@@ -3908,10 +3928,13 @@ static int init_rmode_identity_map(struct kvm *kvm)
 			goto out;
 	}
 	kvm->arch.ept_identity_pagetable_done = true;
-	ret = 1;
+
 out:
 	srcu_read_unlock(&kvm->srcu, idx);
-	return ret;
+
+out2:
+	mutex_unlock(&kvm->slots_lock);
+	return r;
 }
 
 static void seg_setup(int seg)
@@ -3936,23 +3959,28 @@ static int alloc_apic_access_page(struct kvm *kvm)
 	int r = 0;
 
 	mutex_lock(&kvm->slots_lock);
-	if (kvm->arch.apic_access_page)
+	if (kvm->arch.apic_access_page_done)
 		goto out;
 	kvm_userspace_mem.slot = APIC_ACCESS_PAGE_PRIVATE_MEMSLOT;
 	kvm_userspace_mem.flags = 0;
-	kvm_userspace_mem.guest_phys_addr = 0xfee00000ULL;
+	kvm_userspace_mem.guest_phys_addr = APIC_DEFAULT_PHYS_BASE;
 	kvm_userspace_mem.memory_size = PAGE_SIZE;
 	r = __kvm_set_memory_region(kvm, &kvm_userspace_mem);
 	if (r)
 		goto out;
 
-	page = gfn_to_page(kvm, 0xfee00);
+	page = gfn_to_page(kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
 	if (is_error_page(page)) {
 		r = -EFAULT;
 		goto out;
 	}
 
-	kvm->arch.apic_access_page = page;
+	/*
+	 * Do not pin the page in memory, so that memory hot-unplug
+	 * is able to migrate it.
+	 */
+	put_page(page);
+	kvm->arch.apic_access_page_done = true;
 out:
 	mutex_unlock(&kvm->slots_lock);
 	return r;
@@ -3960,31 +3988,20 @@ out:
 
 static int alloc_identity_pagetable(struct kvm *kvm)
 {
-	struct page *page;
+	/* Called with kvm->slots_lock held. */
+
 	struct kvm_userspace_memory_region kvm_userspace_mem;
 	int r = 0;
 
-	mutex_lock(&kvm->slots_lock);
-	if (kvm->arch.ept_identity_pagetable)
-		goto out;
+	BUG_ON(kvm->arch.ept_identity_pagetable_done);
+
 	kvm_userspace_mem.slot = IDENTITY_PAGETABLE_PRIVATE_MEMSLOT;
 	kvm_userspace_mem.flags = 0;
 	kvm_userspace_mem.guest_phys_addr =
 		kvm->arch.ept_identity_map_addr;
 	kvm_userspace_mem.memory_size = PAGE_SIZE;
 	r = __kvm_set_memory_region(kvm, &kvm_userspace_mem);
-	if (r)
-		goto out;
 
-	page = gfn_to_page(kvm, kvm->arch.ept_identity_map_addr >> PAGE_SHIFT);
-	if (is_error_page(page)) {
-		r = -EFAULT;
-		goto out;
-	}
-
-	kvm->arch.ept_identity_pagetable = page;
-out:
-	mutex_unlock(&kvm->slots_lock);
 	return r;
 }
 
@@ -4419,7 +4436,7 @@ static void vmx_vcpu_reset(struct kvm_vcpu *vcpu)
 
 	vmx->vcpu.arch.regs[VCPU_REGS_RDX] = get_rdx_init_val();
 	kvm_set_cr8(&vmx->vcpu, 0);
-	msr = 0xfee00000 | MSR_IA32_APICBASE_ENABLE;
+	msr = APIC_DEFAULT_PHYS_BASE | MSR_IA32_APICBASE_ENABLE;
 	if (kvm_vcpu_is_bsp(&vmx->vcpu))
 		msr |= MSR_IA32_APICBASE_BSP;
 	kvm_set_apic_base(&vmx->vcpu, msr);
@@ -4478,9 +4495,7 @@ static void vmx_vcpu_reset(struct kvm_vcpu *vcpu)
 		vmcs_write32(TPR_THRESHOLD, 0);
 	}
 
-	if (vm_need_virtualize_apic_accesses(vmx->vcpu.kvm))
-		vmcs_write64(APIC_ACCESS_ADDR,
-			     page_to_phys(vmx->vcpu.kvm->arch.apic_access_page));
+	kvm_vcpu_reload_apic_access_page(vcpu);
 
 	if (vmx_vm_has_apicv(vcpu->kvm))
 		memset(&vmx->pi_desc, 0, sizeof(struct pi_desc));
@@ -6394,6 +6409,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 	if (!(types & (1UL << type))) {
 		nested_vmx_failValid(vcpu,
 				VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
+		skip_emulated_instruction(vcpu);
 		return 1;
 	}
 
@@ -6902,6 +6918,29 @@ static void vmx_set_virtual_x2apic_mode(struct kvm_vcpu *vcpu, bool set)
 	vmx_set_msr_bitmap(vcpu);
 }
 
+static void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu, hpa_t hpa)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	/*
+	 * Currently we do not handle the nested case where L2 has an
+	 * APIC access page of its own; that page is still pinned.
+	 * Hence, we skip the case where the VCPU is in guest mode _and_
+	 * L1 prepared an APIC access page for L2.
+	 *
+	 * For the case where L1 and L2 share the same APIC access page
+	 * (flexpriority=Y but SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES clear
+	 * in the vmcs12), this function will only update either the vmcs01
+	 * or the vmcs02.  If the former, the vmcs02 will be updated by
+	 * prepare_vmcs02.  If the latter, the vmcs01 will be updated in
+	 * the next L2->L1 exit.
+	 */
+	if (!is_guest_mode(vcpu) ||
+	    !nested_cpu_has2(vmx->nested.current_vmcs12,
+			     SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES))
+		vmcs_write64(APIC_ACCESS_ADDR, hpa);
+}
+
 static void vmx_hwapic_isr_update(struct kvm *kvm, int isr)
 {
 	u16 status;
@@ -6944,8 +6983,9 @@ static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 	vmx_set_rvi(max_irr);
 }
 
-static void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
+static void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu)
 {
+	u64 *eoi_exit_bitmap = vcpu->arch.eoi_exit_bitmap;
 	if (!vmx_vm_has_apicv(vcpu->kvm))
 		return;
 
@@ -7411,10 +7451,8 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 		if (!kvm->arch.ept_identity_map_addr)
 			kvm->arch.ept_identity_map_addr =
 				VMX_EPT_IDENTITY_PAGETABLE_ADDR;
-		err = -ENOMEM;
-		if (alloc_identity_pagetable(kvm) != 0)
-			goto free_vmcs;
-		if (!init_rmode_identity_map(kvm))
+		err = init_rmode_identity_map(kvm);
+		if (err)
 			goto free_vmcs;
 	}
 
@@ -7761,8 +7799,7 @@ static void prepare_vmcs02(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12)
 		} else if (vm_need_virtualize_apic_accesses(vmx->vcpu.kvm)) {
 			exec_control |=
 				SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES;
-			vmcs_write64(APIC_ACCESS_ADDR,
-				page_to_phys(vcpu->kvm->arch.apic_access_page));
+			kvm_vcpu_reload_apic_access_page(vcpu);
 		}
 
 		vmcs_write32(SECONDARY_VM_EXEC_CONTROL, exec_control);
@@ -8541,6 +8578,12 @@ static void nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 exit_reason,
 	}
 
 	/*
+	 * We are now running in L2, mmu_notifier will force to reload the
+	 * page's hpa for L2 vmcs. Need to reload it for L1 before entering L1.
+	 */
+	kvm_vcpu_reload_apic_access_page(vcpu);
+
+	/*
 	 * Exiting from L2 to L1, we're now back to L1 which thinks it just
 	 * finished a VMLAUNCH or VMRESUME instruction, so we need to set the
 	 * success or failure flag accordingly.
@@ -8657,6 +8700,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.enable_irq_window = enable_irq_window,
 	.update_cr8_intercept = update_cr8_intercept,
 	.set_virtual_x2apic_mode = vmx_set_virtual_x2apic_mode,
+	.set_apic_access_page_addr = vmx_set_apic_access_page_addr,
 	.vm_has_apicv = vmx_vm_has_apicv,
 	.load_eoi_exitmap = vmx_load_eoi_exitmap,
 	.hwapic_irr_update = vmx_hwapic_irr_update,

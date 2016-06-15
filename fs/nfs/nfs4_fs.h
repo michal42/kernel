@@ -138,7 +138,12 @@ struct nfs4_lock_state {
 	struct nfs_seqid_counter	ls_seqid;
 	nfs4_stateid		ls_stateid;
 	atomic_t		ls_count;
+#ifdef __GENKSYMS__
 	struct nfs4_lock_owner	ls_owner;
+#else
+	struct nfs4_lock_owner	__ls_owner;
+#define ls_owner __ls_owner.lo_u.posix_owner
+#endif
 };
 
 /* bits for nfs4_state->flags */
@@ -276,7 +281,14 @@ _nfs4_state_protect(struct nfs_client *clp, unsigned long sp4_mode,
 	struct rpc_cred *newcred = NULL;
 	rpc_authflavor_t flavor;
 
-	if (test_bit(sp4_mode, &clp->cl_sp4_flags)) {
+	if (test_bit(sp4_mode, &clp->cl_sp4_flags) &&
+	    /* RPC_AUTH_UNIX credential cannot expire so don't bother
+	     * swapping in the machine credential for them.  It might
+	     * not even be accepted.
+	     */
+	    *clntp && (*clntp)->cl_auth &&
+	    (*clntp)->cl_auth->au_flavor != RPC_AUTH_UNIX
+		) {
 		spin_lock(&clp->cl_lock);
 		if (clp->cl_machine_cred != NULL)
 			/* don't call get_rpccred on the machine cred -

@@ -200,9 +200,62 @@ struct pci_vpd_pci22 {
 	struct pci_vpd base;
 	struct mutex lock;
 	u16	flag;
-	bool	busy;
+	u8	busy:1;
+	u8	valid:1;
 	u8	cap;
 };
+
+/**
+ * pci_vpd_size - determine actual size of Vital Product Data
+ * @dev:	pci device struct
+ * @old_size:	current assumed size, also maximum allowed size
+ */
+static size_t pci_vpd_pci22_size(struct pci_dev *dev, size_t old_size)
+{
+	size_t off = 0;
+	unsigned char header[1+2];	/* 1 byte tag, 2 bytes length */
+
+	while (off < old_size &&
+	       pci_read_vpd(dev, off, 1, header) == 1) {
+		unsigned char tag;
+
+		if (header[0] & PCI_VPD_LRDT) {
+			/* Large Resource Data Type Tag */
+			tag = pci_vpd_lrdt_tag(header);
+			/* Only read length from known tag items */
+			if ((tag == PCI_VPD_LTIN_ID_STRING) ||
+			    (tag == PCI_VPD_LTIN_RO_DATA) ||
+			    (tag == PCI_VPD_LTIN_RW_DATA)) {
+				if (pci_read_vpd(dev, off+1, 2,
+						 &header[1]) != 2) {
+					dev_dbg(&dev->dev,
+						"invalid large VPD tag %02x size at offset %zu",
+						tag, off + 1);
+					return 0;
+				}
+				off += PCI_VPD_LRDT_TAG_SIZE +
+					pci_vpd_lrdt_size(header);
+			}
+		} else {
+			/* Short Resource Data Type Tag */
+			off += PCI_VPD_SRDT_TAG_SIZE +
+				pci_vpd_srdt_size(header);
+			tag = pci_vpd_srdt_tag(header);
+		}
+		if (tag == PCI_VPD_STIN_END)	/* End tag descriptor */
+			return off;
+		if ((tag != PCI_VPD_LTIN_ID_STRING) &&
+		    (tag != PCI_VPD_LTIN_RO_DATA) &&
+		    (tag != PCI_VPD_LTIN_RW_DATA)) {
+			dev_dbg(&dev->dev,
+				"invalid %s VPD tag %02x at offset %zu",
+				(header[0] & PCI_VPD_LRDT) ? "large" : "short",
+				tag, off);
+			return 0;
+		}
+	}
+	return 0;
+}
 
 /*
  * Wait for last operation to complete.
@@ -257,8 +310,22 @@ static ssize_t pci_vpd_pci22_read(struct pci_dev *dev, loff_t pos, size_t count,
 	loff_t end = pos + count;
 	u8 *buf = arg;
 
-	if (pos < 0 || pos > vpd->base.len || end > vpd->base.len)
+	if (pos < 0)
 		return -EINVAL;
+
+	if (!vpd->valid && vpd->base.len > 0) {
+		vpd->valid = true;
+		vpd->base.len = pci_vpd_pci22_size(dev, vpd->base.len);
+	}
+	if (vpd->base.len == 0)
+		return -EIO;
+
+	if (end > vpd->base.len) {
+		if (pos > vpd->base.len)
+			return 0;
+		end = vpd->base.len;
+		count = end - pos;
+	}
 
 	if (mutex_lock_killable(&vpd->lock))
 		return -EINTR;
@@ -309,7 +376,17 @@ static ssize_t pci_vpd_pci22_write(struct pci_dev *dev, loff_t pos, size_t count
 	loff_t end = pos + count;
 	int ret = 0;
 
-	if (pos < 0 || (pos & 3) || (count & 3) || end > vpd->base.len)
+	if (pos < 0 || (pos & 3) || (count & 3))
+		return -EINVAL;
+
+	if (!vpd->valid && vpd->base.len > 0) {
+		vpd->valid = true;
+		vpd->base.len = pci_vpd_pci22_size(dev, vpd->base.len);
+	}
+	if (vpd->base.len == 0)
+		return -EIO;
+
+	if (end > vpd->base.len)
 		return -EINVAL;
 
 	if (mutex_lock_killable(&vpd->lock))
@@ -409,48 +486,6 @@ static int pci_vpd_f0_dev_check(struct pci_dev *dev)
 	return ret;
 }
 
-/**
- * pci_vpd_size - determine actual size of Vital Product Data
- * @dev:	pci device struct
- * @old_size:	current assumed size, also maximum allowed size
- *
- */
-static size_t
-pci_vpd_pci22_size(struct pci_dev *dev, size_t old_size)
-{
-	size_t off = 0;
-	unsigned char header[1+2];	/* 1 byte tag, 2 bytes length */
-
-	while (off < old_size && pci_read_vpd(dev, off, 1, header)) {
-		unsigned char tag;
-
-		if (header[0] == 0xff) {
-			/* Invalid data from VPD read */
-			tag = header[0];
-		} else if (header[0] & 0x80) {
-			/* Large Resource Data Type Tag */
-			if (pci_read_vpd(dev, off+1, 2, &header[1]) != 2)
-				return off + 1;
-			off += 3 + ((header[2] << 8) | header[1]);
-			tag = (header[0] & 0x7f);
-		} else {
-			/* Short Resource Data Type Tag */
-			off += 1 + (header[0] & 0x07);
-			tag = (header[0] & 0x78) >> 3;
-		}
-		if (tag == 0x0f)	/* End tag descriptor */
-			break;
-		if ((tag != 0x02) && (tag != 0x10) && (tag != 0x11)) {
-			dev_printk(KERN_DEBUG, &dev->dev,
-				   "invalid %s vpd tag %02x at offset %zu.",
-				   header[0] & 0x80 ? "large" : "short" ,
-				   tag, off);
-			break;
-		}
-	}
-	return off;
-}
-
 int pci_vpd_pci22_init(struct pci_dev *dev)
 {
 	struct pci_vpd_pci22 *vpd;
@@ -477,14 +512,8 @@ int pci_vpd_pci22_init(struct pci_dev *dev)
 	mutex_init(&vpd->lock);
 	vpd->cap = cap;
 	vpd->busy = false;
+	vpd->valid = false;
 	dev->vpd = &vpd->base;
-	vpd->base.len = pci_vpd_pci22_size(dev, vpd->base.len);
-	if (vpd->base.len == 0) {
-		dev_printk(KERN_DEBUG, &dev->dev, "Disabling VPD access.");
-		dev->vpd = NULL;
-		kfree(vpd);
-		return -ENXIO;
-	}
 	return 0;
 }
 

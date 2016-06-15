@@ -126,6 +126,7 @@ struct rbd_device {
 	struct rbd_image_header	header;
 	unsigned long		flags;		/* possibly lock protected */
 	struct rbd_spec		*spec;
+	struct rbd_options	*opts;
 
 	char			*header_name;
 

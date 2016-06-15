@@ -206,10 +206,33 @@ static int __add_prelim_ref(struct list_head *head, u64 root_id,
 		return -ENOMEM;
 
 	ref->root_id = root_id;
-	if (key)
+	if (key) {
 		ref->key_for_search = *key;
-	else
+		/*
+		 * We can often find data backrefs with an offset that is too
+		 * large (>= LLONG_MAX, maximum allowed file offset) due to
+		 * underflows when subtracting a file's offset with the data
+		 * offset of its corresponding extent data item. This can
+		 * happen for example in the clone ioctl.
+		 * So if we detect such case we set the search key's offset to
+		 * zero to make sure we will find the matching file extent item
+		 * at add_all_parents(), otherwise we will miss it because the
+		 * offset taken form the backref is much larger then the offset
+		 * of the file extent item. This can make us scan a very large
+		 * number of file extent items, but at least it will not make
+		 * us miss any.
+		 * This is an ugly workaround for a behaviour that should have
+		 * never existed, but it does and a fix for the clone ioctl
+		 * would touch a lot of places, cause backwards incompatibility
+		 * and would not fix the problem for extents cloned with older
+		 * kernels.
+		 */
+		if (ref->key_for_search.type == BTRFS_EXTENT_DATA_KEY &&
+		    ref->key_for_search.offset >= LLONG_MAX)
+			ref->key_for_search.offset = 0;
+	} else {
 		memset(&ref->key_for_search, 0, sizeof(ref->key_for_search));
+	}
 
 	ref->inode_list = NULL;
 	ref->level = level;
@@ -637,7 +660,7 @@ static int __add_delayed_refs(struct btrfs_delayed_ref_head *head, u64 seq,
 			struct btrfs_delayed_tree_ref *ref;
 
 			ref = btrfs_delayed_node_to_tree_ref(node);
-			ret = __add_prelim_ref(prefs, ref->root, NULL,
+			ret = __add_prelim_ref(prefs, 0, NULL,
 					       ref->level + 1, ref->parent,
 					       node->bytenr,
 					       node->ref_mod * sgn, GFP_ATOMIC);
@@ -669,11 +692,7 @@ static int __add_delayed_refs(struct btrfs_delayed_ref_head *head, u64 seq,
 			struct btrfs_delayed_data_ref *ref;
 
 			ref = btrfs_delayed_node_to_data_ref(node);
-
-			key.objectid = ref->objectid;
-			key.type = BTRFS_EXTENT_DATA_KEY;
-			key.offset = ref->offset;
-			ret = __add_prelim_ref(prefs, ref->root, &key, 0,
+			ret = __add_prelim_ref(prefs, 0, NULL, 0,
 					       ref->parent, node->bytenr,
 					       node->ref_mod * sgn, GFP_ATOMIC);
 			break;
@@ -936,8 +955,10 @@ static int find_parent_nodes(struct btrfs_trans_handle *trans,
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
-	if (!trans)
+	if (!trans) {
 		path->search_commit_root = 1;
+		path->skip_locking = 1;
+	}
 
 	if (time_seq == (u64)-1)
 		path->skip_locking = 1;
@@ -1413,7 +1434,8 @@ char *btrfs_ref_to_path(struct btrfs_root *fs_root, struct btrfs_path *path,
 			read_extent_buffer(eb, dest + bytes_left,
 					   name_off, name_len);
 		if (eb != eb_in) {
-			btrfs_tree_read_unlock_blocking(eb);
+			if (!path->skip_locking)
+				btrfs_tree_read_unlock_blocking(eb);
 			free_extent_buffer(eb);
 		}
 		ret = inode_ref_info(parent, 0, fs_root, path, &found_key);
@@ -1432,9 +1454,10 @@ char *btrfs_ref_to_path(struct btrfs_root *fs_root, struct btrfs_path *path,
 		eb = path->nodes[0];
 		/* make sure we can use eb after releasing the path */
 		if (eb != eb_in) {
-			atomic_inc(&eb->refs);
-			btrfs_tree_read_lock(eb);
-			btrfs_set_lock_blocking_rw(eb, BTRFS_READ_LOCK);
+			if (!path->skip_locking)
+				btrfs_set_lock_blocking_rw(eb, BTRFS_READ_LOCK);
+			path->nodes[0] = NULL;
+			path->locks[0] = 0;
 		}
 		btrfs_release_path(path);
 		iref = btrfs_item_ptr(eb, slot, struct btrfs_inode_ref);

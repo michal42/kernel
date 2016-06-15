@@ -20,6 +20,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/fs_struct.h>
+#include <linux/proc_ns.h>
 
 #include "include/apparmor.h"
 #include "include/path.h"
@@ -60,7 +61,8 @@ static int d_namespace_path(struct path *path, char *buf, int buflen,
 	int error = 0;
 	int connected = 1;
 
-	if (path->mnt->mnt_flags & MNT_INTERNAL) {
+	if ((path->mnt->mnt_flags & MNT_INTERNAL) ||
+			(path->dentry->d_inode && proc_ns_inode(path->dentry->d_inode))) {
 		/* it's not mounted anywhere */
 		res = dentry_path(path->dentry, buf, buflen);
 		*name = res;

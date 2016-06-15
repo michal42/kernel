@@ -19,6 +19,9 @@
  *
  */
 
+/* kabi hack */
+#define __KVM_X86_C
+
 #include <linux/kvm_host.h>
 #include "irq.h"
 #include "mmu.h"
@@ -2011,6 +2014,8 @@ static void accumulate_steal_time(struct kvm_vcpu *vcpu)
 
 static void record_steal_time(struct kvm_vcpu *vcpu)
 {
+	accumulate_steal_time(vcpu);
+
 	if (!(vcpu->arch.st.msr_val & KVM_MSR_ENABLED))
 		return;
 
@@ -2144,12 +2149,6 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 		if (!(data & KVM_MSR_ENABLED))
 			break;
-
-		vcpu->arch.st.last_steal = current->sched_info.run_delay;
-
-		preempt_disable();
-		accumulate_steal_time(vcpu);
-		preempt_enable();
 
 		kvm_make_request(KVM_REQ_STEAL_UPDATE, vcpu);
 
@@ -2413,7 +2412,13 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 	case MSR_K7_HWCR:
 	case MSR_VM_HSAVE_PA:
 	case MSR_K7_EVNTSEL0:
+	case MSR_K7_EVNTSEL1:
+	case MSR_K7_EVNTSEL2:
+	case MSR_K7_EVNTSEL3:
 	case MSR_K7_PERFCTR0:
+	case MSR_K7_PERFCTR1:
+	case MSR_K7_PERFCTR2:
+	case MSR_K7_PERFCTR3:
 	case MSR_K8_INT_PENDING_MSG:
 	case MSR_AMD64_NB_CFG:
 	case MSR_FAM10H_MMIO_CONF_BASE:
@@ -2839,7 +2844,6 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		vcpu->cpu = cpu;
 	}
 
-	accumulate_steal_time(vcpu);
 	kvm_make_request(KVM_REQ_STEAL_UPDATE, vcpu);
 }
 
@@ -3525,41 +3529,38 @@ static int kvm_vm_ioctl_set_irqchip(struct kvm *kvm, struct kvm_irqchip *chip)
 
 static int kvm_vm_ioctl_get_pit(struct kvm *kvm, struct kvm_pit_state *ps)
 {
-	int r = 0;
-
 	mutex_lock(&kvm->arch.vpit->pit_state.lock);
 	memcpy(ps, &kvm->arch.vpit->pit_state, sizeof(struct kvm_pit_state));
 	mutex_unlock(&kvm->arch.vpit->pit_state.lock);
-	return r;
+	return 0;
 }
 
 static int kvm_vm_ioctl_set_pit(struct kvm *kvm, struct kvm_pit_state *ps)
 {
-	int r = 0;
-
+	int i;
 	mutex_lock(&kvm->arch.vpit->pit_state.lock);
 	memcpy(&kvm->arch.vpit->pit_state, ps, sizeof(struct kvm_pit_state));
-	kvm_pit_load_count(kvm, 0, ps->channels[0].count, 0);
+	for (i = 0; i < 3; i++)
+		kvm_pit_load_count(kvm, i, ps->channels[i].count, 0);
 	mutex_unlock(&kvm->arch.vpit->pit_state.lock);
-	return r;
+	return 0;
 }
 
 static int kvm_vm_ioctl_get_pit2(struct kvm *kvm, struct kvm_pit_state2 *ps)
 {
-	int r = 0;
-
 	mutex_lock(&kvm->arch.vpit->pit_state.lock);
 	memcpy(ps->channels, &kvm->arch.vpit->pit_state.channels,
 		sizeof(ps->channels));
 	ps->flags = kvm->arch.vpit->pit_state.flags;
 	mutex_unlock(&kvm->arch.vpit->pit_state.lock);
 	memset(&ps->reserved, 0, sizeof(ps->reserved));
-	return r;
+	return 0;
 }
 
 static int kvm_vm_ioctl_set_pit2(struct kvm *kvm, struct kvm_pit_state2 *ps)
 {
-	int r = 0, start = 0;
+	int start = 0;
+	int i;
 	u32 prev_legacy, cur_legacy;
 	mutex_lock(&kvm->arch.vpit->pit_state.lock);
 	prev_legacy = kvm->arch.vpit->pit_state.flags & KVM_PIT_FLAGS_HPET_LEGACY;
@@ -3569,9 +3570,10 @@ static int kvm_vm_ioctl_set_pit2(struct kvm *kvm, struct kvm_pit_state2 *ps)
 	memcpy(&kvm->arch.vpit->pit_state.channels, &ps->channels,
 	       sizeof(kvm->arch.vpit->pit_state.channels));
 	kvm->arch.vpit->pit_state.flags = ps->flags;
-	kvm_pit_load_count(kvm, 0, kvm->arch.vpit->pit_state.channels[0].count, start);
+	for (i = 0; i < 3; i++)
+		kvm_pit_load_count(kvm, i, kvm->arch.vpit->pit_state.channels[i].count, start);
 	mutex_unlock(&kvm->arch.vpit->pit_state.lock);
-	return r;
+	return 0;
 }
 
 static int kvm_vm_ioctl_reinject(struct kvm *kvm,
@@ -5898,17 +5900,16 @@ static void process_nmi(struct kvm_vcpu *vcpu)
 
 static void vcpu_scan_ioapic(struct kvm_vcpu *vcpu)
 {
-	u64 eoi_exit_bitmap[4];
 	u32 tmr[8];
 
 	if (!kvm_apic_hw_enabled(vcpu->arch.apic))
 		return;
 
-	memset(eoi_exit_bitmap, 0, 32);
+	memset(vcpu->arch.eoi_exit_bitmap, 0, 256 / 8);
 	memset(tmr, 0, 32);
 
-	kvm_ioapic_scan_entry(vcpu, eoi_exit_bitmap, tmr);
-	kvm_x86_ops->load_eoi_exitmap(vcpu, eoi_exit_bitmap);
+	kvm_ioapic_scan_entry(vcpu, vcpu->arch.eoi_exit_bitmap, tmr);
+	kvm_x86_ops->load_eoi_exitmap(vcpu);
 	kvm_apic_update_tmr(vcpu, tmr);
 }
 
@@ -5967,6 +5968,8 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			kvm_deliver_pmi(vcpu);
 		if (kvm_check_request(KVM_REQ_SCAN_IOAPIC, vcpu))
 			vcpu_scan_ioapic(vcpu);
+		if (kvm_check_request(KVM_REQ_APIC_PAGE_RELOAD, vcpu))
+			kvm_vcpu_reload_apic_access_page(vcpu);
 	}
 
 	if (kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win) {
@@ -6190,6 +6193,35 @@ static int complete_emulated_pio(struct kvm_vcpu *vcpu)
 	BUG_ON(!vcpu->arch.pio.count);
 
 	return complete_emulated_io(vcpu);
+}
+
+void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu)
+{
+	struct page *page = NULL;
+
+	if (!kvm_x86_ops->set_apic_access_page_addr)
+		return;
+
+	page = gfn_to_page(vcpu->kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
+	kvm_x86_ops->set_apic_access_page_addr(vcpu, page_to_phys(page));
+
+	/*
+	 * Do not pin apic access page in memory, the MMU notifier
+	 * will call us again if it is migrated or swapped out.
+	 */
+	put_page(page);
+}
+EXPORT_SYMBOL_GPL(kvm_vcpu_reload_apic_access_page);
+
+void kvm_arch_mmu_notifier_invalidate_page(struct kvm *kvm,
+					   unsigned long address)
+{
+	/*
+	 * The physical address of apic access page is stored in the VMCS.
+	 * Update it when it becomes invalid.
+	 */
+	if (address == gfn_to_hva(kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT))
+		kvm_make_all_cpus_request(kvm, KVM_REQ_APIC_PAGE_RELOAD);
 }
 
 /*
@@ -7121,10 +7153,6 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 	kfree(kvm->arch.vpic);
 	kfree(kvm->arch.vioapic);
 	kvm_free_vcpus(kvm);
-	if (kvm->arch.apic_access_page)
-		put_page(kvm->arch.apic_access_page);
-	if (kvm->arch.ept_identity_pagetable)
-		put_page(kvm->arch.ept_identity_pagetable);
 	kfree(rcu_dereference_check(kvm->arch.apic_map, 1));
 }
 

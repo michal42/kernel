@@ -29,7 +29,7 @@
 #define HASH_SHIFT ilog2(PAGE_SIZE / sizeof(struct list_head))
 #define HASH_SIZE (1UL << HASH_SHIFT)
 
-static int event;
+static u64 event;
 static DEFINE_IDA(mnt_id_ida);
 static DEFINE_IDA(mnt_group_ida);
 static DEFINE_SPINLOCK(mnt_id_lock);
@@ -1051,14 +1051,29 @@ static void *m_start(struct seq_file *m, loff_t *pos)
 	struct proc_mounts *p = proc_mounts(m);
 
 	down_read(&namespace_sem);
-	return seq_list_start(&p->ns->list, *pos);
+	if (p->cached_event == p->ns->event) {
+		void *v = p->cached_mount;
+		if (*pos == p->cached_index)
+			return v;
+		if (*pos == p->cached_index + 1) {
+			v = seq_list_next(v, &p->ns->list, &p->cached_index);
+			return p->cached_mount = v;
+		}
+	}
+
+	p->cached_event = p->ns->event;
+	p->cached_mount = seq_list_start(&p->ns->list, *pos);
+	p->cached_index = *pos;
+	return p->cached_mount;
 }
 
 static void *m_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	struct proc_mounts *p = proc_mounts(m);
 
-	return seq_list_next(v, &p->ns->list, pos);
+	p->cached_mount = seq_list_next(v, &p->ns->list, pos);
+	p->cached_index = *pos;
+	return p->cached_mount;
 }
 
 static void m_stop(struct seq_file *m, void *v)
@@ -1416,7 +1431,6 @@ struct mount *copy_tree(struct mount *mnt, struct dentry *dentry,
 	if (IS_ERR(q))
 		return q;
 
-	q->mnt.mnt_flags &= ~MNT_LOCKED;
 	q->mnt_mountpoint = mnt->mnt_mountpoint;
 
 	p = mnt;
@@ -2836,6 +2850,7 @@ static void __init init_mount_tree(void)
 
 	root.mnt = mnt;
 	root.dentry = mnt->mnt_root;
+	mnt->mnt_flags |= MNT_LOCKED;
 
 	set_fs_pwd(current->fs, &root);
 	set_fs_root(current->fs, &root);
@@ -2994,13 +3009,13 @@ static void *mntns_get(struct task_struct *task)
 	struct mnt_namespace *ns = NULL;
 	struct nsproxy *nsproxy;
 
-	rcu_read_lock();
-	nsproxy = task_nsproxy(task);
+	task_lock(task);
+	nsproxy = task->nsproxy;
 	if (nsproxy) {
 		ns = nsproxy->mnt_ns;
 		get_mnt_ns(ns);
 	}
-	rcu_read_unlock();
+	task_unlock(task);
 
 	return ns;
 }

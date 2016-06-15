@@ -519,6 +519,9 @@ static int einj_error_inject(u32 type, u64 param1, u64 param2)
 	int rc;
 	unsigned long pfn;
 
+	if (secure_modules())
+		return -EPERM;
+
 	/*
 	 * We need extra sanity checks for memory errors.
 	 * Other types leap directly to injection.

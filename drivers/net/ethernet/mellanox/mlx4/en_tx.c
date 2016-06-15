@@ -381,7 +381,6 @@ static int mlx4_en_process_tx_cq(struct net_device *dev,
 	u32 packets = 0;
 	u32 bytes = 0;
 	int factor = priv->cqe_factor;
-	u64 timestamp = 0;
 	int done = 0;
 
 	if (!priv->port_up)
@@ -414,9 +413,12 @@ static int mlx4_en_process_tx_cq(struct net_device *dev,
 		new_index = be16_to_cpu(cqe->wqe_index) & size_mask;
 
 		do {
+			u64 timestamp = 0;
+
 			txbbs_skipped += ring->last_nr_txbb;
 			ring_index = (ring_index + ring->last_nr_txbb) & size_mask;
-			if (ring->tx_info[ring_index].ts_requested)
+
+			if (unlikely(ring->tx_info[ring_index].ts_requested))
 				timestamp = mlx4_en_get_cqe_ts(cqe);
 
 			/* free next descriptor */

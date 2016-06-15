@@ -182,7 +182,7 @@ static int xen_pci_notifier(struct notifier_block *nb,
 	case BUS_NOTIFY_ADD_DEVICE:
 		r = xen_add_device(dev);
 		break;
-	case BUS_NOTIFY_DEL_DEVICE:
+	case BUS_NOTIFY_REMOVED_DEVICE:
 		r = xen_remove_device(dev);
 		break;
 	default:

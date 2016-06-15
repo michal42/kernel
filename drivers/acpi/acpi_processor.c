@@ -168,7 +168,7 @@ static int acpi_processor_errata(struct acpi_processor *pr)
    -------------------------------------------------------------------------- */
 
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
-static int acpi_processor_hotadd_init(struct acpi_processor *pr)
+static int acpi_processor_hotadd_init(struct acpi_processor *pr, int dd)
 {
 	unsigned long long sta;
 	acpi_status status;
@@ -192,7 +192,9 @@ static int acpi_processor_hotadd_init(struct acpi_processor *pr)
 	cpu_maps_update_begin();
 	cpu_hotplug_begin();
 
-	ret = acpi_map_lsapic(pr->handle, &pr->id);
+	ret = acpi_map_lsapic2(pr->handle,
+			       acpi_get_apicid(pr->handle, dd, pr->acpi_id),
+			       &pr->id);
 	if (ret)
 		goto out;
 
@@ -216,7 +218,7 @@ out:
 	return ret;
 }
 #else
-static inline int acpi_processor_hotadd_init(struct acpi_processor *pr)
+static inline int acpi_processor_hotadd_init(struct acpi_processor *pr, int dd)
 {
 	return -ENODEV;
 }
@@ -299,7 +301,7 @@ static int acpi_processor_get_info(struct acpi_device *device)
 	 *  they are physically not present.
 	 */
 	if (pr->id == -1) {
-		int ret = acpi_processor_hotadd_init(pr);
+		int ret = acpi_processor_hotadd_init(pr, device_declaration);
 		if (ret && (ret != -ENODEV ||
 			    acpi_get_cpuid(pr->handle, ~device_declaration,
 					   pr->acpi_id) < 0))

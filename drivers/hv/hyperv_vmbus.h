@@ -31,6 +31,11 @@
 #include <linux/hyperv.h>
 
 /*
+ * Timeout for guest-host handshake for services.
+ */
+#define HV_UTIL_NEGO_TIMEOUT 60
+
+/*
  * The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
  * is set by CPUID(HVCPUID_VERSION_FEATURES).
  */
@@ -587,7 +592,7 @@ extern int hv_post_message(union hv_connection_id connection_id,
 			 enum hv_message_type message_type,
 			 void *payload, size_t payload_size);
 
-extern u16 hv_signal_event(void *con_id);
+extern int hv_signal_event(void *con_id);
 
 extern int hv_synic_alloc(void);
 

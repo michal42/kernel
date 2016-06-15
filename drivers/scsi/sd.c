@@ -1394,11 +1394,15 @@ static int media_not_present(struct scsi_disk *sdkp,
  **/
 static unsigned int sd_check_events(struct gendisk *disk, unsigned int clearing)
 {
-	struct scsi_disk *sdkp = scsi_disk(disk);
-	struct scsi_device *sdp = sdkp->device;
+	struct scsi_disk *sdkp = scsi_disk_get(disk);
+	struct scsi_device *sdp;
 	struct scsi_sense_hdr *sshdr = NULL;
 	int retval;
 
+	if (!sdkp)
+		return 0;
+
+	sdp = sdkp->device;
 	SCSI_LOG_HLQUEUE(3, sd_printk(KERN_INFO, sdkp, "sd_check_events\n"));
 
 	/*
@@ -1455,6 +1459,7 @@ out:
 	kfree(sshdr);
 	retval = sdp->changed ? DISK_EVENT_MEDIA_CHANGE : 0;
 	sdp->changed = 0;
+	scsi_disk_put(sdkp);
 	return retval;
 }
 
@@ -3257,8 +3262,8 @@ static int sd_suspend_common(struct device *dev, bool ignore_stop_errors)
 	struct scsi_disk *sdkp = scsi_disk_get_from_dev(dev);
 	int ret = 0;
 
-	if (!sdkp)
-		return 0;	/* this can happen */
+	if (!sdkp)	/* E.g.: runtime suspend following sd_remove() */
+		return 0;
 
 	if (sdkp->WCE && sdkp->media_present) {
 		sd_printk(KERN_NOTICE, sdkp, "Synchronizing SCSI cache\n");
@@ -3298,6 +3303,9 @@ static int sd_resume(struct device *dev)
 {
 	struct scsi_disk *sdkp = scsi_disk_get_from_dev(dev);
 	int ret = 0;
+
+	if (!sdkp)	/* E.g.: runtime resume at the start of sd_probe() */
+		return 0;
 
 	if (!sdkp->device->manage_start_stop)
 		goto done;

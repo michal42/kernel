@@ -1921,6 +1921,14 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "authenc(hmac(sha1),ctr(aes))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
+		.alg = "authenc(hmac(sha1),rfc3686(ctr(aes)))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
 		.alg = "authenc(hmac(sha256),cbc(aes))",
 		.test = alg_test_aead,
 		.fips_allowed = 1,
@@ -1933,6 +1941,22 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "authenc(hmac(sha256),ctr(aes))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
+		.alg = "authenc(hmac(sha256),rfc3686(ctr(aes)))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
+		.alg = "authenc(hmac(sha384),ctr(aes))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
+		.alg = "authenc(hmac(sha384),rfc3686(ctr(aes)))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
 		.alg = "authenc(hmac(sha512),cbc(aes))",
 		.test = alg_test_aead,
 		.fips_allowed = 1,
@@ -1944,6 +1968,14 @@ static const struct alg_test_desc alg_test_descs[] = {
 				}
 			}
 		}
+	}, {
+		.alg = "authenc(hmac(sha512),ctr(aes))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
+	}, {
+		.alg = "authenc(hmac(sha512),rfc3686(ctr(aes)))",
+		.test = alg_test_null,
+		.fips_allowed = 1,
 	}, {
 		.alg = "cbc(aes)",
 		.test = alg_test_skcipher,

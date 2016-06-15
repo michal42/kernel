@@ -31,10 +31,10 @@
 #include <linux/acpi.h>
 #include <acpi/acpi_bus.h>
 #include <linux/completion.h>
+#include <linux/cpu.h>
 #include <linux/hyperv.h>
 #include <linux/kernel_stat.h>
 #include <linux/clockchips.h>
-#include <linux/cpu.h>
 #include <asm/hyperv.h>
 #include <asm/hypervisor.h>
 #include <asm/mshyperv.h>
@@ -106,6 +106,7 @@ static struct notifier_block hyperv_panic_block = {
 };
 
 struct resource *hyperv_mmio;
+DEFINE_SEMAPHORE(hyperv_mmio_lock);
 
 static int vmbus_exists(void)
 {
@@ -1097,13 +1098,28 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 	new_res->start = start;
 	new_res->end = end;
 
+	/*
+	 * If two ranges are adjacent, merge them.
+	 */
 	do {
 		if (!*old_res) {
 			*old_res = new_res;
 			break;
 		}
 
-		if ((*old_res)->end < new_res->start) {
+		if (((*old_res)->end + 1) == new_res->start) {
+			(*old_res)->end = new_res->end;
+			kfree(new_res);
+			break;
+		}
+
+		if ((*old_res)->start == new_res->end + 1) {
+			(*old_res)->start = new_res->start;
+			kfree(new_res);
+			break;
+		}
+
+		if ((*old_res)->start > new_res->end) {
 			new_res->sibling = *old_res;
 			if (prev_res)
 				(*prev_res)->sibling = new_res;
@@ -1162,11 +1178,14 @@ int vmbus_allocate_mmio(struct resource **new, struct hv_device *device_obj,
 			resource_size_t size, resource_size_t align,
 			bool fb_overlap_ok)
 {
-	struct resource *iter;
+	struct resource *iter, *shadow;
 	resource_size_t range_min, range_max, start, local_min, local_max;
 	const char *dev_n = dev_name(&device_obj->device);
 	u32 fb_end = screen_info.lfb_base + (screen_info.lfb_size << 1);
-	int i;
+	int i, retval;
+
+	retval = -ENXIO;
+	down(&hyperv_mmio_lock);
 
 	for (iter = hyperv_mmio; iter; iter = iter->sibling) {
 		if ((iter->start >= max) || (iter->end <= min))
@@ -1201,17 +1220,72 @@ int vmbus_allocate_mmio(struct resource **new, struct hv_device *device_obj,
 
 			start = (local_min + align - 1) & ~(align - 1);
 			for (; start + size - 1 <= local_max; start += align) {
+				shadow = __request_region(iter, start,
+							  size,
+							  NULL,
+							  IORESOURCE_BUSY);
+				if (!shadow)
+					continue;
+
 				*new = request_mem_region_exclusive(start, size,
 								    dev_n);
-				if (*new)
-					return 0;
+				if (*new) {
+					shadow->name = (char*)*new;
+					retval = 0;
+					goto exit;
+				}
+
+				__release_region(iter, start, size);
 			}
 		}
 	}
 
-	return -ENXIO;
+exit:
+	up(&hyperv_mmio_lock);
+	return retval;
 }
 EXPORT_SYMBOL_GPL(vmbus_allocate_mmio);
+
+/**
+ * vmbus_free_mmio() - Free a memory-mapped I/O range.
+ * @start:		Base address of region to release.
+ * @size:		Size of the range to be allocated
+ *
+ * This function releases anything requested by
+ * vmbus_mmio_allocate().
+ */
+void vmbus_free_mmio(resource_size_t start, resource_size_t size) {
+	struct resource *iter;
+
+	down(&hyperv_mmio_lock);
+	for (iter = hyperv_mmio; iter; iter = iter->sibling) {
+		if ((iter->start >= start + size) || (iter->end <= start))
+			continue;
+
+		__release_region(iter, start, size);
+	}
+	release_mem_region(start, size);
+	up(&hyperv_mmio_lock);
+
+}
+EXPORT_SYMBOL_GPL(vmbus_free_mmio);
+
+/**
+ * vmbus_cpu_number_to_vp_number() - Map CPU to VP.
+ * @cpu_number: CPU number in Linux terms
+ *
+ * This function returns the mapping between the Linux processor
+ * number and the hypervisor's virtual processor number, useful
+ * in making hypercalls and such that talk about specific
+ * processors.
+ *
+ * Return: Virtual processor number in Hyper-V terms
+ */
+int vmbus_cpu_number_to_vp_number(int cpu_number)
+{
+	return hv_context.vp_index[cpu_number];
+}
+EXPORT_SYMBOL_GPL(vmbus_cpu_number_to_vp_number);
 
 static int vmbus_acpi_add(struct acpi_device *device)
 {

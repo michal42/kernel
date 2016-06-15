@@ -263,11 +263,14 @@ static const struct pci_device_id bnx2x_pci_tbl[] = {
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57810_MF), BCM57810_MF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_O), BCM57840_O },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_4_10), BCM57840_4_10 },
+	{ PCI_VDEVICE(QLOGIC,	PCI_DEVICE_ID_NX2_57840_4_10), BCM57840_4_10 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_2_20), BCM57840_2_20 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57810_VF), BCM57810_VF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_MFO), BCM57840_MFO },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_MF), BCM57840_MF },
+	{ PCI_VDEVICE(QLOGIC,	PCI_DEVICE_ID_NX2_57840_MF), BCM57840_MF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_VF), BCM57840_VF },
+	{ PCI_VDEVICE(QLOGIC,	PCI_DEVICE_ID_NX2_57840_VF), BCM57840_VF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811), BCM57811 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811_MF), BCM57811_MF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811_VF), BCM57811_VF },
@@ -4866,9 +4869,7 @@ static bool bnx2x_check_blocks_with_parity3(struct bnx2x *bp, u32 sig,
 				res = true;
 				break;
 			case AEU_INPUTS_ATTN_BITS_MCP_LATCHED_SCPAD_PARITY:
-				if (print)
-					_print_next_block((*par_num)++,
-							  "MCP SCPAD");
+				(*par_num)++;
 				/* clear latched SCPAD PATIRY from MCP */
 				REG_WR(bp, MISC_REG_AEU_CLR_LATCH_SIGNAL,
 				       1UL << 10);
@@ -4930,6 +4931,7 @@ static bool bnx2x_parity_attn(struct bnx2x *bp, bool *global, bool print,
 	    (sig[3] & HW_PRTY_ASSERT_SET_3) ||
 	    (sig[4] & HW_PRTY_ASSERT_SET_4)) {
 		int par_num = 0;
+
 		DP(NETIF_MSG_HW, "Was parity error: HW block parity attention:\n"
 				 "[0]:0x%08x [1]:0x%08x [2]:0x%08x [3]:0x%08x [4]:0x%08x\n",
 			  sig[0] & HW_PRTY_ASSERT_SET_0,
@@ -4937,9 +4939,18 @@ static bool bnx2x_parity_attn(struct bnx2x *bp, bool *global, bool print,
 			  sig[2] & HW_PRTY_ASSERT_SET_2,
 			  sig[3] & HW_PRTY_ASSERT_SET_3,
 			  sig[4] & HW_PRTY_ASSERT_SET_4);
-		if (print)
-			netdev_err(bp->dev,
-				   "Parity errors detected in blocks: ");
+		if (print) {
+			if (((sig[0] & HW_PRTY_ASSERT_SET_0) ||
+			     (sig[1] & HW_PRTY_ASSERT_SET_1) ||
+			     (sig[2] & HW_PRTY_ASSERT_SET_2) ||
+			     (sig[4] & HW_PRTY_ASSERT_SET_4)) ||
+			     (sig[3] & HW_PRTY_ASSERT_SET_3_WITHOUT_SCPAD)) {
+				netdev_err(bp->dev,
+					   "Parity errors detected in blocks: ");
+			} else {
+				print = false;
+			}
+		}
 		res |= bnx2x_check_blocks_with_parity0(bp,
 			sig[0] & HW_PRTY_ASSERT_SET_0, &par_num, print);
 		res |= bnx2x_check_blocks_with_parity1(bp,

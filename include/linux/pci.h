@@ -345,6 +345,9 @@ struct pci_dev {
 	unsigned int	__aer_firmware_first:1;
 	unsigned int	broken_intx_masking:1;
 	unsigned int	io_window_1k:1;	/* Intel P2P bridge 1K I/O windows */
+#ifndef __GENKSYMS__
+	unsigned int	non_compliant_bars:1;	/* broken BARs; ignore them */
+#endif
 	pci_dev_flags_t dev_flags;
 	atomic_t	enable_cnt;	/* pci_enable_device has been called */
 
@@ -784,6 +787,7 @@ struct pci_dev *pci_dev_get(struct pci_dev *dev);
 void pci_dev_put(struct pci_dev *dev);
 void pci_remove_bus(struct pci_bus *b);
 void pci_stop_and_remove_bus_device(struct pci_dev *dev);
+void pci_stop_and_remove_bus_device_locked(struct pci_dev *dev);
 void pci_stop_root_bus(struct pci_bus *bus);
 void pci_remove_root_bus(struct pci_bus *bus);
 void pci_setup_cardbus(struct pci_bus *bus);
@@ -1030,6 +1034,8 @@ void set_pcie_hotplug_bridge(struct pci_dev *pdev);
 int pci_bus_find_capability(struct pci_bus *bus, unsigned int devfn, int cap);
 unsigned int pci_rescan_bus_bridge_resize(struct pci_dev *bridge);
 unsigned int pci_rescan_bus(struct pci_bus *bus);
+void pci_lock_rescan_remove(void);
+void pci_unlock_rescan_remove(void);
 
 /* Vital product data routines */
 ssize_t pci_read_vpd(struct pci_dev *dev, loff_t pos, size_t count, void *buf);
@@ -1829,12 +1835,13 @@ bool pci_acs_path_enabled(struct pci_dev *start,
 #define PCI_VPD_LRDT_RW_DATA		PCI_VPD_LRDT_ID(PCI_VPD_LTIN_RW_DATA)
 
 /* Small Resource Data Type Tag Item Names */
-#define PCI_VPD_STIN_END		0x78	/* End */
+#define PCI_VPD_STIN_END		0x0f	/* End */
 
-#define PCI_VPD_SRDT_END		PCI_VPD_STIN_END
+#define PCI_VPD_SRDT_END		(PCI_VPD_STIN_END << 3)
 
 #define PCI_VPD_SRDT_TIN_MASK		0x78
 #define PCI_VPD_SRDT_LEN_MASK		0x07
+#define PCI_VPD_LRDT_TIN_MASK		0x7f
 
 #define PCI_VPD_LRDT_TAG_SIZE		3
 #define PCI_VPD_SRDT_TAG_SIZE		1
@@ -1858,6 +1865,17 @@ static inline u16 pci_vpd_lrdt_size(const u8 *lrdt)
 }
 
 /**
+ * pci_vpd_lrdt_tag - Extracts the Large Resource Data Type Tag Item
+ * @lrdt: Pointer to the beginning of the Large Resource Data Type tag
+ *
+ * Returns the extracted Large Resource Data Type Tag item.
+ */
+static inline u16 pci_vpd_lrdt_tag(const u8 *lrdt)
+{
+    return (u16)(lrdt[0] & PCI_VPD_LRDT_TIN_MASK);
+}
+
+/**
  * pci_vpd_srdt_size - Extracts the Small Resource Data Type length
  * @lrdt: Pointer to the beginning of the Small Resource Data Type tag
  *
@@ -1866,6 +1884,17 @@ static inline u16 pci_vpd_lrdt_size(const u8 *lrdt)
 static inline u8 pci_vpd_srdt_size(const u8 *srdt)
 {
 	return (*srdt) & PCI_VPD_SRDT_LEN_MASK;
+}
+
+/**
+ * pci_vpd_srdt_tag - Extracts the Small Resource Data Type Tag Item
+ * @lrdt: Pointer to the beginning of the Small Resource Data Type tag
+ *
+ * Returns the extracted Small Resource Data Type Tag Item.
+ */
+static inline u8 pci_vpd_srdt_tag(const u8 *srdt)
+{
+	return ((*srdt) & PCI_VPD_SRDT_TIN_MASK) >> 3;
 }
 
 /**

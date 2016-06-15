@@ -175,6 +175,9 @@ int __pci_read_base(struct pci_dev *dev, enum pci_bar_type type,
 	struct pci_bus_region region, inverted_region;
 	bool bar_too_big = false, bar_disabled = false;
 
+	if (dev->non_compliant_bars)
+		return 0;
+
 	mask = type ? PCI_ROM_ADDRESS_MASK : ~0;
 
 	/* No printks while decoding is disabled! */
@@ -1019,6 +1022,7 @@ void set_pcie_hotplug_bridge(struct pci_dev *pdev)
 int pci_setup_device(struct pci_dev *dev)
 {
 	u32 class;
+	u16 cmd;
 	u8 hdr_type;
 	struct pci_slot *slot;
 	int pos = 0;
@@ -1065,6 +1069,16 @@ int pci_setup_device(struct pci_dev *dev)
 	pci_fixup_device(pci_fixup_early, dev);
 	/* device class may be changed after fixup */
 	class = dev->class >> 8;
+
+	if (dev->non_compliant_bars) {
+		pci_read_config_word(dev, PCI_COMMAND, &cmd);
+		if (cmd & (PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) {
+			dev_info(&dev->dev, "device has non-compliant BARs; disabling IO/MEM decoding\n");
+			cmd &= ~PCI_COMMAND_IO;
+			cmd &= ~PCI_COMMAND_MEMORY;
+			pci_write_config_word(dev, PCI_COMMAND, cmd);
+		}
+	}
 
 	switch (dev->hdr_type) {		    /* header type */
 	case PCI_HEADER_TYPE_NORMAL:		    /* standard header */
@@ -1865,6 +1879,7 @@ err_out:
 	kfree(b);
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(pci_create_root_bus);
 
 int pci_bus_insert_busn_res(struct pci_bus *b, int bus, int bus_max)
 {
@@ -2053,6 +2068,24 @@ EXPORT_SYMBOL(pci_add_new_bus);
 EXPORT_SYMBOL(pci_scan_slot);
 EXPORT_SYMBOL(pci_scan_bridge);
 EXPORT_SYMBOL_GPL(pci_scan_child_bus);
+
+/*
+ * pci_rescan_bus(), pci_rescan_bus_bridge_resize() and PCI device removal
+ * routines should always be executed under this mutex.
+ */
+static DEFINE_MUTEX(pci_rescan_remove_lock);
+
+void pci_lock_rescan_remove(void)
+{
+	mutex_lock(&pci_rescan_remove_lock);
+}
+EXPORT_SYMBOL_GPL(pci_lock_rescan_remove);
+
+void pci_unlock_rescan_remove(void)
+{
+	mutex_unlock(&pci_rescan_remove_lock);
+}
+EXPORT_SYMBOL_GPL(pci_unlock_rescan_remove);
 
 static int __init pci_sort_bf_cmp(const struct device *d_a, const struct device *d_b)
 {

@@ -882,13 +882,34 @@ __init void prefill_possible_map(void)
 		set_cpu_possible(i, true);
 }
 
+static int _acpi_map_lsapic2(acpi_handle handle, int physid, int *pcpu)
+{
+	cpumask_t tmp_map;
+	int cpu;
+
+	cpumask_complement(&tmp_map, cpu_present_mask);
+	cpu = cpumask_first(&tmp_map);
+	if (cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	acpi_map_cpu2node(handle, cpu, physid);
+
+	set_cpu_present(cpu, true);
+	ia64_cpu_to_sapicid[cpu] = physid;
+
+	acpi_processor_set_pdc(handle);
+
+	*pcpu = cpu;
+	return (0);
+}
+
 static int _acpi_map_lsapic(acpi_handle handle, int *pcpu)
 {
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
 	struct acpi_madt_local_sapic *lsapic;
 	cpumask_t tmp_map;
-	int cpu, physid;
+	int physid;
 
 	if (ACPI_FAILURE(acpi_evaluate_object(handle, "_MAT", NULL, &buffer)))
 		return -EINVAL;
@@ -917,20 +938,7 @@ static int _acpi_map_lsapic(acpi_handle handle, int *pcpu)
 	buffer.length = ACPI_ALLOCATE_BUFFER;
 	buffer.pointer = NULL;
 
-	cpumask_complement(&tmp_map, cpu_present_mask);
-	cpu = cpumask_first(&tmp_map);
-	if (cpu >= nr_cpu_ids)
-		return -EINVAL;
-
-	acpi_map_cpu2node(handle, cpu, physid);
-
-	set_cpu_present(cpu, true);
-	ia64_cpu_to_sapicid[cpu] = physid;
-
-	acpi_processor_set_pdc(handle);
-
-	*pcpu = cpu;
-	return (0);
+	return _acpi_map_lsapic2(handle, physid, pcpu);
 }
 
 /* wrapper to silence section mismatch warning */
@@ -939,6 +947,12 @@ int __ref acpi_map_lsapic(acpi_handle handle, int *pcpu)
 	return _acpi_map_lsapic(handle, pcpu);
 }
 EXPORT_SYMBOL(acpi_map_lsapic);
+
+int __ref acpi_map_lsapic2(acpi_handle handle, int physid, int *pcpu)
+{
+	return _acpi_map_lsapic2(handle, physid, pcpu);
+}
+EXPORT_SYMBOL(acpi_map_lsapic2);
 
 int acpi_unmap_lsapic(int cpu)
 {

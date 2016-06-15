@@ -284,10 +284,11 @@ loop:
  * when the transaction commits
  */
 static int record_root_in_trans(struct btrfs_trans_handle *trans,
-			       struct btrfs_root *root)
+			       struct btrfs_root *root,
+			       int force)
 {
-	if (test_bit(BTRFS_ROOT_REF_COWS, &root->state) &&
-	    root->last_trans < trans->transid) {
+	if ((test_bit(BTRFS_ROOT_REF_COWS, &root->state) &&
+	    root->last_trans < trans->transid) || force) {
 		WARN_ON(root == root->fs_info->extent_root);
 		WARN_ON(root->commit_root != root->node);
 
@@ -304,7 +305,7 @@ static int record_root_in_trans(struct btrfs_trans_handle *trans,
 		smp_wmb();
 
 		spin_lock(&root->fs_info->fs_roots_radix_lock);
-		if (root->last_trans == trans->transid) {
+		if (root->last_trans == trans->transid && !force) {
 			spin_unlock(&root->fs_info->fs_roots_radix_lock);
 			return 0;
 		}
@@ -375,7 +376,7 @@ int btrfs_record_root_in_trans(struct btrfs_trans_handle *trans,
 		return 0;
 
 	mutex_lock(&root->fs_info->reloc_mutex);
-	record_root_in_trans(trans, root);
+	record_root_in_trans(trans, root, 0);
 	mutex_unlock(&root->fs_info->reloc_mutex);
 
 	return 0;
@@ -466,13 +467,10 @@ start_transaction(struct btrfs_root *root, u64 num_items, unsigned int type,
 	 * the appropriate flushing if need be.
 	 */
 	if (num_items > 0 && root != root->fs_info->chunk_root) {
-		if (root->fs_info->quota_enabled &&
-		    is_fstree(root->root_key.objectid)) {
-			qgroup_reserved = num_items * root->leafsize;
-			ret = btrfs_qgroup_reserve(root, qgroup_reserved);
-			if (ret)
-				return ERR_PTR(ret);
-		}
+		qgroup_reserved = num_items * root->nodesize;
+		ret = btrfs_qgroup_reserve_meta(root, qgroup_reserved);
+		if (ret)
+			return ERR_PTR(ret);
 
 		num_bytes = btrfs_calc_trans_metadata_size(root, num_items);
 		/*
@@ -540,7 +538,6 @@ again:
 	h->block_rsv = NULL;
 	h->orig_rsv = NULL;
 	h->aborted = 0;
-	h->qgroup_reserved = 0;
 	h->delayed_ref_elem.seq = 0;
 	h->type = type;
 	h->allocating_chunk = false;
@@ -565,7 +562,6 @@ again:
 		h->bytes_reserved = num_bytes;
 		h->reloc_reserved = reloc_reserved;
 	}
-	h->qgroup_reserved = qgroup_reserved;
 
 got_it:
 	btrfs_record_root_in_trans(h, root);
@@ -583,8 +579,7 @@ alloc_fail:
 		btrfs_block_rsv_release(root, &root->fs_info->trans_block_rsv,
 					num_bytes);
 reserve_fail:
-	if (qgroup_reserved)
-		btrfs_qgroup_free(root, qgroup_reserved);
+	btrfs_qgroup_free_meta(root, qgroup_reserved);
 	return ERR_PTR(ret);
 }
 
@@ -822,15 +817,6 @@ static int __btrfs_end_transaction(struct btrfs_trans_handle *trans,
 		cur = max_t(unsigned long, cur, 32);
 		trans->delayed_ref_updates = 0;
 		btrfs_run_delayed_refs(trans, root, cur);
-	}
-
-	if (trans->qgroup_reserved) {
-		/*
-		 * the same root has to be passed here between start_transaction
-		 * and end_transaction. Subvolume quota depends on this.
-		 */
-		btrfs_qgroup_free(trans->root, trans->qgroup_reserved);
-		trans->qgroup_reserved = 0;
 	}
 
 	btrfs_trans_release_metadata(trans, root);
@@ -1229,6 +1215,7 @@ static noinline int commit_fs_roots(struct btrfs_trans_handle *trans,
 			spin_lock(&fs_info->fs_roots_radix_lock);
 			if (err)
 				break;
+			btrfs_qgroup_free_meta_all(root);
 		}
 	}
 	spin_unlock(&fs_info->fs_roots_radix_lock);
@@ -1269,6 +1256,91 @@ int btrfs_defrag_root(struct btrfs_root *root)
 		}
 	}
 	clear_bit(BTRFS_ROOT_DEFRAG_RUNNING, &root->state);
+	return ret;
+}
+
+/*
+ * Do all special snapshot related qgroup dirty hack.
+ *
+ * Will do all needed qgroup inherit and dirty hack like switch commit
+ * roots inside one transaction and write all btree into disk, to make
+ * qgroup works.
+ */
+static int qgroup_account_snapshot(struct btrfs_trans_handle *trans,
+				   struct btrfs_root *src,
+				   struct btrfs_root *parent,
+				   struct btrfs_qgroup_inherit *inherit,
+				   u64 dst_objectid)
+{
+	struct btrfs_fs_info *fs_info = src->fs_info;
+	int ret;
+
+	/*
+	 * Save some performance in the case that qgroups are not
+	 * enabled. If this check races with the ioctl, rescan will
+	 * kick in anyway.
+	 */
+	mutex_lock(&fs_info->qgroup_ioctl_lock);
+	if (!fs_info->quota_enabled) {
+		mutex_unlock(&fs_info->qgroup_ioctl_lock);
+		return 0;
+	}
+	mutex_unlock(&fs_info->qgroup_ioctl_lock);
+
+	/*
+	 * We are going to commit transaction, see btrfs_commit_transaction()
+	 * comment for reason locking tree_log_mutex
+	 */
+	mutex_lock(&fs_info->tree_log_mutex);
+
+	ret = commit_fs_roots(trans, src);
+	if (ret)
+		goto out;
+	ret = btrfs_qgroup_prepare_account_extents(trans, fs_info);
+	if (ret < 0)
+		goto out;
+	ret = btrfs_qgroup_account_extents(trans, fs_info);
+	if (ret < 0)
+		goto out;
+
+	/* Now qgroup are all updated, we can inherit it to new qgroups */
+	ret = btrfs_qgroup_inherit(trans, fs_info,
+				   src->root_key.objectid, dst_objectid,
+				   inherit);
+	if (ret < 0)
+		goto out;
+
+	/*
+	 * Now we do a simplified commit transaction, which will:
+	 * 1) commit all subvolume and extent tree
+	 *    To ensure all subvolume and extent tree have a valid
+	 *    commit_root to accounting later insert_dir_item()
+	 * 2) write all btree blocks onto disk
+	 *    This is to make sure later btree modification will be cowed
+	 *    Or commit_root can be populated and cause wrong qgroup numbers
+	 * In this simplified commit, we don't really care about other trees
+	 * like chunk and root tree, as they won't affect qgroup.
+	 * And we don't write super to avoid half committed status.
+	 */
+	ret = commit_cowonly_roots(trans, src);
+	if (ret)
+		goto out;
+	switch_commit_roots(trans->transaction, fs_info);
+	ret = btrfs_write_and_wait_transaction(trans, src);
+	if (ret)
+		btrfs_std_error(fs_info, ret);
+
+out:
+	mutex_unlock(&fs_info->tree_log_mutex);
+
+	/*
+	 * Force parent root to be updated, as we recorded it before so its
+	 * last_trans == cur_transid.
+	 * Or it won't be committed again onto disk after later
+	 * insert_dir_item()
+	 */
+	if (!ret)
+		record_root_in_trans(trans, parent, 1);
 	return ret;
 }
 
@@ -1349,7 +1421,7 @@ static noinline int create_pending_snapshot(struct btrfs_trans_handle *trans,
 	dentry = pending->dentry;
 	parent_inode = pending->dir;
 	parent_root = BTRFS_I(parent_inode)->root;
-	record_root_in_trans(trans, parent_root);
+	record_root_in_trans(trans, parent_root, 0);
 
 	/*
 	 * insert the directory item
@@ -1384,7 +1456,7 @@ static noinline int create_pending_snapshot(struct btrfs_trans_handle *trans,
 		goto fail;
 	}
 
-	record_root_in_trans(trans, root);
+	record_root_in_trans(trans, root, 0);
 	btrfs_set_root_last_snapshot(&root->root_item, trans->transid);
 	memcpy(new_root_item, &root->root_item, sizeof(*new_root_item));
 	btrfs_check_and_init_root_item(new_root_item);
@@ -1480,6 +1552,17 @@ static noinline int create_pending_snapshot(struct btrfs_trans_handle *trans,
 		goto fail;
 	}
 
+	/*
+	 * Do special qgroup accounting for snapshot, as we do some qgroup
+	 * snapshot hack to do fast snapshot.
+	 * To co-operate with that hack, we do hack again.
+	 * Or snapshot will be greatly slowed down by a subtree qgroup rescan
+	 */
+	ret = qgroup_account_snapshot(trans, root, parent_root,
+				      pending->inherit, objectid);
+	if (ret < 0)
+		goto fail;
+
 	ret = btrfs_insert_dir_item(trans, parent_root,
 				    dentry->d_name.name, dentry->d_name.len,
 				    parent_inode, &key,
@@ -1517,23 +1600,6 @@ static noinline int create_pending_snapshot(struct btrfs_trans_handle *trans,
 	}
 
 	ret = btrfs_run_delayed_refs(trans, root, (unsigned long)-1);
-	if (ret) {
-		btrfs_abort_transaction(trans, root, ret);
-		goto fail;
-	}
-
-	/*
-	 * account qgroup counters before qgroup_inherit()
-	 */
-	ret = btrfs_qgroup_prepare_account_extents(trans, fs_info);
-	if (ret)
-		goto fail;
-	ret = btrfs_qgroup_account_extents(trans, fs_info);
-	if (ret)
-		goto fail;
-	ret = btrfs_qgroup_inherit(trans, fs_info,
-				   root->root_key.objectid,
-				   objectid, pending->inherit);
 	if (ret) {
 		btrfs_abort_transaction(trans, root, ret);
 		goto fail;
@@ -1870,10 +1936,6 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans,
 
 	btrfs_trans_release_metadata(trans, root);
 	trans->block_rsv = NULL;
-	if (trans->qgroup_reserved) {
-		btrfs_qgroup_free(root, trans->qgroup_reserved);
-		trans->qgroup_reserved = 0;
-	}
 
 	cur_trans = trans->transaction;
 
@@ -2186,10 +2248,6 @@ scrub_continue:
 cleanup_transaction:
 	btrfs_trans_release_metadata(trans, root);
 	trans->block_rsv = NULL;
-	if (trans->qgroup_reserved) {
-		btrfs_qgroup_free(root, trans->qgroup_reserved);
-		trans->qgroup_reserved = 0;
-	}
 	btrfs_warn(root->fs_info, "Skipping commit of aborted transaction.");
 	if (current->journal_info == trans)
 		current->journal_info = NULL;

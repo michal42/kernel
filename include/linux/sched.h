@@ -685,6 +685,10 @@ struct user_struct {
 #ifdef CONFIG_PERF_EVENTS
 	atomic_long_t locked_vm;
 #endif
+#ifndef __GENKSYMS__
+	unsigned long unix_inflight;	/* How many files in flight in unix sockets */
+	atomic_long_t pipe_bufs;  /* how many pages are allocated in pipe buffers */
+#endif
 };
 
 extern int uids_sysfs_init(void);

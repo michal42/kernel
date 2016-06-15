@@ -75,6 +75,13 @@ static void xen_pcibk_control_isr(struct pci_dev *dev, int reset)
 		enable ? "enable" : "disable");
 
 	if (enable) {
+		/*
+		 * The MSI or MSI-X should not have an IRQ handler. Otherwise
+		 * if the guest terminates we BUG_ON in free_msi_irqs.
+		 */
+		if (dev->msi_enabled || dev->msix_enabled)
+			goto out;
+
 		rc = request_irq(dev_data->irq,
 				xen_pcibk_guest_interrupt, IRQF_SHARED,
 				dev_data->irq_name, dev);
@@ -254,8 +261,9 @@ int xen_pcibk_enable_msix(struct xen_pcibk_device *pdev,
 	/*
 	 * PCI_COMMAND_MEMORY must be enabled, otherwise we may not be able
 	 * to access the BARs where the MSI-X entries reside.
+	 * But VF devices are unique in which the PF needs to be checked.
 	 */
-	pci_read_config_word(dev, PCI_COMMAND, &cmd);
+	pci_read_config_word(pci_physfn(dev), PCI_COMMAND, &cmd);
 	if (dev->msi_enabled || !(cmd & PCI_COMMAND_MEMORY))
 		return -ENXIO;
 
@@ -374,6 +382,9 @@ void xen_pcibk_do_op(struct work_struct *data)
 	struct xen_pcibk_dev_data *dev_data = NULL;
 	struct xen_pci_op *op = &pdev->op;
 	int test_intx = 0;
+#ifdef CONFIG_PCI_MSI
+	unsigned int nr = 0;
+#endif
 
 	*op = pdev->sh_info->op;
 	barrier();
@@ -411,6 +422,7 @@ void xen_pcibk_do_op(struct work_struct *data)
 			op->err = xen_pcibk_disable_msi(pdev, dev, op);
 			break;
 		case XEN_PCI_OP_enable_msix:
+			nr = op->value;
 			op->err = xen_pcibk_enable_msix(pdev, dev, op);
 			break;
 		case XEN_PCI_OP_disable_msix:
@@ -435,7 +447,7 @@ void xen_pcibk_do_op(struct work_struct *data)
 	if (op->cmd == XEN_PCI_OP_enable_msix && op->err == 0) {
 		unsigned int i;
 
-		for (i = 0; i < op->value; i++)
+		for (i = 0; i < nr; i++)
 			pdev->sh_info->op.msix_entries[i].vector =
 				op->msix_entries[i].vector;
 	}

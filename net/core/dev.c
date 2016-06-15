@@ -2285,10 +2285,10 @@ out:
 }
 EXPORT_SYMBOL(skb_checksum_help);
 
-__be16 skb_network_protocol(struct sk_buff *skb)
+__be16 skb_network_protocol(struct sk_buff *skb, int *depth)
 {
+	unsigned int vlan_depth = skb->mac_len;
 	__be16 type = skb->protocol;
-	int vlan_depth = ETH_HLEN;
 
 	/* Tunnel gso handlers can set protocol to ethernet. */
 	if (type == htons(ETH_P_TEB)) {
@@ -2301,16 +2301,33 @@ __be16 skb_network_protocol(struct sk_buff *skb)
 		type = eth->h_proto;
 	}
 
-	while (type == htons(ETH_P_8021Q) || type == htons(ETH_P_8021AD)) {
-		struct vlan_hdr *vh;
+	/* if skb->protocol is 802.1Q/AD then the header should already be
+	 * present at mac_len - VLAN_HLEN (if mac_len > 0), or at
+	 * ETH_HLEN otherwise
+	 */
+	if (type == htons(ETH_P_8021Q) || type == htons(ETH_P_8021AD)) {
+		if (vlan_depth) {
+			if (unlikely(WARN_ON(vlan_depth < VLAN_HLEN)))
+				return 0;
+			vlan_depth -= VLAN_HLEN;
+		} else {
+			vlan_depth = ETH_HLEN;
+		}
+		do {
+			struct vlan_hdr *vh;
 
-		if (unlikely(!pskb_may_pull(skb, vlan_depth + VLAN_HLEN)))
-			return 0;
+			if (unlikely(!pskb_may_pull(skb,
+						    vlan_depth + VLAN_HLEN)))
+				return 0;
 
-		vh = (struct vlan_hdr *)(skb->data + vlan_depth);
-		type = vh->h_vlan_encapsulated_proto;
-		vlan_depth += VLAN_HLEN;
+			vh = (struct vlan_hdr *)(skb->data + vlan_depth);
+			type = vh->h_vlan_encapsulated_proto;
+			vlan_depth += VLAN_HLEN;
+		} while (type == htons(ETH_P_8021Q) ||
+			 type == htons(ETH_P_8021AD));
 	}
+
+	*depth = vlan_depth;
 
 	return type;
 }
@@ -2325,12 +2342,13 @@ struct sk_buff *skb_mac_gso_segment(struct sk_buff *skb,
 {
 	struct sk_buff *segs = ERR_PTR(-EPROTONOSUPPORT);
 	struct packet_offload *ptype;
-	__be16 type = skb_network_protocol(skb);
+	int vlan_depth = skb->mac_len;
+	__be16 type = skb_network_protocol(skb, &vlan_depth);
 
 	if (unlikely(!type))
 		return ERR_PTR(-EINVAL);
 
-	__skb_pull(skb, skb->mac_len);
+	__skb_pull(skb, vlan_depth);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(ptype, &offload_base, list) {
@@ -2502,8 +2520,10 @@ static netdev_features_t harmonize_features(struct sk_buff *skb,
 					    const struct net_device *dev,
 					    netdev_features_t features)
 {
+	int tmp;
+
 	if (skb->ip_summed != CHECKSUM_NONE &&
-	    !can_checksum_protocol(features, skb_network_protocol(skb))) {
+	    !can_checksum_protocol(features, skb_network_protocol(skb, &tmp))) {
 		features &= ~NETIF_F_ALL_CSUM;
 	} else if (illegal_highdma(dev, skb)) {
 		features &= ~NETIF_F_SG;
@@ -4924,7 +4944,7 @@ static int __netdev_upper_dev_link(struct net_device *dev,
 	if (__netdev_find_adj(upper_dev, dev, &upper_dev->all_adj_list.upper))
 		return -EBUSY;
 
-	if (__netdev_find_adj(dev, upper_dev, &dev->all_adj_list.upper))
+	if (__netdev_find_adj(dev, upper_dev, &dev->adj_list.upper))
 		return -EEXIST;
 
 	if (master && netdev_master_upper_dev_get(dev))

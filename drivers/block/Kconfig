@@ -469,9 +469,9 @@ config XILINX_SYSACE
 
 config PARAVIRT_XEN_BLKDEV_FRONTEND
 	tristate "Xen virtual block device support"
-	depends on PARAVIRT_XEN
+	depends on PARAVIRT_XEN || (XEN && SUSE_KERNEL && m)
 	default y
-	select XEN_XENBUS_FRONTEND
+	select XEN_XENBUS_FRONTEND if !XEN
 	help
 	  This driver implements the front-end of the Xen virtual
 	  block device driver.  It communicates with a back-end driver

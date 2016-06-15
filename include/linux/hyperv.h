@@ -984,6 +984,9 @@ int vmbus_allocate_mmio(struct resource **new, struct hv_device *device_obj,
 			resource_size_t min, resource_size_t max,
 			resource_size_t size, resource_size_t align,
 			bool fb_overlap_ok);
+void vmbus_free_mmio(resource_size_t start, resource_size_t size);
+int vmbus_cpu_number_to_vp_number(int cpu_number);
+u64 hv_do_hypercall(u64 control, void *input, void *output);
 
 /**
  * VMBUS_DEVICE - macro used to describe a specific hyperv vmbus device
@@ -1140,6 +1143,17 @@ int vmbus_allocate_mmio(struct resource **new, struct hv_device *device_obj,
 		}
 
 /*
+ * PCI Express Pass Through
+ * {44C4F61D-4444-4400-9D52-802E27EDE19F}
+ */
+
+#define HV_PCIE_GUID \
+	.guid = { \
+			0x1D, 0xF6, 0xC4, 0x44, 0x44, 0x44, 0x00, 0x44, \
+			0x9D, 0x52, 0x80, 0x2E, 0x27, 0xED, 0xE1, 0x9F \
+		}
+
+/*
  * Common header for Hyper-V ICs
  */
 
@@ -1163,6 +1177,7 @@ int vmbus_allocate_mmio(struct resource **new, struct hv_device *device_obj,
 
 struct hv_util_service {
 	u8 *recv_buffer;
+	void *channel;
 	void (*util_cb)(void *);
 	int (*util_init)(struct hv_util_service *);
 	void (*util_deinit)(void);

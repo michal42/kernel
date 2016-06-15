@@ -1068,8 +1068,8 @@ struct resource * __request_region(struct resource *parent,
 	res->name = name;
 	res->start = start;
 	res->end = start + n - 1;
-	res->flags = IORESOURCE_BUSY;
-	res->flags |= flags;
+	res->flags = resource_type(parent);
+	res->flags |= IORESOURCE_BUSY | flags;
 
 	write_lock(&resource_lock);
 
@@ -1080,9 +1080,10 @@ struct resource * __request_region(struct resource *parent,
 		if (!conflict)
 			break;
 		if (conflict != parent) {
-			parent = conflict;
-			if (!(conflict->flags & IORESOURCE_BUSY))
+			if (!(conflict->flags & IORESOURCE_BUSY)) {
+				parent = conflict;
 				continue;
+			}
 		}
 		if (conflict->flags & flags & IORESOURCE_MUXED) {
 			add_wait_queue(&muxed_resource_wait, &wait);

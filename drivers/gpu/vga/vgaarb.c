@@ -392,8 +392,10 @@ int vga_get(struct pci_dev *pdev, unsigned int rsrc, int interruptible)
 		set_current_state(interruptible ?
 				  TASK_INTERRUPTIBLE :
 				  TASK_UNINTERRUPTIBLE);
-		if (signal_pending(current)) {
-			rc = -EINTR;
+		if (interruptible && signal_pending(current)) {
+			__set_current_state(TASK_RUNNING);
+			remove_wait_queue(&vga_wait_queue, &wait);
+			rc = -ERESTARTSYS;
 			break;
 		}
 		schedule();
@@ -631,6 +633,7 @@ static bool vga_arbiter_del_pci_device(struct pci_dev *pdev)
 	 * it's copies of the pci_dev pointer
 	 */
 	vga_arb_device_card_gone(pdev);
+	pr_info("vgaarb: device added: PCI:%s\n", pci_name(pdev));
 
 	/* Wake up all possible waiters */
 	wake_up_all(&vga_wait_queue);
@@ -1092,7 +1095,8 @@ static ssize_t vga_arb_write(struct file *file, const char __user * buf,
 		vgadev = vgadev_find(pdev);
 		pr_debug("vgaarb: vgadev %p\n", vgadev);
 		if (vgadev == NULL) {
-			pr_err("vgaarb: this pci device is not a vga device\n");
+			pr_err("vgaarb: this pci device is not a vga device: %s\n",
+			       pci_name(pdev));
 			pci_dev_put(pdev);
 			ret_val = -ENODEV;
 			goto done;

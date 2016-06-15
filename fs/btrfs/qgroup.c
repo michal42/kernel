@@ -1481,10 +1481,6 @@ static int qgroup_update_counters(struct btrfs_fs_info *fs_info,
 			}
 		}
 
-		/* For exclusive extent, free its reserved bytes too */
-		if (nr_old_roots == 0 && nr_new_roots == 1 &&
-		    cur_new_count == nr_new_roots)
-			qg->reserved -= num_bytes;
 		if (dirty)
 			qgroup_dirty(fs_info, qg);
 	}
@@ -1673,8 +1669,10 @@ out:
 }
 
 /*
- * copy the acounting information between qgroups. This is necessary when a
- * snapshot or a subvolume is created
+ * Copy the acounting information between qgroups. This is necessary
+ * when a snapshot or a subvolume is created. Throwing an error will
+ * cause a transaction abort so we take extra care here to only error
+ * when a readonly fs is a reasonable outcome.
  */
 int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 			 struct btrfs_fs_info *fs_info, u64 srcid, u64 objectid,
@@ -1704,10 +1702,15 @@ int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 		       2 * inherit->num_excl_copies;
 		for (i = 0; i < nums; ++i) {
 			srcgroup = find_qgroup_rb(fs_info, *i_qgroups);
-			if (!srcgroup) {
-				ret = -EINVAL;
-				goto out;
-			}
+
+			/*
+			 * Zero out invalid groups so we can ignore
+			 * them later.
+			 */
+			if (!srcgroup ||
+			    ((srcgroup->qgroupid >> 48) <= (objectid >> 48)))
+				*i_qgroups = 0ULL;
+
 			++i_qgroups;
 		}
 	}
@@ -1755,17 +1758,19 @@ int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 	 */
 	if (inherit) {
 		i_qgroups = (u64 *)(inherit + 1);
-		for (i = 0; i < inherit->num_qgroups; ++i) {
+		for (i = 0; i < inherit->num_qgroups; ++i, ++i_qgroups) {
+			if (*i_qgroups == 0)
+				continue;
 			ret = add_qgroup_relation_item(trans, quota_root,
 						       objectid, *i_qgroups);
-			if (ret)
+			if (ret && ret != -EEXIST)
 				goto out;
 			ret = add_qgroup_relation_item(trans, quota_root,
 						       *i_qgroups, objectid);
-			if (ret)
+			if (ret && ret != -EEXIST)
 				goto out;
-			++i_qgroups;
 		}
+		ret = 0;
 	}
 
 
@@ -1802,16 +1807,21 @@ int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 
 	i_qgroups = (u64 *)(inherit + 1);
 	for (i = 0; i < inherit->num_qgroups; ++i) {
-		ret = add_relation_rb(quota_root->fs_info, objectid,
-				      *i_qgroups);
-		if (ret)
-			goto unlock;
+		if (*i_qgroups) {
+			ret = add_relation_rb(quota_root->fs_info, objectid,
+					      *i_qgroups);
+			if (ret)
+				goto unlock;
+		}
 		++i_qgroups;
 	}
 
-	for (i = 0; i <  inherit->num_ref_copies; ++i) {
+	for (i = 0; i <  inherit->num_ref_copies; ++i, i_qgroups += 2) {
 		struct btrfs_qgroup *src;
 		struct btrfs_qgroup *dst;
+
+		if (!i_qgroups[0] || !i_qgroups[1])
+			continue;
 
 		src = find_qgroup_rb(fs_info, i_qgroups[0]);
 		dst = find_qgroup_rb(fs_info, i_qgroups[1]);
@@ -1823,11 +1833,13 @@ int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 
 		dst->rfer = src->rfer - level_size;
 		dst->rfer_cmpr = src->rfer_cmpr - level_size;
-		i_qgroups += 2;
 	}
-	for (i = 0; i <  inherit->num_excl_copies; ++i) {
+	for (i = 0; i <  inherit->num_excl_copies; ++i, i_qgroups += 2) {
 		struct btrfs_qgroup *src;
 		struct btrfs_qgroup *dst;
+
+		if (!i_qgroups[0] || !i_qgroups[1])
+			continue;
 
 		src = find_qgroup_rb(fs_info, i_qgroups[0]);
 		dst = find_qgroup_rb(fs_info, i_qgroups[1]);
@@ -1839,7 +1851,6 @@ int btrfs_qgroup_inherit(struct btrfs_trans_handle *trans,
 
 		dst->excl = src->excl + level_size;
 		dst->excl_cmpr = src->excl_cmpr + level_size;
-		i_qgroups += 2;
 	}
 
 unlock:
@@ -1855,7 +1866,7 @@ out:
  * accounting. If not enough space is available, EDQUOT is returned.
  * We assume that the requested space is new for all qgroups.
  */
-int btrfs_qgroup_reserve(struct btrfs_root *root, u64 num_bytes)
+static int qgroup_reserve(struct btrfs_root *root, u64 num_bytes)
 {
 	struct btrfs_root *quota_root;
 	struct btrfs_qgroup *qgroup;
@@ -1936,14 +1947,13 @@ out:
 	return ret;
 }
 
-void btrfs_qgroup_free(struct btrfs_root *root, u64 num_bytes)
+void btrfs_qgroup_free_refroot(struct btrfs_fs_info *fs_info,
+			       u64 ref_root, u64 num_bytes)
 {
 	struct btrfs_root *quota_root;
 	struct btrfs_qgroup *qgroup;
-	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct ulist_node *unode;
 	struct ulist_iterator uiter;
-	u64 ref_root = root->root_key.objectid;
 	int ret = 0;
 
 	if (!is_fstree(ref_root))
@@ -1989,6 +1999,11 @@ out:
 	spin_unlock(&fs_info->qgroup_lock);
 }
 
+static inline void qgroup_free(struct btrfs_root *root, u64 num_bytes)
+{
+	return btrfs_qgroup_free_refroot(root->fs_info, root->objectid,
+					 num_bytes);
+}
 void assert_qgroups_uptodate(struct btrfs_trans_handle *trans)
 {
 	if (list_empty(&trans->qgroup_ref_list) && !trans->delayed_ref_elem.seq)
@@ -2004,7 +2019,7 @@ void assert_qgroups_uptodate(struct btrfs_trans_handle *trans)
 
 /*
  * returns < 0 on error, 0 when more leafs are to be scanned.
- * returns 1 when done, 2 when done and FLAG_INCONSISTENT was cleared.
+ * returns 1 when done.
  */
 static int
 qgroup_rescan_leaf(struct btrfs_fs_info *fs_info, struct btrfs_path *path,
@@ -2129,7 +2144,7 @@ out:
 	if (!btrfs_fs_closing(fs_info))
 		fs_info->qgroup_flags &= ~BTRFS_QGROUP_STATUS_FLAG_RESCAN;
 
-	if (err == 2 &&
+	if (err > 0 &&
 	    fs_info->qgroup_flags & BTRFS_QGROUP_STATUS_FLAG_INCONSISTENT) {
 		fs_info->qgroup_flags &= ~BTRFS_QGROUP_STATUS_FLAG_INCONSISTENT;
 	} else if (err < 0) {
@@ -2163,7 +2178,7 @@ out:
 		btrfs_info(fs_info, "qgroup scan paused");
 	} else if (err >= 0) {
 		btrfs_info(fs_info, "qgroup scan completed%s",
-			err == 2 ? " (inconsistency flag cleared)" : "");
+			err > 0 ? " (inconsistency flag cleared)" : "");
 	} else {
 		btrfs_err(fs_info, "qgroup scan failed with %d", err);
 	}
@@ -2313,4 +2328,191 @@ btrfs_qgroup_rescan_resume(struct btrfs_fs_info *fs_info)
 	if (fs_info->qgroup_flags & BTRFS_QGROUP_STATUS_FLAG_RESCAN)
 		btrfs_queue_worker(&fs_info->qgroup_rescan_workers,
 				   &fs_info->qgroup_rescan_work);
+}
+
+/*
+ * Reserve qgroup space for range [start, start + len).
+ *
+ * This function will either reserve space from related qgroups or doing
+ * nothing if the range is already reserved.
+ *
+ * Return 0 for successful reserve
+ * Return <0 for error (including -EQUOT)
+ *
+ * NOTE: this function may sleep for memory allocation.
+ */
+int btrfs_qgroup_reserve_data(struct inode *inode, u64 start, u64 len)
+{
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct extent_changeset changeset;
+	struct ulist_node *unode;
+	struct ulist_iterator uiter;
+	int ret;
+
+	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid) ||
+	    len == 0)
+		return 0;
+
+	changeset.bytes_changed = 0;
+	changeset.range_changed = ulist_alloc(GFP_NOFS);
+	ret = set_record_extent_bits(&BTRFS_I(inode)->io_tree, start,
+			start + len -1, EXTENT_QGROUP_RESERVED, GFP_NOFS,
+			&changeset);
+	trace_btrfs_qgroup_reserve_data(inode, start, len,
+					changeset.bytes_changed,
+					QGROUP_RESERVE);
+	if (ret < 0)
+		goto cleanup;
+	ret = qgroup_reserve(root, changeset.bytes_changed);
+	if (ret < 0)
+		goto cleanup;
+
+	ulist_free(changeset.range_changed);
+	return ret;
+
+cleanup:
+	/* cleanup already reserved ranges */
+	ULIST_ITER_INIT(&uiter);
+	while ((unode = ulist_next(changeset.range_changed, &uiter)))
+		clear_extent_bit(&BTRFS_I(inode)->io_tree, unode->val,
+				 unode->aux, EXTENT_QGROUP_RESERVED, 0, 0, NULL,
+				 GFP_NOFS);
+	ulist_free(changeset.range_changed);
+	return ret;
+}
+
+static int __btrfs_qgroup_release_data(struct inode *inode, u64 start, u64 len,
+				       int free)
+{
+	struct extent_changeset changeset;
+	int trace_op = QGROUP_RELEASE;
+	int ret;
+
+	changeset.bytes_changed = 0;
+	changeset.range_changed = ulist_alloc(GFP_NOFS);
+	if (!changeset.range_changed)
+		return -ENOMEM;
+
+	ret = clear_record_extent_bits(&BTRFS_I(inode)->io_tree, start, 
+			start + len -1, EXTENT_QGROUP_RESERVED, GFP_NOFS,
+			&changeset);
+	if (ret < 0)
+		goto out;
+
+	if (free) {
+		qgroup_free(BTRFS_I(inode)->root, changeset.bytes_changed);
+		trace_op = QGROUP_FREE;
+	}
+	trace_btrfs_qgroup_release_data(inode, start, len,
+					changeset.bytes_changed, trace_op);
+out:
+	ulist_free(changeset.range_changed);
+	return ret;
+}
+
+/*
+ * Free a reserved space range from io_tree and related qgroups
+ *
+ * Should be called when a range of pages get invalidated before reaching disk.
+ * Or for error cleanup case.
+ *
+ * For data written to disk, use btrfs_qgroup_release_data().
+ *
+ * NOTE: This function may sleep for memory allocation.
+ */
+int btrfs_qgroup_free_data(struct inode *inode, u64 start, u64 len)
+{
+	return __btrfs_qgroup_release_data(inode, start, len, 1);
+}
+
+/*
+ * Release a reserved space range from io_tree only.
+ *
+ * Should be called when a range of pages get written to disk and corresponding
+ * FILE_EXTENT is inserted into corresponding root.
+ *
+ * Since new qgroup accounting framework will only update qgroup numbers at
+ * commit_transaction() time, its reserved space shouldn't be freed from
+ * related qgroups.
+ *
+ * But we should release the range from io_tree, to allow further write to be
+ * COWed.
+ *
+ * NOTE: This function may sleep for memory allocation.
+ */
+int btrfs_qgroup_release_data(struct inode *inode, u64 start, u64 len)
+{
+	return __btrfs_qgroup_release_data(inode, start, len, 0);
+}
+
+int btrfs_qgroup_reserve_meta(struct btrfs_root *root, int num_bytes)
+{
+	int ret;
+
+	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid) ||
+	    num_bytes == 0)
+		return 0;
+
+	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
+	ret = qgroup_reserve(root, num_bytes);
+	if (ret < 0)
+		return ret;
+	atomic_add(num_bytes, &root->qgroup_meta_rsv);
+	return ret;
+}
+
+void btrfs_qgroup_free_meta_all(struct btrfs_root *root)
+{
+	int reserved;
+
+	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid))
+		return;
+
+	reserved = atomic_xchg(&root->qgroup_meta_rsv, 0);
+	if (reserved == 0)
+		return;
+	qgroup_free(root, reserved);
+}
+
+void btrfs_qgroup_free_meta(struct btrfs_root *root, int num_bytes)
+{
+	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid))
+		return;
+
+	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
+	WARN_ON(atomic_read(&root->qgroup_meta_rsv) < num_bytes);
+	atomic_sub(num_bytes, &root->qgroup_meta_rsv);
+	qgroup_free(root, num_bytes);
+}
+
+/*
+ * Check qgroup reserved space leaking, normally at destory inode
+ * time
+ */
+void btrfs_qgroup_check_reserved_leak(struct inode *inode)
+{
+	struct extent_changeset changeset;
+	struct ulist_node *unode;
+	struct ulist_iterator iter;
+	int ret;
+
+	changeset.bytes_changed = 0;
+	changeset.range_changed = ulist_alloc(GFP_NOFS);
+	if (WARN_ON(!changeset.range_changed))
+		return;
+
+	ret = clear_record_extent_bits(&BTRFS_I(inode)->io_tree, 0, (u64)-1,
+			EXTENT_QGROUP_RESERVED, GFP_NOFS, &changeset);
+
+	WARN_ON(ret < 0);
+	if (WARN_ON(changeset.bytes_changed)) {
+		ULIST_ITER_INIT(&iter);
+		while ((unode = ulist_next(changeset.range_changed, &iter))) {
+			btrfs_warn(BTRFS_I(inode)->root->fs_info,
+				"leaking qgroup reserved space, ino: %lu, start: %llu, end: %llu",
+				inode->i_ino, unode->val, unode->aux);
+		}
+		qgroup_free(BTRFS_I(inode)->root, changeset.bytes_changed);
+	}
+	ulist_free(changeset.range_changed);
 }

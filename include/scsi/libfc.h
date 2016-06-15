@@ -187,7 +187,7 @@ struct fc_rport_libfc_priv {
  * @major_retries:  The retry count for the entire PLOGI/PRLI state machine
  * @e_d_tov:        Error detect timeout value (in msec)
  * @r_a_tov:        Resource allocation timeout value (in msec)
- * @rp_mutex:       The mutex that protects the remote port
+ * @rp_mutex:       Only its spinlock is being used
  * @retry_work:     Handle for retries
  * @event_callback: Callback when READY, FAILED or LOGO states complete
  * @prli_count:     Count of open PRLI sessions in providers
@@ -207,7 +207,7 @@ struct fc_rport_priv {
 	unsigned int	            major_retries;
 	unsigned int	            e_d_tov;
 	unsigned int	            r_a_tov;
-	struct mutex                rp_mutex;
+	struct mutex		    rp_mutex;
 	struct delayed_work	    retry_work;
 	enum fc_rport_event         event;
 	struct fc_rport_operations  *ops;

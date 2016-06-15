@@ -582,7 +582,7 @@ static int crypto_gcm_verify(struct aead_request *req,
 
 	crypto_xor(auth_tag, iauth_tag, 16);
 	scatterwalk_map_and_copy(iauth_tag, req->src, cryptlen, authsize, 0);
-	return memcmp(iauth_tag, auth_tag, authsize) ? -EBADMSG : 0;
+	return crypto_memneq(iauth_tag, auth_tag, authsize) ? -EBADMSG : 0;
 }
 
 static void gcm_decrypt_done(struct crypto_async_request *areq, int err)
@@ -1173,6 +1173,9 @@ static struct aead_request *crypto_rfc4543_crypt(struct aead_request *req,
 	aead_request_set_tfm(subreq, ctx->child);
 	aead_request_set_callback(subreq, req->base.flags, crypto_rfc4543_done,
 				  req);
+	if (!enc)
+		aead_request_set_callback(subreq, req->base.flags,
+					  req->base.complete, req->base.data);
 	aead_request_set_crypt(subreq, cipher, cipher, enc ? 0 : authsize, iv);
 	aead_request_set_assoc(subreq, assoc, assoclen);
 

@@ -178,7 +178,9 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 	efi_status_t status;
 	void **gop_handle;
 	u16 width, height;
-	u32 fb_base, fb_size;
+	u32 fb_size;
+	u32 ext_lfb_base;
+	u64 fb_base;
 	u32 pixels_per_scan_line;
 	int pixel_format;
 	int i;
@@ -253,6 +255,13 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
 	si->lfb_width = width;
 	si->lfb_height = height;
 	si->lfb_base = fb_base;
+
+	ext_lfb_base = (u64)(unsigned long)fb_base >> 32;
+	if (ext_lfb_base) {
+		si->capabilities |= VIDEO_CAPABILITY_64BIT_BASE;
+		si->ext_lfb_base = ext_lfb_base;
+	}
+
 	si->pages = 1;
 
 	if (pixel_format == PIXEL_RGB_RESERVED_8BIT_PER_COLOR) {

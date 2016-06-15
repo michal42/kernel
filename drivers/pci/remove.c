@@ -112,6 +112,14 @@ void pci_stop_and_remove_bus_device(struct pci_dev *dev)
 }
 EXPORT_SYMBOL(pci_stop_and_remove_bus_device);
 
+void pci_stop_and_remove_bus_device_locked(struct pci_dev *dev)
+{
+	pci_lock_rescan_remove();
+	pci_stop_and_remove_bus_device(dev);
+	pci_unlock_rescan_remove();
+}
+EXPORT_SYMBOL_GPL(pci_stop_and_remove_bus_device_locked);
+
 void pci_stop_root_bus(struct pci_bus *bus)
 {
 	struct pci_dev *child, *tmp;
@@ -128,6 +136,7 @@ void pci_stop_root_bus(struct pci_bus *bus)
 	/* stop the host bridge */
 	device_del(&host_bridge->dev);
 }
+EXPORT_SYMBOL_GPL(pci_stop_root_bus);
 
 void pci_remove_root_bus(struct pci_bus *bus)
 {
@@ -147,3 +156,4 @@ void pci_remove_root_bus(struct pci_bus *bus)
 	/* remove the host bridge */
 	put_device(&host_bridge->dev);
 }
+EXPORT_SYMBOL_GPL(pci_remove_root_bus);

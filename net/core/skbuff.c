@@ -76,6 +76,8 @@
 
 struct kmem_cache *skbuff_head_cache __read_mostly;
 static struct kmem_cache *skbuff_fclone_cache __read_mostly;
+int sysctl_max_skb_frags __read_mostly = MAX_SKB_FRAGS;
+EXPORT_SYMBOL(sysctl_max_skb_frags);
 
 /**
  *	skb_panic - private function for out-of-line support
@@ -2896,9 +2898,10 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 	int err = -ENOMEM;
 	int i = 0;
 	int pos;
+	int dummy;
 
 	__skb_push(head_skb, doffset);
-	proto = skb_network_protocol(head_skb);
+	proto = skb_network_protocol(head_skb, &dummy);
 	if (unlikely(!proto))
 		return ERR_PTR(-EINVAL);
 

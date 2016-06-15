@@ -298,8 +298,8 @@ void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty)
 		background = dirty / 2;
 	tsk = current;
 	if (tsk->flags & PF_LESS_THROTTLE || rt_task(tsk)) {
-		background += background / 4;
-		dirty += dirty / 4;
+		background += background / 4 + global_dirty_limit / 32;
+		dirty += dirty / 4 + global_dirty_limit / 32;
 	}
 	*pbackground = background;
 	*pdirty = dirty;

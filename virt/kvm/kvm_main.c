@@ -146,7 +146,7 @@ static void ack_flush(void *_completed)
 {
 }
 
-static bool make_all_cpus_request(struct kvm *kvm, unsigned int req)
+bool kvm_make_all_cpus_request(struct kvm *kvm, unsigned int req)
 {
 	int i, cpu, me;
 	cpumask_var_t cpus;
@@ -183,7 +183,7 @@ void kvm_flush_remote_tlbs(struct kvm *kvm)
 	long dirty_count = kvm->tlbs_dirty;
 
 	smp_mb();
-	if (make_all_cpus_request(kvm, KVM_REQ_TLB_FLUSH))
+	if (kvm_make_all_cpus_request(kvm, KVM_REQ_TLB_FLUSH))
 		++kvm->stat.remote_tlb_flush;
 	cmpxchg(&kvm->tlbs_dirty, dirty_count, 0);
 }
@@ -191,17 +191,17 @@ EXPORT_SYMBOL_GPL(kvm_flush_remote_tlbs);
 
 void kvm_reload_remote_mmus(struct kvm *kvm)
 {
-	make_all_cpus_request(kvm, KVM_REQ_MMU_RELOAD);
+	kvm_make_all_cpus_request(kvm, KVM_REQ_MMU_RELOAD);
 }
 
 void kvm_make_mclock_inprogress_request(struct kvm *kvm)
 {
-	make_all_cpus_request(kvm, KVM_REQ_MCLOCK_INPROGRESS);
+	kvm_make_all_cpus_request(kvm, KVM_REQ_MCLOCK_INPROGRESS);
 }
 
 void kvm_make_scan_ioapic_request(struct kvm *kvm)
 {
-	make_all_cpus_request(kvm, KVM_REQ_SCAN_IOAPIC);
+	kvm_make_all_cpus_request(kvm, KVM_REQ_SCAN_IOAPIC);
 }
 
 int kvm_vcpu_init(struct kvm_vcpu *vcpu, struct kvm *kvm, unsigned id)
@@ -289,6 +289,9 @@ static void kvm_mmu_notifier_invalidate_page(struct mmu_notifier *mn,
 		kvm_flush_remote_tlbs(kvm);
 
 	spin_unlock(&kvm->mmu_lock);
+
+	kvm_arch_mmu_notifier_invalidate_page(kvm, address);
+
 	srcu_read_unlock(&kvm->srcu, idx);
 }
 
@@ -449,6 +452,16 @@ static struct kvm *kvm_create_vm(unsigned long type)
 	if (!kvm)
 		return ERR_PTR(-ENOMEM);
 
+	spin_lock_init(&kvm->mmu_lock);
+	atomic_inc(&current->mm->mm_count);
+	kvm->mm = current->mm;
+	kvm_eventfd_init(kvm);
+	mutex_init(&kvm->lock);
+	mutex_init(&kvm->irq_lock);
+	mutex_init(&kvm->slots_lock);
+	atomic_set(&kvm->users_count, 1);
+	INIT_LIST_HEAD(&kvm->devices);
+
 	r = kvm_arch_init_vm(kvm, type);
 	if (r)
 		goto out_err_nodisable;
@@ -478,16 +491,6 @@ static struct kvm *kvm_create_vm(unsigned long type)
 			goto out_err;
 	}
 
-	spin_lock_init(&kvm->mmu_lock);
-	kvm->mm = current->mm;
-	atomic_inc(&kvm->mm->mm_count);
-	kvm_eventfd_init(kvm);
-	mutex_init(&kvm->lock);
-	mutex_init(&kvm->irq_lock);
-	mutex_init(&kvm->slots_lock);
-	atomic_set(&kvm->users_count, 1);
-	INIT_LIST_HEAD(&kvm->devices);
-
 	r = kvm_init_mmu_notifier(kvm);
 	if (r)
 		goto out_err;
@@ -507,6 +510,7 @@ out_err_nodisable:
 		kfree(kvm->buses[i]);
 	kvfree(kvm->memslots);
 	kvm_arch_free_vm(kvm);
+	mmdrop(current->mm);
 	return ERR_PTR(r);
 }
 
