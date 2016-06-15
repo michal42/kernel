@@ -414,16 +414,22 @@ static sense_reason_t tcm_rbd_execute_write_same(struct se_cmd *cmd)
 				   false);
 }
 
+struct tcm_rbd_caw_state {
+	struct se_cmd *cmd;
+	struct scatterlist *cmp_and_write_sg;
+	struct page **cmp_and_write_pages;
+	u32 cmp_and_write_page_count;
+};
+
 static void tcm_rbd_cmp_and_write_callback(struct rbd_img_request *img_request)
 {
-	struct se_cmd *cmd = img_request->lio_cmd_data;
-	struct se_device *dev = cmd->se_dev;
-	struct tcm_rbd_dev *tcm_rbd_dev = TCM_RBD_DEV(dev);
+	struct tcm_rbd_caw_state *caw_state = img_request->lio_cmd_data;
+	struct se_cmd *cmd = caw_state->cmd;
 	sense_reason_t sense_reason = TCM_NO_SENSE;
 	u64 miscompare_off;
 
 	if (img_request->result == -EILSEQ) {
-		ceph_copy_from_page_vector(tcm_rbd_dev->cmp_and_write_pages,
+		ceph_copy_from_page_vector(caw_state->cmp_and_write_pages,
 					   &miscompare_off, 0,
 					   sizeof(miscompare_off));
 		cmd->sense_info = (u32)le64_to_cpu(miscompare_off);
@@ -431,13 +437,10 @@ static void tcm_rbd_cmp_and_write_callback(struct rbd_img_request *img_request)
 			  (unsigned long long)cmd->bad_sector);
 		sense_reason = TCM_MISCOMPARE_VERIFY;
 	}
-	kfree(tcm_rbd_dev->cmp_and_write_sg);
-	tcm_rbd_dev->cmp_and_write_sg = NULL;
-	ceph_release_page_vector(tcm_rbd_dev->cmp_and_write_pages,
-				 tcm_rbd_dev->cmp_and_write_page_count);
-	tcm_rbd_dev->cmp_and_write_pages = NULL;
-	tcm_rbd_dev->cmp_and_write_page_count = 0;
-	up(&dev->caw_sem);
+	kfree(caw_state->cmp_and_write_sg);
+	ceph_release_page_vector(caw_state->cmp_and_write_pages,
+				 caw_state->cmp_and_write_page_count);
+	kfree(caw_state);
 
 	if (sense_reason != TCM_NO_SENSE) {
 		/* TODO pass miscompare offset */
@@ -455,6 +458,7 @@ static sense_reason_t tcm_rbd_execute_cmp_and_write(struct se_cmd *cmd)
 	struct se_device *dev = cmd->se_dev;
 	struct tcm_rbd_dev *tcm_rbd_dev = TCM_RBD_DEV(dev);
 	struct rbd_device *rbd_dev = tcm_rbd_dev->rbd_dev;
+	struct tcm_rbd_caw_state *caw_state = NULL;
 	struct rbd_img_request *img_request;
 	struct ceph_snap_context *snapc;
 	sense_reason_t sense = TCM_NO_SENSE;
@@ -469,6 +473,11 @@ static sense_reason_t tcm_rbd_execute_cmp_and_write(struct se_cmd *cmd)
 	ceph_get_snap_context(snapc);
 	up_read(&rbd_dev->header_rwsem);
 
+	/*
+	 * No need to take dev->caw_sem here, as the IO is mapped to a compound
+	 * compare+write OSD request, which is handled atomically by the OSD.
+	 */
+
 	img_request = rbd_img_request_create(rbd_dev,
 					     rbd_lba_shift(dev, cmd->t_task_lba),
 					     len, OBJ_OP_CMP_AND_WRITE, snapc);
@@ -478,26 +487,30 @@ static sense_reason_t tcm_rbd_execute_cmp_and_write(struct se_cmd *cmd)
 	}
 	snapc = NULL; /* img_request consumes a ref */
 
-	ret = down_interruptible(&dev->caw_sem);
-	if (ret != 0 || signal_pending(current)) {
-		sense = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+	caw_state = kmalloc(sizeof(*caw_state), GFP_KERNEL);
+	if (caw_state == NULL) {
+		sense = TCM_OUT_OF_RESOURCES;
 		goto free_req;
 	}
 
-	tcm_rbd_dev->cmp_and_write_sg = sbc_create_compare_and_write_sg(cmd);
-	if (!tcm_rbd_dev->cmp_and_write_sg)
-		goto rel_caw_sem;
+	caw_state->cmp_and_write_sg = sbc_create_compare_and_write_sg(cmd);
+	if (!caw_state->cmp_and_write_sg) {
+		sense = TCM_OUT_OF_RESOURCES;
+		goto free_caw_state;
+	}
 
 	page_count = (u32)calc_pages_for(0, len + sizeof(u64));
 	pages = ceph_alloc_page_vector(page_count, GFP_KERNEL);
-	if (IS_ERR(pages))
+	if (IS_ERR(pages)) {
+		sense = TCM_OUT_OF_RESOURCES;
 		goto free_write_sg;
-	tcm_rbd_dev->cmp_and_write_pages = pages;
-	tcm_rbd_dev->cmp_and_write_page_count = page_count;
+	}
+	caw_state->cmp_and_write_pages = pages;
+	caw_state->cmp_and_write_page_count = page_count;
 
 	ret = rbd_img_cmp_and_write_request_fill(img_request, cmd->t_data_sg,
 						 len,
-						 tcm_rbd_dev->cmp_and_write_sg,
+						 caw_state->cmp_and_write_sg,
 						 len, pages, response_len);
 	if (ret == -EOPNOTSUPP) {
 		sense = TCM_INVALID_CDB_FIELD;
@@ -508,7 +521,8 @@ static sense_reason_t tcm_rbd_execute_cmp_and_write(struct se_cmd *cmd)
 	}
 
 	cmd->priv = img_request;
-	img_request->lio_cmd_data = cmd;
+	caw_state->cmd = cmd;
+	img_request->lio_cmd_data = caw_state;
 	img_request->callback = tcm_rbd_cmp_and_write_callback;
 
 	ret = rbd_img_request_submit(img_request);
@@ -525,10 +539,10 @@ static sense_reason_t tcm_rbd_execute_cmp_and_write(struct se_cmd *cmd)
 free_pages:
 	ceph_release_page_vector(pages, page_count);
 free_write_sg:
-	kfree(tcm_rbd_dev->cmp_and_write_sg);
-	tcm_rbd_dev->cmp_and_write_sg = NULL;
-rel_caw_sem:
-	up(&dev->caw_sem);
+	kfree(caw_state->cmp_and_write_sg);
+	caw_state->cmp_and_write_sg = NULL;
+free_caw_state:
+	kfree(caw_state);
 free_req:
 	rbd_img_request_put(img_request);
 free_snapc:
