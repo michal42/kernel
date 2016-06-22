@@ -898,7 +898,7 @@ static int br_nf_dev_queue_xmit(struct sk_buff *skb)
 #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV4)
 	if (skb->protocol == htons(ETH_P_IP)) {
 		if (br_parse_ip_options(skb))
-			return NF_DROP;
+			goto drop;
 		return ip_fragment(skb, br_dev_queue_push_xmit);
 	}
 #endif
@@ -907,15 +907,19 @@ static int br_nf_dev_queue_xmit(struct sk_buff *skb)
 		const struct nf_ipv6_ops *v6ops = nf_get_ipv6_ops();
 
 		if (br_validate_ipv6(skb))
-			return NF_DROP;
+			goto drop;
 		if (v6ops)
 			return v6ops->fragment(skb, br_dev_queue_push_xmit);
-		else
-			return -EMSGSIZE;
+
+		kfree_skb(skb);
+		return -EMSGSIZE;
 	}
 #endif
 
 	return br_dev_queue_push_xmit(skb);
+drop:
+	kfree_skb(skb);
+	return 0;
 }
 #else
 static int br_nf_dev_queue_xmit(struct sk_buff *skb)
