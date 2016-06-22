@@ -18,7 +18,9 @@
 #include <linux/netpoll.h>
 #include <linux/u64_stats_sync.h>
 #include <net/route.h>
+#ifndef __GENKSYMS__
 #include <net/ip6_fib.h>
+#endif
 #include <linux/if_vlan.h>
 
 #define BR_HASH_BITS 8
