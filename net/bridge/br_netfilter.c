@@ -34,6 +34,7 @@
 
 #include <net/ip.h>
 #include <net/ipv6.h>
+#include <net/addrconf.h>
 #include <net/route.h>
 
 #include <asm/uaccess.h>
@@ -617,37 +618,65 @@ bad:
 
 }
 
+/* Equivalent to br_validate_ipv4 for IPv6 */
+static int br_validate_ipv6(struct sk_buff *skb)
+{
+	const struct ipv6hdr *hdr;
+	struct net_device *dev = skb->dev;
+	struct inet6_dev *idev = in6_dev_get(skb->dev);
+	u32 pkt_len;
+	u8 ip6h_len = sizeof(struct ipv6hdr);
+
+	if (!pskb_may_pull(skb, ip6h_len))
+		goto inhdr_error;
+
+	if (skb->len < ip6h_len)
+		goto drop;
+
+	hdr = ipv6_hdr(skb);
+
+	if (hdr->version != 6)
+		goto inhdr_error;
+
+	pkt_len = ntohs(hdr->payload_len);
+
+	if (pkt_len || hdr->nexthdr != NEXTHDR_HOP) {
+		if (pkt_len + ip6h_len > skb->len) {
+			IP6_INC_STATS_BH(dev_net(dev), idev,
+					 IPSTATS_MIB_INTRUNCATEDPKTS);
+			goto drop;
+		}
+		if (pskb_trim_rcsum(skb, pkt_len + ip6h_len)) {
+			IP6_INC_STATS_BH(dev_net(dev), idev,
+					 IPSTATS_MIB_INDISCARDS);
+			goto drop;
+		}
+	}
+	if (hdr->nexthdr == NEXTHDR_HOP && check_hbh_len(skb))
+		goto drop;
+
+	memset(IP6CB(skb), 0, sizeof(struct inet6_skb_parm));
+	/* No IP options in IPv6 header; however it should be
+	 * checked if some next headers need special treatment
+	 */
+	return 0;
+
+inhdr_error:
+	IP6_INC_STATS_BH(dev_net(dev), idev, IPSTATS_MIB_INHDRERRORS);
+drop:
+	return -1;
+}
+
 /* Replicate the checks that IPv6 does on packet reception and pass the packet
- * to ip6tables, which doesn't support NAT, so things are fairly simple. */
+ * to ip6tables.
+ */
 static unsigned int br_nf_pre_routing_ipv6(unsigned int hook,
 					   struct sk_buff *skb,
 					   const struct net_device *in,
 					   const struct net_device *out,
 					   int (*okfn)(struct sk_buff *))
 {
-	const struct ipv6hdr *hdr;
-	u32 pkt_len;
-
-	if (skb->len < sizeof(struct ipv6hdr))
-		return NF_DROP;
-
-	if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
-		return NF_DROP;
-
-	hdr = ipv6_hdr(skb);
-
-	if (hdr->version != 6)
-		return NF_DROP;
-
-	pkt_len = ntohs(hdr->payload_len);
-
-	if (pkt_len || hdr->nexthdr != NEXTHDR_HOP) {
-		if (pkt_len + sizeof(struct ipv6hdr) > skb->len)
-			return NF_DROP;
-		if (pskb_trim_rcsum(skb, pkt_len + sizeof(struct ipv6hdr)))
-			return NF_DROP;
-	}
-	if (hdr->nexthdr == NEXTHDR_HOP && check_hbh_len(skb))
+	if (br_validate_ipv6(skb))
 		return NF_DROP;
 
 	nf_bridge_put(skb->nf_bridge);
@@ -804,6 +833,9 @@ static unsigned int br_nf_forward_ip(unsigned int hook, struct sk_buff *skb,
 	if (pf == NFPROTO_IPV4 && br_parse_ip_options(skb))
 		return NF_DROP;
 
+	if (pf == NFPROTO_IPV6 && br_validate_ipv6(skb))
+		return NF_DROP;
+
 	/* The physdev module checks on this */
 	nf_bridge->mask |= BRNF_BRIDGED;
 	nf_bridge->physoutdev = skb->dev;
@@ -853,22 +885,37 @@ static unsigned int br_nf_forward_arp(unsigned int hook, struct sk_buff *skb,
 	return NF_STOLEN;
 }
 
-#if IS_ENABLED(CONFIG_NF_DEFRAG_IPV4)
+#if IS_ENABLED(CONFIG_NF_DEFRAG_IPV4) || IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
 static int br_nf_dev_queue_xmit(struct sk_buff *skb)
 {
-	int ret;
+	unsigned int mtu_reserved;
 
-	if (skb->protocol == htons(ETH_P_IP) &&
-	    skb->len + nf_bridge_mtu_reduction(skb) > skb->dev->mtu &&
-	    !skb_is_gso(skb)) {
+	mtu_reserved = nf_bridge_mtu_reduction(skb);
+
+	if (skb_is_gso(skb) || skb->len + mtu_reserved <= skb->dev->mtu)
+		return br_dev_queue_push_xmit(skb);
+
+#if IS_ENABLED(CONFIG_NF_DEFRAG_IPV4)
+	if (skb->protocol == htons(ETH_P_IP)) {
 		if (br_parse_ip_options(skb))
-			/* Drop invalid packet */
 			return NF_DROP;
-		ret = ip_fragment(skb, br_dev_queue_push_xmit);
-	} else
-		ret = br_dev_queue_push_xmit(skb);
+		return ip_fragment(skb, br_dev_queue_push_xmit);
+	}
+#endif
+#if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
+	if (skb->protocol == htons(ETH_P_IPV6)) {
+		const struct nf_ipv6_ops *v6ops = nf_get_ipv6_ops();
 
-	return ret;
+		if (br_validate_ipv6(skb))
+			return NF_DROP;
+		if (v6ops)
+			return v6ops->fragment(skb, br_dev_queue_push_xmit);
+		else
+			return -EMSGSIZE;
+	}
+#endif
+
+	return br_dev_queue_push_xmit(skb);
 }
 #else
 static int br_nf_dev_queue_xmit(struct sk_buff *skb)
