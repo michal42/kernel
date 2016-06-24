@@ -49,12 +49,12 @@
  */
 static inline int
 xfs_ialloc_cluster_alignment(
-	xfs_alloc_arg_t	*args)
+	struct xfs_mount	*mp)
 {
-	if (xfs_sb_version_hasalign(&args->mp->m_sb) &&
-	    args->mp->m_sb.sb_inoalignmt >=
-	     XFS_B_TO_FSBT(args->mp, XFS_INODE_CLUSTER_SIZE(args->mp)))
-		return args->mp->m_sb.sb_inoalignmt;
+	if (xfs_sb_version_hasalign(&mp->m_sb) &&
+	    mp->m_sb.sb_inoalignmt >=
+			XFS_B_TO_FSBT(mp, mp->m_inode_cluster_size))
+		return mp->m_sb.sb_inoalignmt;
 	return 1;
 }
 
@@ -182,12 +182,12 @@ xfs_ialloc_inode_init(
 	 * For small block sizes, manipulate the inodes in buffers
 	 * which are multiples of the blocks size.
 	 */
-	if (mp->m_sb.sb_blocksize >= XFS_INODE_CLUSTER_SIZE(mp)) {
+	if (mp->m_sb.sb_blocksize >= mp->m_inode_cluster_size) {
 		blks_per_cluster = 1;
 		nbufs = length;
 		ninodes = mp->m_sb.sb_inopblock;
 	} else {
-		blks_per_cluster = XFS_INODE_CLUSTER_SIZE(mp) /
+		blks_per_cluster = mp->m_inode_cluster_size /
 				   mp->m_sb.sb_blocksize;
 		nbufs = length / blks_per_cluster;
 		ninodes = blks_per_cluster * mp->m_sb.sb_inopblock;
@@ -334,7 +334,7 @@ xfs_ialloc_ag_alloc(
 	if (args.mp->m_maxicount &&
 	    args.mp->m_sb.sb_icount + newlen > args.mp->m_maxicount)
 		return XFS_ERROR(ENOSPC);
-	args.minlen = args.maxlen = XFS_IALLOC_BLOCKS(args.mp);
+	args.minlen = args.maxlen = args.mp->m_ialloc_blks;
 	/*
 	 * First try to allocate inodes contiguous with the last-allocated
 	 * chunk of inodes.  If the filesystem is striped, this will fill
@@ -344,7 +344,7 @@ xfs_ialloc_ag_alloc(
 	newino = be32_to_cpu(agi->agi_newino);
 	agno = be32_to_cpu(agi->agi_seqno);
 	args.agbno = XFS_AGINO_TO_AGBNO(args.mp, newino) +
-			XFS_IALLOC_BLOCKS(args.mp);
+		     args.mp->m_ialloc_blks;
 	if (likely(newino != NULLAGINO &&
 		  (args.agbno < be32_to_cpu(agi->agi_length)))) {
 		args.fsbno = XFS_AGB_TO_FSB(args.mp, agno, args.agbno);
@@ -365,7 +365,7 @@ xfs_ialloc_ag_alloc(
 		 * but not to use them in the actual exact allocation.
 		 */
 		args.alignment = 1;
-		args.minalignslop = xfs_ialloc_cluster_alignment(&args) - 1;
+		args.minalignslop = xfs_ialloc_cluster_alignment(args.mp) - 1;
 
 		/* Allow space for the inode btree to split. */
 		args.minleft = args.mp->m_in_maxlevels - 1;
@@ -401,7 +401,7 @@ xfs_ialloc_ag_alloc(
 			args.alignment = args.mp->m_dalign;
 			isaligned = 1;
 		} else
-			args.alignment = xfs_ialloc_cluster_alignment(&args);
+			args.alignment = xfs_ialloc_cluster_alignment(args.mp);
 		/*
 		 * Need to figure out where to allocate the inode blocks.
 		 * Ideally they should be spaced out through the a.g.
@@ -430,7 +430,7 @@ xfs_ialloc_ag_alloc(
 		args.type = XFS_ALLOCTYPE_NEAR_BNO;
 		args.agbno = be32_to_cpu(agi->agi_root);
 		args.fsbno = XFS_AGB_TO_FSB(args.mp, agno, args.agbno);
-		args.alignment = xfs_ialloc_cluster_alignment(&args);
+		args.alignment = xfs_ialloc_cluster_alignment(args.mp);
 		if ((error = xfs_alloc_vextent(&args)))
 			return error;
 	}
@@ -595,10 +595,24 @@ xfs_ialloc_ag_select(
 		}
 
 		/*
-		 * Is there enough free space for the file plus a block of
-		 * inodes? (if we need to allocate some)?
+		 * Check that there is enough free space for the file plus a
+		 * chunk of inodes if we need to allocate some. If this is the
+		 * first pass across the AGs, take into account the potential
+		 * space needed for alignment of inode chunks when checking the
+		 * longest contiguous free space in the AG - this prevents us
+		 * from getting ENOSPC because we have free space larger than
+		 * m_ialloc_blks but alignment constraints prevent us from using
+		 * it.
+		 *
+		 * If we can't find an AG with space for full alignment slack to
+		 * be taken into account, we must be near ENOSPC in all AGs.
+		 * Hence we don't include alignment for the second pass and so
+		 * if we fail allocation due to alignment issues then it is most
+		 * likely a real ENOSPC condition.
 		 */
-		ineed = XFS_IALLOC_BLOCKS(mp);
+		ineed = mp->m_ialloc_blks;
+		if (flags && ineed > 1)
+			ineed += xfs_ialloc_cluster_alignment(mp);
 		longest = pag->pagf_longest;
 		if (!longest)
 			longest = pag->pagf_flcount > 0;
@@ -1241,9 +1255,9 @@ xfs_difree(
 			goto error0;
 		}
 
-		xfs_bmap_add_free(XFS_AGB_TO_FSB(mp,
-				agno, XFS_AGINO_TO_AGBNO(mp, rec.ir_startino)),
-				XFS_IALLOC_BLOCKS(mp), flist, mp);
+		xfs_bmap_add_free(XFS_AGB_TO_FSB(mp, agno,
+				  XFS_AGINO_TO_AGBNO(mp, rec.ir_startino)),
+				  mp->m_ialloc_blks, flist, mp);
 	} else {
 		*delete = 0;
 
@@ -1397,7 +1411,7 @@ xfs_imap(
 		return XFS_ERROR(EINVAL);
 	}
 
-	blks_per_cluster = XFS_INODE_CLUSTER_SIZE(mp) >> mp->m_sb.sb_blocklog;
+	blks_per_cluster = mp->m_inode_cluster_size >> mp->m_sb.sb_blocklog;
 
 	/*
 	 * For bulkstat and handle lookups, we have an untrusted inode number
@@ -1418,7 +1432,7 @@ xfs_imap(
 	 * If the inode cluster size is the same as the blocksize or
 	 * smaller we get to the buffer by simple arithmetics.
 	 */
-	if (XFS_INODE_CLUSTER_SIZE(mp) <= mp->m_sb.sb_blocksize) {
+	if (mp->m_inode_cluster_size <= mp->m_sb.sb_blocksize) {
 		offset = XFS_INO_TO_OFFSET(mp, ino);
 		ASSERT(offset < mp->m_sb.sb_inopblock);
 
