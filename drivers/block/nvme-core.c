@@ -2083,7 +2083,6 @@ static int nvme_kthread(void *data)
 				spin_lock_irq(&nvmeq->q_lock);
 				if (nvmeq->q_suspended)
 					goto unlock;
-				nvme_process_cq(nvmeq);
 				nvme_cancel_ios(nvmeq, true);
 				nvme_resubmit_bios(nvmeq);
 				nvme_resubmit_iods(nvmeq);
