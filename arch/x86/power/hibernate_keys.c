@@ -162,7 +162,6 @@ static int __init init_hibernation_keys(void)
 	/* Erase keys data no matter copy success or failed */
 	memset(keys, 0, sizeof(struct hibernation_keys));
 	early_iounmap(keys, sizeof(struct hibernation_keys));
-	memblock_free(keys_phys_addr, sizeof(struct hibernation_keys));
 	keys_phys_addr = 0;
 
 	set_hibernation_key_regen_flag = false;
