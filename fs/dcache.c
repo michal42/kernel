@@ -2685,9 +2685,9 @@ struct dentry *d_materialise_unique(struct dentry *dentry, struct inode *inode)
 			} else if (IS_ROOT(alias)) {
 				/* Is this an anonymous mountpoint that we
 				 * could splice into our tree? */
+				__d_drop(alias);
 				__d_materialise_dentry(dentry, alias);
 				write_sequnlock(&rename_lock);
-				__d_drop(alias);
 				goto found;
 			} else {
 				/* Nope, but we must(!) avoid directory
