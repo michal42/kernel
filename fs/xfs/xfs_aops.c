@@ -1179,15 +1179,16 @@ xfs_vm_releasepage(
 
 	trace_xfs_releasepage(page->mapping->host, page, 0, 0);
 
-	if (PageDirty(page))
-		return 0;
-
 	xfs_count_page_state(page, &delalloc, &unwritten);
 
-	if (WARN_ON(delalloc))
-		return 0;
-	if (WARN_ON(unwritten))
-		return 0;
+	if (delalloc) {
+		WARN_ON_ONCE(!PageDirty(page));
+ 		return 0;
+	}
+	if (unwritten) {
+		WARN_ON_ONCE(!PageDirty(page));
+ 		return 0;
+	}
 
 	return try_to_free_buffers(page);
 }
