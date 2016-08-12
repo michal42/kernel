@@ -714,11 +714,10 @@ struct ipv6_txoptions *
 ipv6_dup_options(struct sock *sk, struct ipv6_txoptions *opt)
 {
 	struct ipv6_txoptions_rcu *opt2_rcu;
-	struct ipv6_txoptions *opt2;
 
 	opt2_rcu = sock_kmalloc(sk, opt->tot_len + IPV6_TXOPT_RCU_LEN, GFP_ATOMIC);
 	if (opt2_rcu) {
- 		opt2 = &opt2_rcu->txoptions;
+		struct ipv6_txoptions *opt2 = &opt2_rcu->txoptions;
 		long dif = (char *)opt2 - (char *)opt;
 		memset(opt2_rcu, 0, IPV6_TXOPT_RCU_LEN);
 		memcpy(opt2, opt, opt->tot_len);
