@@ -530,7 +530,6 @@ again:
 
 	h->transid = cur_trans->transid;
 	h->transaction = cur_trans;
-	h->blocks_used = 0;
 	h->bytes_reserved = 0;
 	h->root = root;
 	h->delayed_ref_updates = 0;
@@ -544,6 +543,7 @@ again:
 	h->allocating_chunk = false;
 	h->reloc_reserved = false;
 	h->sync = false;
+	h->dirty = false;
 	INIT_LIST_HEAD(&h->qgroup_ref_list);
 	INIT_LIST_HEAD(&h->new_bgs);
 	INIT_LIST_HEAD(&h->ordered);
