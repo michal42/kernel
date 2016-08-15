@@ -66,17 +66,16 @@ struct r1conf {
 	 */
 	wait_queue_head_t	wait_barrier;
 	spinlock_t		resync_lock;
-	int			nr_pending;
-	int			nr_waiting;
+	atomic_t		nr_pending;
+	atomic_t		nr_waiting;
 	int			nr_queued;
-	int			barrier;
-	int			array_frozen;
-
+	atomic_t		barrier;
+	unsigned long		flags;
+#define R1FLAG_ARRAY_FROZEN 0
 	/* Set to 1 if a full sync is needed, (fresh device added).
 	 * Cleared when a sync completes.
 	 */
-	int			fullsync;
-
+#define R1FLAG_FULLSYNC 1
 	/* When the same as mddev->recovery_disabled we don't allow
 	 * recovery to be attempted as we expect a read error.
 	 */
