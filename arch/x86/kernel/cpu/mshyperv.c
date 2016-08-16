@@ -96,7 +96,7 @@ void hv_remove_crash_handler(void)
 }
 EXPORT_SYMBOL_GPL(hv_remove_crash_handler);
 
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 static void hv_machine_shutdown(void)
 {
 	if (kexec_in_progress && hv_kexec_handler)
@@ -110,7 +110,7 @@ static void hv_machine_crash_shutdown(struct pt_regs *regs)
 		hv_crash_handler(regs);
 	native_machine_crash_shutdown(regs);
 }
-#endif /* CONFIG_KEXEC_CORE */
+#endif /* CONFIG_KEXEC */
 #endif /* CONFIG_HYPERV */
 
 static uint32_t  __init ms_hyperv_platform(void)
@@ -186,7 +186,7 @@ static void __init ms_hyperv_init_platform(void)
 	no_timer_check = 1;
 #endif
 
-#if IS_ENABLED(CONFIG_HYPERV) && defined(CONFIG_KEXEC_CORE)
+#if IS_ENABLED(CONFIG_HYPERV) && defined(CONFIG_KEXEC)
 	machine_ops.shutdown = hv_machine_shutdown;
 	machine_ops.crash_shutdown = hv_machine_crash_shutdown;
 #endif
