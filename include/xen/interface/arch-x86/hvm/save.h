@@ -1,7 +1,7 @@
-/* 
+/*
  * Structure definitions for HVM state that is held by Xen and must
  * be saved along with the domain's memory and device-model state.
- * 
+ *
  * Copyright (c) 2007 XenSource Ltd.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -26,8 +26,8 @@
 #ifndef __XEN_PUBLIC_HVM_SAVE_X86_H__
 #define __XEN_PUBLIC_HVM_SAVE_X86_H__
 
-/* 
- * Save/restore header: general info about the save file. 
+/*
+ * Save/restore header: general info about the save file.
  */
 
 #define HVM_FILE_MAGIC   0x54381286
@@ -47,7 +47,9 @@ DECLARE_HVM_SAVE_TYPE(HEADER, 1, struct hvm_save_header);
 /*
  * Processor
  *
- * Compat: Pre-3.4 didn't have msr_tsc_aux
+ * Compat:
+ *     - Pre-3.4 didn't have msr_tsc_aux
+ *     - Pre-4.7 didn't have fpu_initialised
  */
 
 struct hvm_hw_cpu {
@@ -83,7 +85,7 @@ struct hvm_hw_cpu {
     uint64_t dr2;
     uint64_t dr3;
     uint64_t dr6;
-    uint64_t dr7;    
+    uint64_t dr7;
 
     uint32_t cs_sel;
     uint32_t ds_sel;
@@ -157,6 +159,11 @@ struct hvm_hw_cpu {
     };
     /* error code for pending event */
     uint32_t error_code;
+
+#define _XEN_X86_FPU_INITIALISED        0
+#define XEN_X86_FPU_INITIALISED         (1U<<_XEN_X86_FPU_INITIALISED)
+    uint32_t flags;
+    uint32_t pad0;
 };
 
 struct hvm_hw_cpu_compat {
@@ -192,7 +199,7 @@ struct hvm_hw_cpu_compat {
     uint64_t dr2;
     uint64_t dr3;
     uint64_t dr6;
-    uint64_t dr7;    
+    uint64_t dr7;
 
     uint32_t cs_sel;
     uint32_t ds_sel;
@@ -268,19 +275,26 @@ struct hvm_hw_cpu_compat {
     uint32_t error_code;
 };
 
-static inline int _hvm_hw_fix_cpu(void *h) {
+static inline int _hvm_hw_fix_cpu(void *h, uint32_t size) {
 
     union hvm_hw_cpu_union {
         struct hvm_hw_cpu nat;
         struct hvm_hw_cpu_compat cmp;
     } *ucpu = (union hvm_hw_cpu_union *)h;
 
-    /* If we copy from the end backwards, we should
-     * be able to do the modification in-place */
-    ucpu->nat.error_code = ucpu->cmp.error_code;
-    ucpu->nat.pending_event = ucpu->cmp.pending_event;
-    ucpu->nat.tsc = ucpu->cmp.tsc;
-    ucpu->nat.msr_tsc_aux = 0;
+    if ( size == sizeof(struct hvm_hw_cpu_compat) )
+    {
+        /*
+         * If we copy from the end backwards, we should
+         * be able to do the modification in-place.
+         */
+        ucpu->nat.error_code = ucpu->cmp.error_code;
+        ucpu->nat.pending_event = ucpu->cmp.pending_event;
+        ucpu->nat.tsc = ucpu->cmp.tsc;
+        ucpu->nat.msr_tsc_aux = 0;
+    }
+    /* Mimic the old behaviour by unconditionally setting fpu_initialised. */
+    ucpu->nat.flags = XEN_X86_FPU_INITIALISED;
 
     return 0;
 }
@@ -438,7 +452,7 @@ struct hvm_hw_pci_link {
 
 DECLARE_HVM_SAVE_TYPE(PCI_LINK, 9, struct hvm_hw_pci_link);
 
-/* 
+/*
  *  PIT
  */
 
@@ -464,9 +478,9 @@ struct hvm_hw_pit {
 DECLARE_HVM_SAVE_TYPE(PIT, 10, struct hvm_hw_pit);
 
 
-/* 
+/*
  * RTC
- */ 
+ */
 
 #define RTC_CMOS_SIZE 14
 struct hvm_hw_rtc {
@@ -550,12 +564,11 @@ struct hvm_hw_cpu_xsave {
     struct {
         struct { char x[512]; } fpu_sse;
 
-        struct {
+        struct hvm_hw_cpu_xsave_hdr {
             uint64_t xstate_bv;         /* Updated by XRSTOR */
-            uint64_t reserved[7];
+            uint64_t xcomp_bv;          /* Updated by XRSTOR{C,S} */
+            uint64_t reserved[6];
         } xsave_hdr;                    /* The 64-byte header */
-
-        struct { char x[0]; } ymm;    /* YMM */
     } save_area;
 };
 
@@ -575,7 +588,9 @@ struct hvm_viridian_domain_context {
 DECLARE_HVM_SAVE_TYPE(VIRIDIAN_DOMAIN, 15, struct hvm_viridian_domain_context);
 
 struct hvm_viridian_vcpu_context {
-    uint64_t apic_assist;
+    uint64_t apic_assist_msr;
+    uint8_t  apic_assist_vector;
+    uint8_t  _pad[7];
 };
 
 DECLARE_HVM_SAVE_TYPE(VIRIDIAN_VCPU, 17, struct hvm_viridian_vcpu_context);
@@ -612,7 +627,7 @@ struct hvm_msr {
 
 #define CPU_MSR_CODE  20
 
-/* 
+/*
  * Largest type-code in use
  */
 #define HVM_SAVE_CODE_MAX 20

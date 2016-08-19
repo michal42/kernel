@@ -408,9 +408,16 @@ struct thread_struct {
 	unsigned long		ip;
 #endif
 #ifdef CONFIG_X86_64
-	unsigned long		fs;
+	unsigned long		fsbase;
+	unsigned long		gsbase;
+#else
+	/*
+	 * XXX: this could presumably be unsigned short.  Alternatively,
+	 * 32-bit kernels could be taught to use fsindex instead.
+	 */
+	unsigned long fs;
+	unsigned long gs;
 #endif
-	unsigned long		gs;
 
 	/* Save middle states of ptrace breakpoints */
 	struct perf_event	*ptrace_bps[HBP_NUM];
@@ -483,7 +490,6 @@ static inline unsigned long current_top_of_stack(void)
 }
 
 #define __cpuid			xen_cpuid
-#define paravirt_enabled()	1
 
 #define load_sp0 xen_load_sp0
 

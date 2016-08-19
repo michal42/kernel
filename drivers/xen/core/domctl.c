@@ -104,7 +104,8 @@ union xen_domctl {
 
 	/*
 	 * v10: upstream: xen 4.5
-	 * v11: upstream: xen 4.6
+	 * v11: upstream: xen 4.6 and 4.7
+	 * v12: upstream: xen 4.8
 	 */
 	struct {
 		uint32_t cmd;
@@ -116,7 +117,7 @@ union xen_domctl {
 			uint64_aligned_t                     dummy_align;
 			uint8_t                              dummy_pad[128];
 		};
-	} v10, v11;
+	} v10, v11, v12;
 };
 
 struct xen_sysctl_physinfo_v6 {
@@ -251,14 +252,17 @@ union xen_sysctl {
 			struct xen_sysctl_topologyinfo_v8 topologyinfo;
 		};
 	} v8, v9, v10, v11;
-	/* v12: Xen 4.6+ */
+	/*
+	 * v12: Xen 4.6
+	 * v13: Xen 4.7+
+	 */
 	struct {
 		uint32_t cmd;
 		uint32_t interface_version;
 		union {
 			struct xen_sysctl_cputopoinfo_v12 cputopoinfo;
 		};
-	} v12;
+	} v12, v13;
 };
 
 /* The actual code comes here */
@@ -291,8 +295,11 @@ int xen_guest_address_size(int domid)
 	}								\
 } while (0)
 
-	BUILD_BUG_ON(XEN_DOMCTL_INTERFACE_VERSION > 11);
+	BUILD_BUG_ON(XEN_DOMCTL_INTERFACE_VERSION > 12);
+	guest_address_size(12);
+#if CONFIG_XEN_COMPAT < 0x040800
 	guest_address_size(11);
+#endif
 #if CONFIG_XEN_COMPAT < 0x040600
 	guest_address_size(10);
 #endif
@@ -369,8 +376,12 @@ static inline int get_vcpuaffinity(unsigned int nr, void *mask)
 	union xen_domctl domctl;
 	int rc;
 
-	BUILD_BUG_ON(XEN_DOMCTL_INTERFACE_VERSION > 11);
-	rc = vcpu_hard_affinity(get, 11);
+	BUILD_BUG_ON(XEN_DOMCTL_INTERFACE_VERSION > 12);
+	rc = vcpu_hard_affinity(get, 12);
+#if CONFIG_XEN_COMPAT < 0x040800
+	if (rc)
+		rc = vcpu_hard_affinity(get, 11);
+#endif
 #if CONFIG_XEN_COMPAT < 0x040600
 	if (rc)
 		rc = vcpu_hard_affinity(get, 10);
@@ -407,8 +418,12 @@ static inline int set_vcpuaffinity(unsigned int nr, void *mask)
 	union xen_domctl domctl;
 	int rc;
 
-	BUILD_BUG_ON(XEN_DOMCTL_INTERFACE_VERSION > 11);
-	rc = vcpu_hard_affinity(set, 11);
+	BUILD_BUG_ON(XEN_DOMCTL_INTERFACE_VERSION > 12);
+	rc = vcpu_hard_affinity(set, 12);
+#if CONFIG_XEN_COMPAT < 0x040800
+	if (rc)
+		rc = vcpu_hard_affinity(set, 11);
+#endif
 #if CONFIG_XEN_COMPAT < 0x040600
 	if (rc)
 		rc = vcpu_hard_affinity(set, 10);
@@ -502,7 +517,7 @@ int xen_get_topology_info(unsigned int cpu, u32 *core, u32 *sock, u32 *node)
 	unsigned int nr;
 	int rc;
 
-	BUILD_BUG_ON(XEN_SYSCTL_INTERFACE_VERSION > 12);
+	BUILD_BUG_ON(XEN_SYSCTL_INTERFACE_VERSION > 13);
 	if (!core && !sock && !node)
 		return 0;
 
@@ -520,7 +535,11 @@ int xen_get_topology_info(unsigned int cpu, u32 *core, u32 *sock, u32 *node)
 	nr = sysctl.v##ver.cputopoinfo.num_cpus;			\
 } while (0)
 
-	cputopoinfo(12);
+	cputopoinfo(13);
+#if CONFIG_XEN_COMPAT < 0x040700
+	if (rc)
+		cputopoinfo(12);
+#endif
 	if (!rc) {
 		if (core &&
 		    (*core = cputopo[cpu].core) == XEN_INVALID_CORE_ID)

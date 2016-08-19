@@ -112,7 +112,7 @@ int vbd_create(blkif_t *blkif, blkif_vdev_t handle, unsigned major,
 		vbd->type |= VDISK_REMOVABLE;
 
 	q = bdev_get_queue(bdev);
-	if (q && q->flush_flags)
+	if (q && test_bit(QUEUE_FLAG_WC, &q->queue_flags))
 		vbd->flush_support = true;
 
 	if (q && blk_queue_secdiscard(q))

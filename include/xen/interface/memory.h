@@ -230,6 +230,11 @@ DEFINE_XEN_GUEST_HANDLE(xen_machphys_mapping_t);
 #define XENMAPSPACE_gmfn_range   3 /* GMFN range, XENMEM_add_to_physmap only. */
 #define XENMAPSPACE_gmfn_foreign 4 /* GMFN from another dom,
 				    * XENMEM_add_to_physmap_batch only. */
+#define XENMAPSPACE_dev_mmio     5 /* device mmio region
+				      ARM only; the region is mapped in
+				      Stage-2 using the memory attribute
+				      "Device-nGnRE" (previously named
+				      "Device" on ARMv7) */
 /* ` } */
 
 /*
@@ -269,7 +274,15 @@ struct xen_add_to_physmap_batch {
 
     /* Number of pages to go through */
     uint16_t size;
-    domid_t foreign_domid; /* IFF gmfn_foreign */
+
+#if __XEN_INTERFACE_VERSION__ < 0x00040700
+    domid_t foreign_domid; /* IFF gmfn_foreign. Should be 0 for other spaces. */
+#else
+    union xen_add_to_physmap_batch_extra {
+        domid_t foreign_domid; /* gmfn_foreign */
+        uint16_t res0;  /* All the other spaces. Should be 0 */
+    } u;
+#endif
 
     /* Indexes into space being mapped. */
     XEN_GUEST_HANDLE(xen_ulong_t) idxs;
@@ -405,8 +418,13 @@ DEFINE_XEN_GUEST_HANDLE(xen_mem_paging_op_t);
 #define XENMEM_access_op                    21
 #define XENMEM_access_op_set_access         0
 #define XENMEM_access_op_get_access         1
-#define XENMEM_access_op_enable_emulate     2
-#define XENMEM_access_op_disable_emulate    3
+/*
+ * XENMEM_access_op_enable_emulate and XENMEM_access_op_disable_emulate are
+ * currently unused, but since they have been in use please do not reuse them.
+ *
+ * #define XENMEM_access_op_enable_emulate     2
+ * #define XENMEM_access_op_disable_emulate    3
+ */
 
 typedef enum {
     XENMEM_access_n,
@@ -535,7 +553,7 @@ DEFINE_XEN_GUEST_HANDLE(xen_mem_sharing_op_t);
 
 /*
  * XENMEM_claim_pages flags - the are no flags at this time.
- * The zero value is appropiate.
+ * The zero value is appropriate.
  */
 
 /*

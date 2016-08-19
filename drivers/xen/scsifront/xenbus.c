@@ -391,14 +391,14 @@ static void scsifront_do_lun_hotplug(struct vscsifrnt_info *info, int op)
 		snprintf(str, sizeof(str), "vscsi-devs/%s/state", dir[i]);
 		err = xenbus_scanf(XBT_NIL, dev->otherend, str, "%u",
 			&device_state);
-		if (XENBUS_EXIST_ERR(err))
+		if (err <= 0)
 			continue;
 		
 		/* virtual SCSI device */
 		snprintf(str, sizeof(str), "vscsi-devs/%s/v-dev", dir[i]);
 		err = xenbus_scanf(XBT_NIL, dev->otherend, str,
 			"%u:%u:%u:%u", &hst, &chn, &tgt, &lun);
-		if (XENBUS_EXIST_ERR(err))
+		if (err != 4)
 			continue;
 
 		/* front device state path */

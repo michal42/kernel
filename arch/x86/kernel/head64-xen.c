@@ -210,6 +210,7 @@ void __init x86_64_start_reservations(char *real_mode_data)
 {
 	copy_bootdata(__va(real_mode_data));
 
+	x86_early_init_platform_quirks();
 #ifdef CONFIG_XEN
 #ifdef CONFIG_BLK_DEV_INITRD
 	/* Reserve INITRD if needed. */

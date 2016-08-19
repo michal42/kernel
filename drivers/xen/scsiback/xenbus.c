@@ -131,14 +131,14 @@ static void scsiback_do_lun_hotplug(struct backend_info *be, int op)
 		snprintf(state_str, sizeof(state_str), "vscsi-devs/%s/state", dir[i]);
 		err = xenbus_scanf(XBT_NIL, dev->nodename, state_str, "%u",
 			&device_state);
-		if (XENBUS_EXIST_ERR(err))
+		if (err <= 0)
 			continue;
 
 		/* physical SCSI device */
 		snprintf(str, sizeof(str), "vscsi-devs/%s/p-dev", dir[i]);
 		err = xenbus_scanf(XBT_NIL, dev->nodename, str,
 			"%u:%u:%u:%Lu", &phy.hst, &phy.chn, &phy.tgt, &phy.lun);
-		if (XENBUS_EXIST_ERR(err)) {
+		if (err != 4) {
 			xenbus_printf(XBT_NIL, dev->nodename, state_str,
 					"%d", XenbusStateClosed);
 			continue;
@@ -148,7 +148,7 @@ static void scsiback_do_lun_hotplug(struct backend_info *be, int op)
 		snprintf(str, sizeof(str), "vscsi-devs/%s/v-dev", dir[i]);
 		err = xenbus_scanf(XBT_NIL, dev->nodename, str,
 			"%u:%u:%u:%Lu", &vir.hst, &vir.chn, &vir.tgt, &vir.lun);
-		if (XENBUS_EXIST_ERR(err)
+		if (err != 4
 		    || vir.lun > 0x3fff /* see emulate.c:__report_luns() */) {
 			xenbus_printf(XBT_NIL, dev->nodename, state_str,
 					"%d", XenbusStateClosed);
@@ -335,9 +335,8 @@ static int scsiback_probe(struct xenbus_device *dev,
 
 	scsiback_init_translation_table(be->info);
 
-	err = xenbus_scanf(XBT_NIL, dev->nodename,
-				"feature-host", "%d", &val);
-	if (XENBUS_EXIST_ERR(err))
+	err = xenbus_scanf(XBT_NIL, dev->nodename, "feature-host", "%u", &val);
+	if (err <= 0)
 		val = 0;
 
 	if (val)

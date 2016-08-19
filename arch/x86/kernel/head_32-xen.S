@@ -32,8 +32,6 @@
 #define X86_VENDOR_ID	new_cpu_data+CPUINFO_x86_vendor_id
 
 __HEAD
-#define VIRT_ENTRY_OFFSET 0x0
-.org VIRT_ENTRY_OFFSET
 ENTRY(startup_32)
 	movl %esi,xen_start_info
 	cld
@@ -176,7 +174,7 @@ ENTRY(empty_zero_page)
 	.ascii	",ELF_PADDR_OFFSET=0x"
 		utoa __PAGE_OFFSET
 	.ascii	",VIRT_ENTRY=0x"
-		utoa (__PAGE_OFFSET + LOAD_PHYSICAL_ADDR + VIRT_ENTRY_OFFSET)
+		utoa (__PAGE_OFFSET + LOAD_PHYSICAL_ADDR)
 	.ascii	",HYPERCALL_PAGE=0x"
 		utoa ((LOAD_PHYSICAL_ADDR+HYPERCALL_PAGE_OFFSET)>>PAGE_SHIFT)
 	.ascii  ",FEATURES=writable_page_tables"
@@ -203,7 +201,6 @@ ENTRY(empty_zero_page)
 #else
 	ELFNOTE(Xen, XEN_ELFNOTE_PADDR_OFFSET,   .long 0)
 #endif
-	ELFNOTE(Xen, XEN_ELFNOTE_ENTRY,          .long startup_32)
 	ELFNOTE(Xen, XEN_ELFNOTE_HYPERCALL_PAGE, .long hypercall_page)
 	ELFNOTE(Xen, XEN_ELFNOTE_HV_START_LOW,   .long HYPERVISOR_VIRT_START)
 	ELFNOTE(Xen, XEN_ELFNOTE_FEATURES,       .ascii "writable_page_tables";

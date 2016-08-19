@@ -51,7 +51,11 @@ asmlinkage __visible void __init i386_start_kernel(void)
 	cr4_init_shadow();
 #ifndef CONFIG_XEN
 	sanitize_boot_params(&boot_params);
+#endif
 
+	x86_early_init_platform_quirks();
+
+#ifndef CONFIG_XEN
 	/* Call the subarch specific early setup function */
 	switch (boot_params.hdr.hardware_subarch) {
 	case X86_SUBARCH_INTEL_MID:

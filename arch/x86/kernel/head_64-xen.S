@@ -152,7 +152,6 @@ NEXT_PAGE(empty_zero_page)
 #else
 	ELFNOTE(Xen, XEN_ELFNOTE_PADDR_OFFSET,   .quad 0)
 #endif
-	ELFNOTE(Xen, XEN_ELFNOTE_ENTRY,          .quad startup_64)
 	ELFNOTE(Xen, XEN_ELFNOTE_HYPERCALL_PAGE, .quad hypercall_page)
 	ELFNOTE(Xen, XEN_ELFNOTE_L1_MFN_VALID,   .quad _PAGE_PRESENT, _PAGE_PRESENT)
 	ELFNOTE(Xen, XEN_ELFNOTE_MOD_START_PFN,  .long 1)

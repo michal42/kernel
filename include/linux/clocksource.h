@@ -15,6 +15,7 @@
 #include <linux/cache.h>
 #include <linux/timer.h>
 #include <linux/init.h>
+#include <linux/of.h>
 #include <asm/div64.h>
 #ifndef CONFIG_XEN /* This seems unmotivated even outside of Xen... */
 #include <asm/io.h>

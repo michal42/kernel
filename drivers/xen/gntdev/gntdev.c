@@ -449,7 +449,7 @@ static int gntdev_mmap (struct file *flip, struct vm_area_struct *vma)
 	struct gnttab_map_grant_ref op;
 	unsigned long slot_index = vma->vm_pgoff;
 	unsigned long kernel_vaddr, user_vaddr, mfn;
-	unsigned long size = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	unsigned long size = vma_pages(vma);
 	uint64_t ptep;
 	int ret, exit_ret;
 	unsigned int i, flags;
@@ -946,7 +946,7 @@ private_data_initialised:
 			goto get_offset_out;
 		}
 		op.offset = vma->vm_pgoff << PAGE_SHIFT;
-		op.count = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+		op.count = vma_pages(vma);
 	get_offset_out:
 		up_read(&current->mm->mmap_sem);
 		if (!rc && copy_to_user((void __user *)arg, &op, sizeof(op)))

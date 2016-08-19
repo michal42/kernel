@@ -305,9 +305,6 @@ END(ptregs_\func)
 ENTRY(ret_from_fork)
 	LOCK ; btr $TIF_FORK, TI_flags(%r8)
 
-	pushq	$0x0002
-	popfq					/* reset kernel eflags */
-
 	call	schedule_tail			/* rdi: 'prev' task parameter */
 
 	testb	$3, CS(%rsp)			/* from kernel_thread? */
@@ -767,13 +764,13 @@ ENTRY(error_entry)
 	movl	%ecx, %eax			/* zero extend */
 	cmpq	%rax, RIP+8(%rsp)
 	je	.Lbstep_iret
-	cmpq	$gs_change, RIP+8(%rsp)
+	cmpq	$.Lgs_change, RIP+8(%rsp)
 	jne	.Lerror_entry_done
 
 	/*
-	 * hack: gs_change can fail with user gsbase.  If this happens, fix up
+	 * hack: .Lgs_change can fail with user gsbase.  If this happens, fix up
 	 * gsbase and proceed.  We'll fix up the exception and land in
-	 * gs_change's error handler with kernel gsbase.
+	 * .Lgs_change's error handler with kernel gsbase.
 	 */
 	jmp	.Lerror_entry_from_usermode_swapgs
 

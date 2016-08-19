@@ -285,9 +285,7 @@ static acpi_status write_xenbus_resource(struct acpi_resource *res, void *data)
 		strncat(buf, tmp, 2);
 	}
 
-	err = xenbus_printf(XBT_NIL, info->pdev->xdev->nodename,
-			    str, "%s", buf);
-
+	err = xenbus_write(XBT_NIL, info->pdev->xdev->nodename, str, buf);
 	if (!err)
 		info->resource_count++;
 

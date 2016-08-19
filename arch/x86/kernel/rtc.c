@@ -7,7 +7,6 @@
 #include <linux/bcd.h>
 #include <linux/export.h>
 #include <linux/pnp.h>
-#include <linux/efi.h>
 #include <linux/of.h>
 
 #include <asm/vsyscall.h>
@@ -15,6 +14,7 @@
 #include <asm/time.h>
 #include <asm/intel-mid.h>
 #include <asm/rtc.h>
+#include <asm/setup.h>
 
 #ifdef CONFIG_X86_32
 /*
@@ -189,32 +189,7 @@ static __init int add_rtc_cmos(void)
 		}
 	}
 #endif
-	if (of_have_populated_dt())
-		return 0;
-
-#ifdef CONFIG_XEN
-	/* EFI-based systems should not access CMOS directly. */
-	if (efi_enabled(EFI_RUNTIME_SERVICES))
-		return -ENODEV;
-#endif
-
-	/* Intel MID platforms don't have ioport rtc */
-	if (intel_mid_identify_cpu())
-		return -ENODEV;
-
-#ifdef CONFIG_ACPI
-	if (acpi_gbl_FADT.boot_flags & ACPI_FADT_NO_CMOS_RTC) {
-		/* This warning can likely go away again in a year or two. */
-		pr_info("ACPI: not registering RTC platform device\n");
-		return -ENODEV;
-	}
-#endif
-
-#ifdef CONFIG_XEN
-	if (!is_initial_xendomain())
-#else
-	if (paravirt_enabled() && !paravirt_has(RTC))
-#endif
+	if (!x86_platform.legacy.rtc)
 		return -ENODEV;
 
 	platform_device_register(&rtc_device);

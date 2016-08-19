@@ -116,17 +116,16 @@ ENTRY(entry_SYSCALL_compat)
 	pushq	%rdx			/* pt_regs->dx */
 	pushq	%rbp			/* pt_regs->cx (stashed in bp) */
 	pushq	$-ENOSYS		/* pt_regs->ax */
-	xorq    %r8,%r8
-	pushq   %r8                     /* pt_regs->r8  = 0 */
-	pushq   %r8                     /* pt_regs->r9  = 0 */
-	pushq   %r8                     /* pt_regs->r10 = 0 */
-	pushq   %r8                     /* pt_regs->r11 = 0 */
+	pushq   $0			/* pt_regs->r8  = 0 */
+	pushq   $0			/* pt_regs->r9  = 0 */
+	pushq   $0			/* pt_regs->r10 = 0 */
+	pushq   $0			/* pt_regs->r11 = 0 */
 	pushq   %rbx                    /* pt_regs->rbx */
 	pushq   %rbp                    /* pt_regs->rbp (will be overwritten) */
-	pushq   %r8                     /* pt_regs->r12 = 0 */
-	pushq   %r8                     /* pt_regs->r13 = 0 */
-	pushq   %r8                     /* pt_regs->r14 = 0 */
-	pushq   %r8                     /* pt_regs->r15 = 0 */
+	pushq   $0			/* pt_regs->r12 = 0 */
+	pushq   $0			/* pt_regs->r13 = 0 */
+	pushq   $0			/* pt_regs->r14 = 0 */
+	pushq   $0			/* pt_regs->r15 = 0 */
 
 	movq	%rsp, %rdi
 	call	do_fast_syscall_32
@@ -180,11 +179,10 @@ ENTRY(entry_INT80_compat)
 	pushq	%rdx			/* pt_regs->dx */
 	pushq	%rcx			/* pt_regs->cx */
 	pushq	$-ENOSYS		/* pt_regs->ax */
-	xorq    %r8,%r8
-	pushq   %r8                     /* pt_regs->r8  = 0 */
-	pushq   %r8                     /* pt_regs->r9  = 0 */
-	pushq   %r8                     /* pt_regs->r10 = 0 */
-	pushq   %r8                     /* pt_regs->r11 = 0 */
+	pushq   $0			/* pt_regs->r8  = 0 */
+	pushq   $0			/* pt_regs->r9  = 0 */
+	pushq   $0			/* pt_regs->r10 = 0 */
+	pushq   $0			/* pt_regs->r11 = 0 */
 	pushq   %rbx                    /* pt_regs->rbx */
 	pushq   %rbp                    /* pt_regs->rbp */
 	pushq   %r12                    /* pt_regs->r12 */

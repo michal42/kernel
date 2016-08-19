@@ -280,7 +280,7 @@ blktap_ring_mmap(struct file *filp, struct vm_area_struct *vma)
 	if (!tap || test_and_set_bit(BLKTAP_RING_VMA, &tap->dev_inuse))
 		return -ENOMEM;
 
-	size = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	size = vma_pages(vma);
 	if (size != (MMAP_PAGES + RING_PAGES)) {
 		BTERR("you _must_ map exactly %lu pages!\n",
 		      MMAP_PAGES + RING_PAGES);

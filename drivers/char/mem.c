@@ -375,7 +375,7 @@ static int mmap_kmem(struct file *file, struct vm_area_struct *vma)
 		return -EIO;
 
 #ifdef CONFIG_XEN
-	count = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	count = vma_pages(vma);
 	for (i = 0; i < count; i++)
 		if ((pfn + i) != mfn_to_local_pfn(pfn_to_mfn(pfn + i)))
 			return -EIO;

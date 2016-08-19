@@ -270,7 +270,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	 * Here we can be sure that there is an IO-APIC in the system. Let's
 	 * go and set it up:
 	 */
-	if (cpu_has_apic && !skip_ioapic_setup && nr_ioapics)
+	if (boot_cpu_has(X86_FEATURE_APIC) && !skip_ioapic_setup && nr_ioapics)
 		setup_IO_APIC();
 #endif
 }

@@ -430,7 +430,6 @@ static int xenfb_mmap(struct fb_info *fb_info, struct vm_area_struct *vma)
 {
 	struct xenfb_info *info = fb_info->par;
 	struct xenfb_mapping *map;
-	int map_pages;
 
 	if (!(vma->vm_flags & VM_WRITE))
 		return -EINVAL;
@@ -439,8 +438,7 @@ static int xenfb_mmap(struct fb_info *fb_info, struct vm_area_struct *vma)
 	if (vma->vm_pgoff != 0)
 		return -EINVAL;
 
-	map_pages = (vma->vm_end - vma->vm_start + PAGE_SIZE-1) >> PAGE_SHIFT;
-	if (map_pages > info->nr_pages)
+	if (vma_pages(vma) > info->nr_pages)
 		return -EINVAL;
 
 	map = kzalloc(sizeof(*map), GFP_KERNEL);

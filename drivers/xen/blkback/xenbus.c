@@ -81,7 +81,7 @@ static void update_blkif_status(blkif_t *blkif)
 	}
 
 	blkif->xenblkd = kthread_run(blkif_schedule, blkif,
-				     "blkbk.%d.%s", blkif->domid, devname);
+				     "%d.%s", blkif->domid, devname);
 	kfree(devname);
 	if (IS_ERR(blkif->xenblkd)) {
 		err = PTR_ERR(blkif->xenblkd);
@@ -394,8 +394,11 @@ static void backend_changed(struct xenbus_watch *watch,
 	}
 
 	/* Front end dir is a number, which is used as the handle. */
-	if (kstrtoul(strrchr(dev->otherend, '/') + 1, 0, &handle))
+	if (kstrtoul(strrchr(dev->otherend, '/') + 1, 0, &handle)) {
+		kfree(be->mode);
+		be->mode = NULL;
 		return;
+	}
 
 	be->major = major;
 	be->minor = minor;

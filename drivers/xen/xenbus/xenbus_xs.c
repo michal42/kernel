@@ -267,10 +267,7 @@ void *xenbus_dev_request_and_reply(struct xsd_sockmsg *msg)
 
 	mutex_unlock(&xs_state.request_mutex);
 
-	if (IS_ERR(ret))
-		return ret;
-
-	if ((type == XS_TRANSACTION_END) ||
+	if ((msg->type == XS_TRANSACTION_END) ||
 	    ((type == XS_TRANSACTION_START) && (msg->type == XS_ERROR)))
 		transaction_end();
 

@@ -70,7 +70,7 @@ struct netbk_tx_cb {
 
 static void netif_idx_release(struct xen_netbk *, u16 pending_idx);
 static bool make_tx_response(netif_t *, const netif_tx_request_t *, s8 st,
-			     netif_t **);
+			     unsigned int extra_count, netif_t **);
 static netif_rx_response_t *make_rx_response(netif_t *netif, 
 					     u16      id, 
 					     s8       st,
@@ -481,8 +481,15 @@ int netif_be_start_xmit(struct sk_buff *skb, struct net_device *dev)
 			goto drop;
 	}
 
+	/*
+	 * Copy the packet here if it's destined for a flipping interface
+	 * but isn't flippable (e.g. extra references to data; XXX for now,
+	 * copy always when flipping).
+	 * XXX For now we also copy skbuffs whose head exceeds PAGE_SIZE,
+	 * because netbk_gop_skb can't handle them.
+	 */
 	netbk_rx_cb(skb)->coalesce = false;
-	if (netif->copying_receiver) {
+	if (netif->copying_receiver && skb_headlen(skb) <= PAGE_SIZE) {
 		slots = 1 + netbk_count_slots(skb_shinfo(skb), true);
 		if (always_coalesce || slots >= XEN_NETIF_NR_SLOTS_MIN ||
 		    offset_in_page(skb->data) + skb_headlen(skb) > PAGE_SIZE) {
@@ -491,14 +498,7 @@ int netif_be_start_xmit(struct sk_buff *skb, struct net_device *dev)
 			slots = PFN_UP(skb->len);
 		}
 	} else {
-		/*
-		 * Copy the packet here if it's destined for a flipping
-		 * interface but isn't flippable (e.g. extra references to
-		 * data or head crossing a page boundary).
-		 * XXX For now, copy always.
-		 */
 		struct sk_buff *nskb = netbk_copy_skb(skb);
-
 		if ( unlikely(nskb == NULL) )
 			goto drop;
 		/* Copy only the header fields we use in this driver. */
@@ -1347,7 +1347,9 @@ inline static void net_tx_action_dealloc(struct xen_netbk *netbk)
 		netif = pending_tx_info[pending_idx].netif;
 
 		if (!make_tx_response(netif, &pending_tx_info[pending_idx].req,
-				      XEN_NETIF_RSP_OKAY, &notify_tail))
+				      XEN_NETIF_RSP_OKAY,
+				      pending_tx_info[pending_idx].extra_count,
+				      &notify_tail))
 			netif_put(netif);
 		else if (!notify_head)
 			notify_head = netif;
@@ -1366,15 +1368,18 @@ inline static void net_tx_action_dealloc(struct xen_netbk *netbk)
 				  / sizeof(*netbk->tx.mcl));
 }
 
-static void netbk_tx_err(netif_t *netif, netif_tx_request_t *txp, RING_IDX end)
+static void netbk_tx_err(netif_t *netif, netif_tx_request_t *txp, RING_IDX end,
+			 unsigned int extra_count)
 {
 	RING_IDX cons = netif->tx.req_cons;
 
 	do {
-		make_tx_response(netif, txp, XEN_NETIF_RSP_ERROR, NULL);
+		make_tx_response(netif, txp, XEN_NETIF_RSP_ERROR, extra_count,
+				 NULL);
 		if (cons == end)
 			break;
 		txp = RING_GET_REQUEST(&netif->tx, cons++);
+		extra_count = 0;
 	} while (1);
 	netif->tx.req_cons = cons;
 	netif->dev->stats.rx_errors++;
@@ -1392,7 +1397,8 @@ static void netbk_fatal_tx_err(netif_t *netif)
 }
 
 static int netbk_count_requests(netif_t *netif, netif_tx_request_t *first,
-				netif_tx_request_t *txp, int work_to_do)
+				netif_tx_request_t *txp,
+				unsigned int extra_count, int work_to_do)
 {
 	RING_IDX cons = netif->tx.req_cons;
 	int slots = 0, drop_err = 0;
@@ -1467,7 +1473,7 @@ static int netbk_count_requests(netif_t *netif, netif_tx_request_t *first,
 	} while ((txp++)->flags & XEN_NETTXF_more_data);
 
 	if (drop_err) {
-		netbk_tx_err(netif, first, cons + slots);
+		netbk_tx_err(netif, first, cons + slots, extra_count);
 		return drop_err;
 	}
 
@@ -1540,6 +1546,7 @@ void netbk_get_requests(struct xen_netbk *netbk, netif_t *netif,
 		pending_tx_info[pending_idx].req = *txp;
 		netif_get(netif);
 		pending_tx_info[pending_idx].netif = netif;
+		pending_tx_info[pending_idx].extra_count = 0;
 		netbk_tx_cb(skb)->pending_idx[1 + i] = pending_idx;
 	}
 
@@ -1554,6 +1561,7 @@ void netbk_get_requests(struct xen_netbk *netbk, netif_t *netif,
 		memcpy(&pending_tx_info[pending_idx].req, txp, sizeof(*txp));
 		netif_get(netif);
 		pending_tx_info[pending_idx].netif = netif;
+		pending_tx_info[pending_idx].extra_count = 0;
 		frag_set_pending_idx(&frags[i], pending_idx);
 	}
 
@@ -1573,6 +1581,7 @@ static int netbk_tx_check_gop(struct xen_netbk *netbk, struct sk_buff *skb,
 	struct pending_tx_info *pending_tx_info = netbk->tx.pending_info;
 	netif_t *netif = pending_tx_info[pending_idx].netif;
 	netif_tx_request_t *txp = &pending_tx_info[pending_idx].req;
+	unsigned int extra_count = pending_tx_info[pending_idx].extra_count;
 	struct skb_shared_info *shinfo = skb_shinfo(skb);
 	int nr_frags = shinfo->nr_frags;
 	int i, err, start;
@@ -1585,7 +1594,7 @@ static int netbk_tx_check_gop(struct xen_netbk *netbk, struct sk_buff *skb,
 		if (!make_tx_response(netif, txp,
 				      err == GNTST_okay ? XEN_NETIF_RSP_OKAY
 							: XEN_NETIF_RSP_ERROR,
-				      &gop->notify.tail))
+				      extra_count, &gop->notify.tail))
 			netif_put(netif);
 		else if (!gop->notify.head)
 			gop->notify.head = netif;
@@ -1593,7 +1602,8 @@ static int netbk_tx_check_gop(struct xen_netbk *netbk, struct sk_buff *skb,
 		netbk->tx.pending_ring[index] = pending_idx;
 	} else if (unlikely((err = mop->status) != GNTST_okay)) {
 		++mop;
-		make_tx_response(netif, txp, XEN_NETIF_RSP_ERROR, NULL);
+		make_tx_response(netif, txp, XEN_NETIF_RSP_ERROR, extra_count,
+				 NULL);
 		index = MASK_PEND_IDX(netbk->tx.pending_prod++);
 		netbk->tx.pending_ring[index] = pending_idx;
 		netif_put(netif);
@@ -1617,7 +1627,7 @@ static int netbk_tx_check_gop(struct xen_netbk *netbk, struct sk_buff *skb,
 		if (!make_tx_response(netif, txp,
 				      newerr == GNTST_okay ? XEN_NETIF_RSP_OKAY
 							   : XEN_NETIF_RSP_ERROR,
-				      &gop->notify.tail))
+				      0, &gop->notify.tail))
 			netif_put(netif);
 		else if (!gop->notify.head)
 			gop->notify.head = netif;
@@ -1646,7 +1656,7 @@ static int netbk_tx_check_gop(struct xen_netbk *netbk, struct sk_buff *skb,
 		}
 
 		/* Error on this fragment: respond to client with an error. */
-		make_tx_response(netif, txp, XEN_NETIF_RSP_ERROR, NULL);
+		make_tx_response(netif, txp, XEN_NETIF_RSP_ERROR, 0, NULL);
 		index = MASK_PEND_IDX(netbk->tx.pending_prod++);
 		netbk->tx.pending_ring[index] = pending_idx;
 		netif_put(netif);
@@ -1701,8 +1711,8 @@ static void netbk_fill_frags(struct xen_netbk *netbk, struct sk_buff *skb)
 	}
 }
 
-int netbk_get_extras(netif_t *netif, struct netif_extra_info *extras,
-		     int work_to_do)
+static int netbk_get_extras(netif_t *netif, struct netif_extra_info *extras,
+			    unsigned int *extra_count, int work_to_do)
 {
 	struct netif_extra_info extra;
 	RING_IDX cons = netif->tx.req_cons;
@@ -1717,9 +1727,12 @@ int netbk_get_extras(netif_t *netif, struct netif_extra_info *extras,
 		memcpy(&extra, RING_GET_REQUEST(&netif->tx, cons),
 		       sizeof(extra));
 		barrier();
+
+		netif->tx.req_cons = ++cons;
+		++*extra_count;
+
 		if (unlikely(!extra.type ||
 			     extra.type >= XEN_NETIF_EXTRA_TYPE_MAX)) {
-			netif->tx.req_cons = ++cons;
 			netdev_dbg(netif->dev, "Invalid extra type: %d\n",
 				   extra.type);
 			netbk_fatal_tx_err(netif);
@@ -1727,7 +1740,6 @@ int netbk_get_extras(netif_t *netif, struct netif_extra_info *extras,
 		}
 
 		memcpy(&extras[extra.type - 1], &extra, sizeof(extra));
-		netif->tx.req_cons = ++cons;
 	} while (extra.flags & XEN_NETIF_EXTRA_FLAG_MORE);
 
 	return work_to_do;
@@ -1784,6 +1796,8 @@ static void net_tx_action(unsigned long group)
 	gop.copy = &netbk->tx.copy_op + 1;
 	while (nr_pending_reqs(netbk) + XEN_NETIF_NR_SLOTS_MIN < MAX_PENDING_REQS
 	       && !list_empty(&netbk->tx.schedule_list)) {
+		unsigned int extra_count = 0;
+
 		/* Get a netif from the list with work to do. */
 		netif = poll_net_schedule_list(netbk);
 		/*
@@ -1861,7 +1875,7 @@ static void net_tx_action(unsigned long group)
 		if (txreq.flags & XEN_NETTXF_extra_info) {
 			const struct netif_extra_info *extra = NULL;
 
-			work_to_do = netbk_get_extras(netif, extras,
+			work_to_do = netbk_get_extras(netif, extras, &extra_count,
 						      work_to_do);
 			i = netif->tx.req_cons;
 			if (unlikely(work_to_do < 0))
@@ -1880,13 +1894,14 @@ static void net_tx_action(unsigned long group)
 				make_tx_response(netif, &txreq,
 						 ret == 0 ? XEN_NETIF_RSP_OKAY
 							  : XEN_NETIF_RSP_ERROR,
-						 NULL);
+						 extra_count, NULL);
 				continue;
 			}
 		}
 
 		txslot = netbk->tx.slots;
-		ret = netbk_count_requests(netif, &txreq, txslot, work_to_do);
+		ret = netbk_count_requests(netif, &txreq, txslot, extra_count,
+					   work_to_do);
 		if (unlikely(ret < 0))
 			continue;
 
@@ -1895,7 +1910,7 @@ static void net_tx_action(unsigned long group)
 		if (unlikely(txreq.size < ETH_HLEN)) {
 			netdev_dbg(netif->dev, "Bad packet size: %d\n",
 				   txreq.size);
-			netbk_tx_err(netif, &txreq, i);
+			netbk_tx_err(netif, &txreq, i, extra_count);
 			continue;
 		}
 
@@ -1926,7 +1941,7 @@ static void net_tx_action(unsigned long group)
 		if (unlikely(skb == NULL)) {
 			netdev_dbg(netif->dev,
 				   "Can't allocate a skb in start_xmit.\n");
-			netbk_tx_err(netif, &txreq, i);
+			netbk_tx_err(netif, &txreq, i, extra_count);
 			break;
 		}
 
@@ -1947,6 +1962,7 @@ static void net_tx_action(unsigned long group)
 
 		netbk->tx.pending_info[pending_idx].req = txreq;
 		netbk->tx.pending_info[pending_idx].netif = netif;
+		netbk->tx.pending_info[pending_idx].extra_count = extra_count;
 		netbk_tx_cb(skb)->pending_idx[0] = pending_idx;
 		netbk_tx_cb(skb)->copy_slots = txslot - netbk->tx.slots;
 
@@ -2146,7 +2162,7 @@ irqreturn_t netif_be_int(int irq, void *dev_id)
 }
 
 static bool make_tx_response(netif_t *netif, const netif_tx_request_t *txp,
-			     s8 st, netif_t **tailp)
+			     s8 st, unsigned int extra_count, netif_t **tailp)
 {
 	RING_IDX i = netif->tx.rsp_prod_pvt;
 	netif_tx_response_t *resp;
@@ -2156,7 +2172,7 @@ static bool make_tx_response(netif_t *netif, const netif_tx_request_t *txp,
 	resp->id     = txp->id;
 	resp->status = st;
 
-	if (txp->flags & XEN_NETTXF_extra_info)
+	while (extra_count--)
 		RING_GET_RESPONSE(&netif->tx, ++i)->status = XEN_NETIF_RSP_NULL;
 
 	netif->tx.rsp_prod_pvt = ++i;

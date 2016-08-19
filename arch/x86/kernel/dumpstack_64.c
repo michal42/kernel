@@ -158,7 +158,6 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 		const struct stacktrace_ops *ops, void *data)
 {
 	unsigned cpu;
-	struct thread_info *tinfo;
 	unsigned long *irq_stack;
 	unsigned long dummy;
 	unsigned used = 0;
@@ -188,7 +187,6 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 	 * current stack address. If the stacks consist of nested
 	 * exceptions
 	 */
-	tinfo = task_thread_info(task);
 	cpu = get_cpu();
 	irq_stack = (unsigned long *)per_cpu(irq_stack_ptr, cpu);
 	while (!done) {
@@ -213,7 +211,7 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 			if (ops->stack(data, id) < 0)
 				break;
 
-			bp = ops->walk_stack(tinfo, stack, bp, ops,
+			bp = ops->walk_stack(task, stack, bp, ops,
 					     data, stack_end, &graph);
 			ops->stack(data, "<EOE>");
 			/*
@@ -229,7 +227,7 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 
 			if (ops->stack(data, "IRQ") < 0)
 				break;
-			bp = ops->walk_stack(tinfo, stack, bp,
+			bp = ops->walk_stack(task, stack, bp,
 				     ops, data, stack_end, &graph);
 			/*
 			 * We link to the next stack (which would be
@@ -251,7 +249,7 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 	/*
 	 * This handles the process stack:
 	 */
-	bp = ops->walk_stack(tinfo, stack, bp, ops, data, NULL, &graph);
+	bp = ops->walk_stack(task, stack, bp, ops, data, NULL, &graph);
 	put_cpu();
 }
 EXPORT_SYMBOL(dump_trace);

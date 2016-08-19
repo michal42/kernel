@@ -368,8 +368,6 @@ static int __init _amd_special_default_mtrr(void)
 {
 	u32 l, h;
 
-	if (!is_initial_xendomain())
-		return 0;
 	if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD)
 		return 0;
 	if (boot_cpu_data.x86 < 0xf || boot_cpu_data.x86 > 0x11)
@@ -389,37 +387,43 @@ static int __init _amd_special_default_mtrr(void)
 
 void __init mtrr_bp_init(void)
 {
-	if (_amd_special_default_mtrr()) {
+	struct cpuinfo_x86 *c = &boot_cpu_data;
+
+	if (!is_initial_xendomain())
+		mtrr_if = NULL;
+	else if (_amd_special_default_mtrr()) {
 		/* TOP_MEM2 */
 		rdmsrl(MSR_K8_TOP_MEM2, tom2);
 		tom2 &= 0xffffff8000000ULL;
 	}
 
-	if (!mtrr_enabled())
+	if (!cpu_has(c, X86_FEATURE_MTRR) &&
+	    !cpu_has(c, X86_FEATURE_K6_MTRR) &&
+	    !cpu_has(c, X86_FEATURE_CYRIX_ARR) &&
+	    !cpu_has(c, X86_FEATURE_CENTAUR_MCR))
+		mtrr_if = NULL;
+
+	if (mtrr_if) {
+		__mtrr_enabled = true;
+		set_num_var_ranges();
+		init_table();
+	}
+
+	if (!mtrr_enabled()) {
 		pr_info("MTRR: Disabled\n");
+
+		/*
+		 * PAT initialization relies on MTRR's rendezvous handler.
+		 * Skip PAT init until the handler can initialize both
+		 * features independently.
+		 */
+		pat_disable("MTRRs disabled, skipping PAT initialization too.");
+	}
+
+	pat_init();
 }
 
 void mtrr_ap_init(void)
 {
+	pat_init();
 }
-
-static int __init mtrr_init(void)
-{
-	struct cpuinfo_x86 *c = &boot_cpu_data;
-
-	if (!is_initial_xendomain())
-		return -ENODEV;
-
-	if ((!cpu_has(c, X86_FEATURE_MTRR)) &&
-	    (!cpu_has(c, X86_FEATURE_K6_MTRR)) &&
-	    (!cpu_has(c, X86_FEATURE_CYRIX_ARR)) &&
-	    (!cpu_has(c, X86_FEATURE_CENTAUR_MCR)))
-		return -ENODEV;
-
-	set_num_var_ranges();
-	init_table();
-
-	return 0;
-}
-
-subsys_initcall(mtrr_init);

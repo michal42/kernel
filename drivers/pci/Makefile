@@ -60,6 +60,8 @@ obj-$(CONFIG_PCI_SYSCALL) += syscall.o
 
 obj-$(CONFIG_PCI_STUB) += pci-stub.o
 
+obj-$(CONFIG_PCI_ECAM) += ecam.o
+
 obj-$(CONFIG_PARAVIRT_XEN_PCIDEV_FRONTEND) += xen-pcifront.o
 
 obj-$(CONFIG_OF) += of.o

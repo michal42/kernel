@@ -143,12 +143,12 @@ static inline void __prepare_arch_switch(void)
 
 	if (current->thread.fsindex) {
 		__asm__ __volatile__ ( "movl %0,%%fs" : : "r" (0) );
-		current->thread.fs = 0;
+		current->thread.fsbase = 0;
 	}
 
 	if (current->thread.gsindex) {
 		load_gs_index(0);
-		current->thread.gs = 0;
+		current->thread.gsbase = 0;
 	}
 #endif
 }
@@ -165,137 +165,12 @@ static inline void destroy_context(struct mm_struct *mm)
 	destroy_context_ldt(mm);
 }
 
-static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next,
-			     struct task_struct *tsk)
-{
-	unsigned cpu = smp_processor_id();
-	struct mmuext_op _op[2 + (sizeof(long) > 4)], *op = _op;
-#ifdef CONFIG_X86_64
-	pgd_t *upgd;
-#endif
+extern void switch_mm(struct mm_struct *prev, struct mm_struct *next,
+		      struct task_struct *tsk);
 
-	if (likely(prev != next)) {
-		BUG_ON(!xen_feature(XENFEAT_writable_page_tables) &&
-		       !PagePinned(virt_to_page(next->pgd)));
-
-#if defined(CONFIG_SMP) && !defined(CONFIG_XEN) /* XEN: no lazy tlb */
-		this_cpu_write(cpu_tlbstate.state, TLBSTATE_OK);
-		this_cpu_write(cpu_tlbstate.active_mm, next);
-#endif
-		cpumask_set_cpu(cpu, mm_cpumask(next));
-
-		/*
-		 * Re-load page tables: load_cr3(next->pgd).
-		 *
-		 * This logic has an ordering constraint:
-		 *
-		 *  CPU 0: Write to a PTE for 'next'
-		 *  CPU 0: load bit 1 in mm_cpumask.  if nonzero, send IPI.
-		 *  CPU 1: set bit 1 in next's mm_cpumask
-		 *  CPU 1: load from the PTE that CPU 0 writes (implicit)
-		 *
-		 * We need to prevent an outcome in which CPU 1 observes
-		 * the new PTE value and CPU 0 observes bit 1 clear in
-		 * mm_cpumask.  (If that occurs, then the IPI will never
-		 * be sent, and CPU 0's TLB will contain a stale entry.)
-		 *
-		 * The bad outcome can occur if either CPU's load is
-		 * reordered before that CPU's store, so both CPUs must
-		 * execute full barriers to prevent this from happening.
-		 *
-		 * Thus, switch_mm needs a full barrier between the
-		 * store to mm_cpumask and any operation that could load
-		 * from next->pgd.  TLB fills are special and can happen
-		 * due to instruction fetches or for no reason at all,
-		 * and neither LOCK nor MFENCE orders them.
-		 * Fortunately, load_cr3() is serializing and gives the
-		 * ordering guarantee we need.
-		 *
-		 */
-		op->cmd = MMUEXT_NEW_BASEPTR;
-		op->arg1.mfn = virt_to_mfn(next->pgd);
-		op++;
-
-		trace_tlb_flush(TLB_FLUSH_ON_TASK_SWITCH, TLB_FLUSH_ALL);
-
-		/* xen_new_user_pt(next->pgd) */
-#ifdef CONFIG_X86_64
-		op->cmd = MMUEXT_NEW_USER_BASEPTR;
-		upgd = __user_pgd(next->pgd);
-		op->arg1.mfn = likely(upgd) ? virt_to_mfn(upgd) : 0;
-		op++;
-#endif
-
-		/* Load per-mm CR4 state */
-		load_mm_cr4(next);
-
-#ifdef CONFIG_MODIFY_LDT_SYSCALL
-		/*
-		 * Load the LDT, if the LDT is different.
-		 *
-		 * It's possible that prev->context.ldt doesn't match
-		 * the LDT register.  This can happen if leave_mm(prev)
-		 * was called and then modify_ldt changed
-		 * prev->context.ldt but suppressed an IPI to this CPU.
-		 * In this case, prev->context.ldt != NULL, because we
-		 * never set context.ldt to NULL while the mm still
-		 * exists.  That means that next->context.ldt !=
-		 * prev->context.ldt, because mms never share an LDT.
-		 */
-		if (unlikely(prev->context.ldt != next->context.ldt)) {
-			/* load_mm_ldt(next) */
-			const struct ldt_struct *ldt;
-
-			/* lockless_dereference synchronizes with smp_store_release */
-			ldt = lockless_dereference(next->context.ldt);
-			op->cmd = MMUEXT_SET_LDT;
-			if (unlikely(ldt)) {
-				op->arg1.linear_addr = (long)ldt->entries;
-				op->arg2.nr_ents     = ldt->size;
-			} else {
-				op->arg1.linear_addr = 0;
-				op->arg2.nr_ents     = 0;
-			}
-			op++;
-		}
-#endif
-
-		BUG_ON(HYPERVISOR_mmuext_op(_op, op-_op, NULL, DOMID_SELF));
-
-		/* Stop TLB flushes for the previous mm */
-		cpumask_clear_cpu(cpu, mm_cpumask(prev));
-	}
-#if defined(CONFIG_SMP) && !defined(CONFIG_XEN) /* XEN: no lazy tlb */
-	else {
-		this_cpu_write(cpu_tlbstate.state, TLBSTATE_OK);
-		BUG_ON(this_cpu_read(cpu_tlbstate.active_mm) != next);
-
-		if (!cpumask_test_cpu(cpu, mm_cpumask(next))) {
-			/*
-			 * On established mms, the mm_cpumask is only changed
-			 * from irq context, from ptep_clear_flush() while in
-			 * lazy tlb mode, and here. Irqs are blocked during
-			 * schedule, protecting us from simultaneous changes.
-			 */
-			cpumask_set_cpu(cpu, mm_cpumask(next));
-
-			/*
-			 * We were in lazy tlb mode and leave_mm disabled
-			 * tlb flush IPI delivery. We must reload CR3
-			 * to make sure to use no freed page tables.
-			 *
-			 * As above, load_cr3() is serializing and orders TLB
-			 * fills with respect to the mm_cpumask write.
-			 */
-			load_cr3(next->pgd);
-			trace_tlb_flush(TLB_FLUSH_ON_TASK_SWITCH, TLB_FLUSH_ALL);
-			load_mm_cr4(next);
-			xen_new_user_pt(next->pgd);
-			load_mm_ldt(next);
-		}
-	}
-#endif
-}
+extern void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
+			       struct task_struct *tsk);
+#define switch_mm_irqs_off switch_mm_irqs_off
 
 #define activate_mm(prev, next)			\
 do {						\

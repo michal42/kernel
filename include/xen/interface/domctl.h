@@ -1,8 +1,8 @@
 /******************************************************************************
  * domctl.h
- * 
+ *
  * Domain management operations. For use by node control stack.
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
  * deal in the Software without restriction, including without limitation the
@@ -63,6 +63,9 @@ struct xen_domctl_createdomain {
  /* Is this a PVH guest (as opposed to an HVM or PV guest)? */
 #define _XEN_DOMCTL_CDF_pvh_guest     4
 #define XEN_DOMCTL_CDF_pvh_guest      (1U<<_XEN_DOMCTL_CDF_pvh_guest)
+ /* Is this a xenstore domain? */
+#define _XEN_DOMCTL_CDF_xs_domain     5
+#define XEN_DOMCTL_CDF_xs_domain      (1U<<_XEN_DOMCTL_CDF_xs_domain)
     uint32_t flags;
     struct xen_arch_domainconfig config;
 };
@@ -97,6 +100,9 @@ struct xen_domctl_getdomaininfo {
 /* domain is PVH */
 #define _XEN_DOMINF_pvh_guest 7
 #define XEN_DOMINF_pvh_guest  (1U<<_XEN_DOMINF_pvh_guest)
+/* domain is a xenstore domain */
+#define _XEN_DOMINF_xs_domain 8
+#define XEN_DOMINF_xs_domain  (1U<<_XEN_DOMINF_xs_domain)
  /* XEN_DOMINF_shutdown guest-supplied code.  */
 #define XEN_DOMINF_shutdownmask 255
 #define XEN_DOMINF_shutdownshift 16
@@ -184,8 +190,11 @@ struct xen_domctl_getpageframeinfo3 {
 #define XEN_DOMCTL_SHADOW_OP_ENABLE_TEST       1
  /* Equiv. to ENABLE with mode flag ENABLE_LOG_DIRTY. */
 #define XEN_DOMCTL_SHADOW_OP_ENABLE_LOGDIRTY   2
- /* Equiv. to ENABLE with mode flags ENABLE_REFCOUNT and ENABLE_TRANSLATE. */
+ /*
+  * No longer supported, was equiv. to ENABLE with mode flags
+  * ENABLE_REFCOUNT and ENABLE_TRANSLATE:
 #define XEN_DOMCTL_SHADOW_OP_ENABLE_TRANSLATE  3
+  */
 
 /* Mode flags for XEN_DOMCTL_SHADOW_OP_ENABLE. */
  /*
@@ -208,6 +217,13 @@ struct xen_domctl_getpageframeinfo3 {
   */
 #define XEN_DOMCTL_SHADOW_ENABLE_EXTERNAL  (1 << 4)
 
+/* Mode flags for XEN_DOMCTL_SHADOW_OP_{CLEAN,PEEK}. */
+ /*
+  * This is the final iteration: Requesting to include pages mapped
+  * writably by the hypervisor in the dirty bitmap.
+  */
+#define XEN_DOMCTL_SHADOW_LOGDIRTY_FINAL   (1 << 0)
+
 struct xen_domctl_shadow_op_stats {
     uint32_t fault_count;
     uint32_t dirty_count;
@@ -219,8 +235,9 @@ struct xen_domctl_shadow_op {
     /* IN variables. */
     uint32_t       op;       /* XEN_DOMCTL_SHADOW_OP_* */
 
-    /* OP_ENABLE */
-    uint32_t       mode;     /* XEN_DOMCTL_SHADOW_ENABLE_* */
+    /* OP_ENABLE: XEN_DOMCTL_SHADOW_ENABLE_* */
+    /* OP_PEAK / OP_CLEAN: XEN_DOMCTL_SHADOW_LOGDIRTY_* */
+    uint32_t       mode;
 
     /* OP_GET_ALLOCATION / OP_SET_ALLOCATION */
     uint32_t       mb;       /* Shadow memory allocation in MB */
@@ -290,6 +307,9 @@ struct xen_domctl_vcpuaffinity {
  /* Set/get the soft affinity for vcpu */
 #define _XEN_VCPUAFFINITY_SOFT  1
 #define XEN_VCPUAFFINITY_SOFT   (1U<<_XEN_VCPUAFFINITY_SOFT)
+ /* Undo SCHEDOP_pin_override */
+#define _XEN_VCPUAFFINITY_FORCE 2
+#define XEN_VCPUAFFINITY_FORCE  (1U<<_XEN_VCPUAFFINITY_FORCE)
     uint32_t flags;
     /*
      * IN/OUT variables.
@@ -330,24 +350,63 @@ DEFINE_XEN_GUEST_HANDLE(xen_domctl_max_vcpus_t);
 #define XEN_SCHEDULER_ARINC653 7
 #define XEN_SCHEDULER_RTDS     8
 
-/* Set or get info? */
+typedef struct xen_domctl_sched_credit {
+    uint16_t weight;
+    uint16_t cap;
+} xen_domctl_sched_credit_t;
+
+typedef struct xen_domctl_sched_credit2 {
+    uint16_t weight;
+} xen_domctl_sched_credit2_t;
+
+typedef struct xen_domctl_sched_rtds {
+    uint32_t period;
+    uint32_t budget;
+} xen_domctl_sched_rtds_t;
+
+typedef struct xen_domctl_schedparam_vcpu {
+    union {
+        xen_domctl_sched_credit_t credit;
+        xen_domctl_sched_credit2_t credit2;
+        xen_domctl_sched_rtds_t rtds;
+    } u;
+    uint32_t vcpuid;
+} xen_domctl_schedparam_vcpu_t;
+DEFINE_XEN_GUEST_HANDLE(xen_domctl_schedparam_vcpu_t);
+
+/*
+ * Set or get info?
+ * For schedulers supporting per-vcpu settings (e.g., RTDS):
+ *  XEN_DOMCTL_SCHEDOP_putinfo sets params for all vcpus;
+ *  XEN_DOMCTL_SCHEDOP_getinfo gets default params;
+ *  XEN_DOMCTL_SCHEDOP_put(get)vcpuinfo sets (gets) params of vcpus;
+ *
+ * For schedulers not supporting per-vcpu settings:
+ *  XEN_DOMCTL_SCHEDOP_putinfo sets params for all vcpus;
+ *  XEN_DOMCTL_SCHEDOP_getinfo gets domain-wise params;
+ *  XEN_DOMCTL_SCHEDOP_put(get)vcpuinfo returns error;
+ */
 #define XEN_DOMCTL_SCHEDOP_putinfo 0
 #define XEN_DOMCTL_SCHEDOP_getinfo 1
+#define XEN_DOMCTL_SCHEDOP_putvcpuinfo 2
+#define XEN_DOMCTL_SCHEDOP_getvcpuinfo 3
 struct xen_domctl_scheduler_op {
     uint32_t sched_id;  /* XEN_SCHEDULER_* */
     uint32_t cmd;       /* XEN_DOMCTL_SCHEDOP_* */
+    /* IN/OUT */
     union {
-        struct xen_domctl_sched_credit {
-            uint16_t weight;
-            uint16_t cap;
-        } credit;
-        struct xen_domctl_sched_credit2 {
-            uint16_t weight;
-        } credit2;
-        struct xen_domctl_sched_rtds {
-            uint32_t period;
-            uint32_t budget;
-        } rtds;
+        xen_domctl_sched_credit_t credit;
+        xen_domctl_sched_credit2_t credit2;
+        xen_domctl_sched_rtds_t rtds;
+        struct {
+            XEN_GUEST_HANDLE_64(xen_domctl_schedparam_vcpu_t) vcpus;
+            /*
+             * IN: Number of elements in vcpus array.
+             * OUT: Number of processed elements of vcpus array.
+             */
+            uint32_t nr_vcpus;
+            uint32_t padding;
+        } v;
     } u;
 };
 typedef struct xen_domctl_scheduler_op xen_domctl_scheduler_op_t;
@@ -556,8 +615,15 @@ DEFINE_XEN_GUEST_HANDLE(xen_domctl_bind_pt_irq_t);
 
 
 /* Bind machine I/O address range -> HVM address range. */
-/* If this returns -E2BIG lower nr_mfns value. */
 /* XEN_DOMCTL_memory_mapping */
+/* Returns
+   - zero     success, everything done
+   - -E2BIG   passed in nr_mfns value too large for the implementation
+   - positive partial success for the first <result> page frames (with
+              <result> less than nr_mfns), requiring re-invocation by the
+              caller after updating inputs
+   - negative error; other than -E2BIG
+*/
 #define DPCI_ADD_MAPPING         1
 #define DPCI_REMOVE_MAPPING      0
 struct xen_domctl_memory_mapping {
@@ -793,7 +859,7 @@ struct xen_domctl_gdbsx_domstatus {
 /*
  * Domain memory paging
  * Page memory in and out.
- * Domctl interface to set up and tear down the 
+ * Domctl interface to set up and tear down the
  * pager<->hypervisor interface. Use XENMEM_paging_op*
  * to perform per-page operations.
  *
@@ -845,7 +911,7 @@ struct xen_domctl_gdbsx_domstatus {
  */
 #define XEN_DOMCTL_VM_EVENT_OP_SHARING           3
 
-/* Use for teardown/setup of helper<->hypervisor interface for paging, 
+/* Use for teardown/setup of helper<->hypervisor interface for paging,
  * access and sharing.*/
 struct xen_domctl_vm_event_op {
     uint32_t       op;           /* XEN_VM_EVENT_* */
@@ -1050,6 +1116,7 @@ DEFINE_XEN_GUEST_HANDLE(xen_domctl_psr_cmt_op_t);
 #define XEN_DOMCTL_MONITOR_OP_ENABLE            0
 #define XEN_DOMCTL_MONITOR_OP_DISABLE           1
 #define XEN_DOMCTL_MONITOR_OP_GET_CAPABILITIES  2
+#define XEN_DOMCTL_MONITOR_OP_EMULATE_EACH_REP  3
 
 #define XEN_DOMCTL_MONITOR_EVENT_WRITE_CTRLREG         0
 #define XEN_DOMCTL_MONITOR_EVENT_MOV_TO_MSR            1
@@ -1099,6 +1166,10 @@ DEFINE_XEN_GUEST_HANDLE(xen_domctl_monitor_op_t);
 struct xen_domctl_psr_cat_op {
 #define XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM     0
 #define XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM     1
+#define XEN_DOMCTL_PSR_CAT_OP_SET_L3_CODE    2
+#define XEN_DOMCTL_PSR_CAT_OP_SET_L3_DATA    3
+#define XEN_DOMCTL_PSR_CAT_OP_GET_L3_CODE    4
+#define XEN_DOMCTL_PSR_CAT_OP_GET_L3_DATA    5
     uint32_t cmd;       /* IN: XEN_DOMCTL_PSR_CAT_OP_* */
     uint32_t target;    /* IN */
     uint64_t data;      /* IN/OUT */
@@ -1182,6 +1253,7 @@ struct xen_domctl {
 #define XEN_DOMCTL_psr_cmt_op                    75
 #define XEN_DOMCTL_monitor_op                    77
 #define XEN_DOMCTL_psr_cat_op                    78
+#define XEN_DOMCTL_soft_reset                    79
 #define XEN_DOMCTL_gdbsx_guestmemio            1000
 #define XEN_DOMCTL_gdbsx_pausevcpu             1001
 #define XEN_DOMCTL_gdbsx_unpausevcpu           1002

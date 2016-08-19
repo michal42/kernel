@@ -50,8 +50,6 @@
 
 #include <xen/interface/platform.h>
 
-#define EFI_DEBUG
-
 static efi_config_table_type_t arch_tables[] __initdata = {
 #ifdef CONFIG_X86_UV
 	{UV_SYSTEM_TABLE_GUID, "UVsystab", &efi.uv_systab},
@@ -374,9 +372,11 @@ void __init efi_probe(void)
 #ifdef CONFIG_64BIT
 		__set_bit(EFI_64BIT, &efi.flags);
 #endif
-		__set_bit(EFI_SYSTEM_TABLES, &efi.flags);
 		__set_bit(EFI_RUNTIME_SERVICES, &efi.flags);
 		__set_bit(EFI_MEMMAP, &efi.flags);
+
+		/* EFI-based systems should not access CMOS RTC directly. */
+		x86_platform.legacy.rtc = 0;
 	}
 }
 

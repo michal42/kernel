@@ -187,29 +187,8 @@ static int xen_hotplug_notifier(struct acpi_processor *pr, int event)
 	int ret = -EINVAL;
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
 	acpi_status status = 0;
-	acpi_object_type type;
-	int device_decl = 0;
 	unsigned long long pxm;
 	xen_platform_op_t op;
-
-	status = acpi_get_type(pr->handle, &type);
-	if (ACPI_FAILURE(status)) {
-		pr_warn("can't get object type for acpi_id %#x\n",
-			pr->acpi_id);
-		return -ENXIO;
-	}
-
-	switch (type) {
-	case ACPI_TYPE_PROCESSOR:
-		break;
-	case ACPI_TYPE_DEVICE:
-		device_decl = 1;
-		break;
-	default:
-		pr_warn("unsupported object type %#x for acpi_id %#x\n",
-			type, pr->acpi_id);
-		return -EOPNOTSUPP;
-	}
 
 	if (invalid_phys_cpuid(pr->phys_id)) {
 		pr_warn("no valid phys_id for acpi_id %#x\n", pr->acpi_id);

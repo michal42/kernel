@@ -211,10 +211,7 @@ NMI_MASK	= 0x80000000
 ENTRY(ret_from_fork)
 	pushl	%eax
 	call	schedule_tail
-	GET_THREAD_INFO(%ebp)
 	popl	%eax
-	pushl	$0x0202				# Reset kernel eflags
-	popfl
 
 	/* When we fork, we trace the syscall return in the child, too. */
 	movl    %esp, %eax
@@ -225,10 +222,7 @@ END(ret_from_fork)
 ENTRY(ret_from_kernel_thread)
 	pushl	%eax
 	call	schedule_tail
-	GET_THREAD_INFO(%ebp)
 	popl	%eax
-	pushl	$0x0202				# Reset kernel eflags
-	popfl
 	movl	PT_EBP(%esp), %eax
 	call	*PT_EBX(%esp)
 	movl	$0, PT_EAX(%esp)
@@ -255,7 +249,6 @@ ENDPROC(ret_from_kernel_thread)
 ret_from_exception:
 	preempt_stop(CLBR_ANY)
 ret_from_intr:
-	GET_THREAD_INFO(%ebp)
 #ifdef CONFIG_VM86
 	movl	PT_EFLAGS(%esp), %eax		# mix EFLAGS and CS
 	movb	PT_CS(%esp), %al

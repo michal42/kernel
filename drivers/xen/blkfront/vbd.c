@@ -588,7 +588,12 @@ void
 xlvbd_flush(struct blkfront_info *info)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
+	blk_queue_write_cache(info->rq, info->feature_flush & REQ_FLUSH,
+				info->feature_flush & REQ_FUA);
+# else
 	blk_queue_flush(info->rq, info->feature_flush);
+# endif
 	pr_info("blkfront: %s: %s: %s\n",
 		info->gd->disk_name, flush_info(info->feature_flush),
 		info->feature_flush ? "enabled" : "disabled");

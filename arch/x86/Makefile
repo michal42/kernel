@@ -210,7 +210,9 @@ endif
 
 head-y := arch/x86/kernel/head_$(BITS).o
 head-y += arch/x86/kernel/head$(BITS).o
-head-y += arch/x86/kernel/head.o
+head-$(CONFIG_XEN) += arch/x86/kernel/head.o
+head-y += arch/x86/kernel/ebda.o
+head-y += arch/x86/kernel/platform-quirks.o
 
 libs-y  += arch/x86/lib/
 
@@ -245,7 +247,9 @@ LINUXINCLUDE := -D__XEN_INTERFACE_VERSION__=$(CONFIG_XEN_INTERFACE_VERSION) \
 	-I$(srctree)/arch/x86/include/mach-xen $(LINUXINCLUDE)
 
 ifdef CONFIG_X86_64
-LDFLAGS_vmlinux := -e startup_64
+LDFLAGS_vmlinux += -e startup_64
+else
+LDFLAGS_vmlinux += -e startup_32
 endif
 endif
 

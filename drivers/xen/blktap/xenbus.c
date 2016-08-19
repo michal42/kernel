@@ -227,7 +227,7 @@ static void tap_update_blkif_status(blkif_t *blkif)
 	}
 
 	blkif->xenblkd = kthread_run(tap_blkif_schedule, blkif,
-				     "blktap.%d.%s", blkif->domid, devname);
+				     "%d:%s", blkif->domid, devname);
 	if (IS_ERR(blkif->xenblkd)) {
 		err = PTR_ERR(blkif->xenblkd);
 		blkif->xenblkd = NULL;

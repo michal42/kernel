@@ -177,6 +177,7 @@ struct backend_info {
 
 struct pending_tx_info {
 	netif_tx_request_t req;
+	unsigned int extra_count;
 	grant_handle_t grant_handle;
 	netif_t *netif;
 };

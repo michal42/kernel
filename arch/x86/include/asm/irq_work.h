@@ -6,7 +6,7 @@
 static inline bool arch_irq_work_has_interrupt(void)
 {
 #ifndef CONFIG_XEN
-	return cpu_has_apic;
+	return boot_cpu_has(X86_FEATURE_APIC);
 #elif defined(CONFIG_SMP)
 	return 1;
 #else

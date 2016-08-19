@@ -377,6 +377,7 @@ static int xenbus_dev_open(struct inode *inode, struct file *filp)
 		return -ENOENT;
 
 	nonseekable_open(inode, filp);
+	filp->f_mode &= ~FMODE_ATOMIC_POS;
 
 	u = kzalloc(sizeof(*u), GFP_KERNEL);
 	if (u == NULL)
