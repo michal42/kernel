@@ -1042,9 +1042,10 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	slots = PFN_UP(offset + len) + xennet_count_skb_frag_slots(skb);
 	if (unlikely(slots > MAX_SKB_FRAGS + 1)) {
-		net_alert_ratelimited("xennet: skb rides the rocket: %u slots\n",
-				      slots);
-		goto drop;
+		net_dbg_ratelimited("xennet: skb rides the rocket: %u slots, %u bytes\n",
+				    slots, skb->len);
+		if (skb_linearize(skb))
+			goto drop;
 	}
 
 	spin_lock_irqsave(&np->tx_lock, flags);
