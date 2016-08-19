@@ -167,7 +167,6 @@ void flush_tlb_current_task(void)
 
 	/* This is an implicit full barrier that synchronizes with switch_mm. */
 	local_flush_tlb();
-
 	trace_tlb_flush(TLB_LOCAL_SHOOTDOWN, TLB_FLUSH_ALL);
 	if (cpumask_any_but(mm_cpumask(mm), smp_processor_id()) < nr_cpu_ids)
 		flush_tlb_others(mm_cpumask(mm), mm, 0UL, TLB_FLUSH_ALL);
