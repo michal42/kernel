@@ -198,6 +198,9 @@ struct tcp_sock {
 		syn_data:1,	/* SYN includes data */
 		syn_fastopen:1,	/* SYN includes Fast Open option */
 		syn_data_acked:1;/* data in SYN is acked by SYN-ACK */
+#ifndef __GENKSYMS__
+	u16	lsnd_pending_lo;/* packets inflight or unsent since last xmit */
+#endif
 	u32	tlp_high_seq;	/* snd_nxt at the time of TLP retransmit. */
 
 /* RTT measurement */
@@ -216,6 +219,9 @@ struct tcp_sock {
 	u32	snd_up;		/* Urgent pointer		*/
 
 	u8	keepalive_probes; /* num of allowed keep alive probes	*/
+#ifndef __GENKSYMS__
+	u16	lsnd_pending_hi;/* packets inflight or unsent since last xmit */
+#endif
 /*
  *      Options received (usually on last packet, some only on SYN packets).
  */
@@ -230,7 +236,6 @@ struct tcp_sock {
 	u32	snd_cwnd_clamp; /* Do not allow snd_cwnd to grow above this */
 	u32	snd_cwnd_used;
 	u32	snd_cwnd_stamp;
-	u32	lsnd_pending;	/* packets inflight or unsent since last xmit */
 	u32	prior_cwnd;	/* Congestion window at start of Recovery. */
 	u32	prr_delivered;	/* Number of newly delivered packets to
 				 * receiver in Recovery. */
@@ -321,6 +326,17 @@ struct tcp_sock {
 	 */
 	struct request_sock *fastopen_rsk;
 };
+
+static inline u32 tcp_get_lsnd_pending(const struct tcp_sock *tp)
+{
+	return (tp->lsnd_pending_hi << 16) | tp->lsnd_pending_lo;
+}
+
+static inline void tcp_set_lsnd_pending(struct tcp_sock *tp, u32 val)
+{
+	tp->lsnd_pending_hi = val >> 16;
+	tp->lsnd_pending_lo = val & 0xffff;
+}
 
 enum tsq_flags {
 	TSQ_THROTTLED,

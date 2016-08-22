@@ -1030,12 +1030,15 @@ static inline u32 tcp_wnd_end(const struct tcp_sock *tp)
  *
  * TODO: remove in_flight once we can fix all callers, and their callers...
  */
-static inline bool tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight)
+static inline bool __tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
-	return tp->snd_cwnd < 2 * tp->lsnd_pending;
+	return tp->snd_cwnd < 2 * tcp_get_lsnd_pending(tp);
 }
+
+/* non-inline version just to preserve kABI */
+bool tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
 
 static inline void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss,
 				       const struct sk_buff *skb)

@@ -357,6 +357,13 @@ int tcp_set_congestion_control(struct sock *sk, const char *name)
 	return err;
 }
 
+/* non-inline wrapper to preserve kABI */
+bool tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight)
+{
+	return tcp_is_cwnd_limited(sk, in_flight);
+}
+EXPORT_SYMBOL_GPL(tcp_is_cwnd_limited);
+
 /*
  * Slow start is used when congestion window is less than slow start
  * threshold. This version implements the basic RFC2581 version
@@ -413,7 +420,7 @@ void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!__tcp_is_cwnd_limited(sk, in_flight))
 		return;
 
 	/* In "safe" area, increase. */

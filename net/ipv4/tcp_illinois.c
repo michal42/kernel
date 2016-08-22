@@ -264,7 +264,7 @@ static void tcp_illinois_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		update_params(sk);
 
 	/* RFC2861 only increase cwnd if fully utilized */
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!__tcp_is_cwnd_limited(sk, in_flight))
 		return;
 
 	/* In slow start */

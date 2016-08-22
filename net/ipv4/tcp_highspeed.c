@@ -114,7 +114,7 @@ static void hstcp_cong_avoid(struct sock *sk, u32 adk, u32 in_flight)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct hstcp *ca = inet_csk_ca(sk);
 
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!__tcp_is_cwnd_limited(sk, in_flight))
 		return;
 
 	if (tp->snd_cwnd <= tp->snd_ssthresh)

@@ -125,7 +125,7 @@ static void tcp_veno_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	}
 
 	/* limited by applications */
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!__tcp_is_cwnd_limited(sk, in_flight))
 		return;
 
 	/* We do the Veno calculations only if we got enough rtt samples */
