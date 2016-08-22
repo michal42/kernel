@@ -3762,7 +3762,8 @@ _scsih_qcmd(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	} else
 		mpi_control |= MPI2_SCSIIO_CONTROL_SIMPLEQ;
 
-	if (sas_is_tlr_enabled(scmd->device) && scmd->cmd_len != 32)
+	if (!_scsih_is_raid(&scmd->device->sdev_gendev) &&
+	    sas_is_tlr_enabled(scmd->device) && scmd->cmd_len != 32)
 		mpi_control |= MPI2_SCSIIO_CONTROL_TLR_ON;
 
 	smid = mpt3sas_base_get_smid_scsiio(ioc, ioc->scsi_io_cb_idx, scmd);
