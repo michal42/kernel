@@ -173,5 +173,6 @@ static inline struct xfs_dquot *xfs_qm_dqhold(struct xfs_dquot *dqp)
 }
 
 extern const struct xfs_buf_ops xfs_dquot_buf_ops;
+extern const struct xfs_buf_ops xfs_dquot_buf_ra_ops;
 
 #endif /* __XFS_DQUOT_H__ */
