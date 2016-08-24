@@ -604,21 +604,21 @@ static int btree_readpage_end_io_hook(struct btrfs_io_bio *io_bio,
 
 	found_start = btrfs_header_bytenr(eb);
 	if (found_start != eb->start) {
-		printk_ratelimited(KERN_WARNING "BTRFS (dev %s): bad tree block start "
+		printk_ratelimited(KERN_ERR "BTRFS (device %s): bad tree block start "
 			       "%llu %llu\n",
 			       eb->fs_info->sb->s_id, found_start, eb->start);
 		ret = -EIO;
 		goto err;
 	}
 	if (check_tree_block_fsid(root, eb)) {
-		printk_ratelimited(KERN_WARNING "BTRFS (devi %s): bad fsid on block %llu\n",
+		printk_ratelimited(KERN_ERR "BTRFS (device %s): bad fsid on block %llu\n",
 			       eb->fs_info->sb->s_id, eb->start);
 		ret = -EIO;
 		goto err;
 	}
 	found_level = btrfs_header_level(eb);
 	if (found_level >= BTRFS_MAX_LEVEL) {
-		btrfs_info(root->fs_info, "bad tree block level %d",
+		btrfs_err(root->fs_info, "bad tree block level %d",
 			   (int)btrfs_header_level(eb));
 		ret = -EIO;
 		goto err;
@@ -2712,7 +2712,7 @@ int open_ctree(struct super_block *sb,
 	}
 
 	if (sectorsize != PAGE_SIZE) {
-		printk(KERN_ERR "BTRFS: Incompatible sector size(%lu) "
+		printk(KERN_ERR "BTRFS: incompatible sector size (%lu) "
 		       "found on %s\n", (unsigned long)sectorsize, sb->s_id);
 		goto fail_sb_buffer;
 	}
@@ -4005,7 +4005,7 @@ static int btrfs_destroy_delayed_refs(struct btrfs_transaction *trans,
 	spin_lock(&delayed_refs->lock);
 	if (atomic_read(&delayed_refs->num_entries) == 0) {
 		spin_unlock(&delayed_refs->lock);
-		btrfs_debug(root->fs_info, "delayed_refs has NO entry");
+		btrfs_info(root->fs_info, "delayed_refs has NO entry");
 		return ret;
 	}
 
