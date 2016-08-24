@@ -253,10 +253,11 @@ struct ipv6_fl_socklist {
 static inline struct ipv6_txoptions *txopt_get(const struct ipv6_pinfo *np)
 {
 	struct ipv6_txoptions *opt;
-	struct ipv6_txoptions_rcu *opt_rcu = container_of(np->opt, struct ipv6_txoptions_rcu, txoptions);
+	struct ipv6_txoptions_rcu *opt_rcu;
 
 	rcu_read_lock();
 	opt = rcu_dereference(np->opt);
+	opt_rcu = container_of(opt, struct ipv6_txoptions_rcu, txoptions);
 	if (opt && !atomic_inc_not_zero(&opt_rcu->refcnt))
 		opt = NULL;
 	rcu_read_unlock();
