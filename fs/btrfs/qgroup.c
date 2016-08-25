@@ -1283,7 +1283,6 @@ struct btrfs_qgroup_extent_record
 	u64 bytenr = record->bytenr;
 
 	assert_spin_locked(&delayed_refs->lock);
-
 	trace_btrfs_qgroup_insert_dirty_extent(record);
 
 	while (*p) {

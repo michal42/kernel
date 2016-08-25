@@ -115,6 +115,7 @@ static noinline void switch_commit_roots(struct btrfs_transaction *trans,
 		root->commit_root = btrfs_root_node(root);
 		if (is_fstree(root->objectid))
 			btrfs_unpin_free_ino(root);
+		clear_btree_io_tree(&root->dirty_log_pages);
 	}
 
 	/* We can free old roots now. */
@@ -261,10 +262,10 @@ loop:
 	INIT_LIST_HEAD(&cur_trans->pending_snapshots);
 	INIT_LIST_HEAD(&cur_trans->ordered_operations);
 	INIT_LIST_HEAD(&cur_trans->pending_chunks);
-	INIT_LIST_HEAD(&cur_trans->pending_ordered);
 	INIT_LIST_HEAD(&cur_trans->dropped_roots);
 	INIT_LIST_HEAD(&cur_trans->switch_commits);
 	spin_lock_init(&cur_trans->dropped_roots_lock);
+	INIT_LIST_HEAD(&cur_trans->pending_ordered);
 	list_add_tail(&cur_trans->list, &fs_info->trans_list);
 	extent_io_tree_init(&cur_trans->dirty_pages,
 			     fs_info->btree_inode->i_mapping);
@@ -1079,8 +1080,6 @@ static int update_cowonly_root(struct btrfs_trans_handle *trans,
 		if (ret)
 			return ret;
 	}
-
-	clear_btree_io_tree(&root->dirty_log_pages);
 
 	return 0;
 }

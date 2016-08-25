@@ -1232,6 +1232,20 @@ static int __btrfs_find_all_roots(struct btrfs_trans_handle *trans,
 	return 0;
 }
 
+int btrfs_find_all_roots(struct btrfs_trans_handle *trans,
+			 struct btrfs_fs_info *fs_info, u64 bytenr,
+			 u64 time_seq, struct ulist **roots)
+{
+	int ret;
+
+	if (!trans)
+		down_read(&fs_info->commit_root_sem);
+	ret = __btrfs_find_all_roots(trans, fs_info, bytenr, time_seq, roots);
+	if (!trans)
+		up_read(&fs_info->commit_root_sem);
+	return ret;
+}
+
 /**
  * btrfs_check_shared - tell us whether an extent is shared
  *
@@ -1292,20 +1306,6 @@ int btrfs_check_shared(struct btrfs_trans_handle *trans,
 		up_read(&fs_info->commit_root_sem);
 	ulist_free(tmp);
 	ulist_free(roots);
-	return ret;
-}
-
-int btrfs_find_all_roots(struct btrfs_trans_handle *trans,
-			 struct btrfs_fs_info *fs_info, u64 bytenr,
-			 u64 time_seq, struct ulist **roots)
-{
-	int ret;
-
-	if (!trans)
-		down_read(&fs_info->commit_root_sem);
-	ret = __btrfs_find_all_roots(trans, fs_info, bytenr, time_seq, roots);
-	if (!trans)
-		up_read(&fs_info->commit_root_sem);
 	return ret;
 }
 
