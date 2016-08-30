@@ -463,6 +463,11 @@ int topology_cpu_init(struct cpu *cpu)
 	return sysfs_create_group(&cpu->dev.kobj, &topology_cpu_attr_group);
 }
 
+const struct cpumask *cpu_thread_mask(int cpu)
+{
+	return &cpu_topology[cpu].thread_mask;
+}
+
 const struct cpumask *cpu_coregroup_mask(int cpu)
 {
 	return &cpu_topology[cpu].core_mask;
@@ -474,6 +479,7 @@ static const struct cpumask *cpu_book_mask(int cpu)
 }
 
 static struct sched_domain_topology_level s390_topology[] = {
+	{ cpu_thread_mask, cpu_smt_flags, SD_INIT_NAME(SMT) },
 	{ cpu_coregroup_mask, cpu_core_flags, SD_INIT_NAME(MC) },
 	{ cpu_book_mask, SD_INIT_NAME(BOOK) },
 	{ cpu_cpu_mask, SD_INIT_NAME(DIE) },
