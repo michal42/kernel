@@ -616,7 +616,7 @@ static void ceph_aio_complete_req(struct ceph_osd_request *req,
 							    osd_data->pages);
 		}
 	} else
-		osd_data = osd_req_op_extent_osd_response_data(req, 0);
+		osd_data = osd_req_op_extent_osd_request_data(req, 0);
 	dout("ceph_aio_complete_req %p rc %d bytes %llu\n",
 	     inode, rc, osd_data->length);
 
