@@ -84,7 +84,7 @@ static void ext4_unregister_li_request(struct super_block *sb);
 static void ext4_clear_request_list(void);
 static int ext4_reserve_clusters(struct ext4_sb_info *, ext4_fsblk_t);
 
-#if !defined(CONFIG_EXT2_FS) && !defined(CONFIG_EXT2_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
+#if defined(CONFIG_EXT4_USE_FOR_EXT23)
 static struct file_system_type ext2_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "ext2",
@@ -5410,10 +5410,16 @@ static struct dentry *ext4_mount(struct file_system_type *fs_type, int flags,
 	return mount_bdev(fs_type, flags, dev_name, data, ext4_fill_super);
 }
 
-#if !defined(CONFIG_EXT2_FS) && !defined(CONFIG_EXT2_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT23)
+#if defined(CONFIG_EXT4_USE_FOR_EXT23)
+extern bool ext4_used_for_ext2;
+
 static inline void register_as_ext2(void)
 {
-	int err = register_filesystem(&ext2_fs_type);
+	int err;
+
+	if (!ext4_used_for_ext2)
+		return;
+	err = register_filesystem(&ext2_fs_type);
 	if (err)
 		printk(KERN_WARNING
 		       "EXT4-fs: Unable to register as ext2 (%d)\n", err);
@@ -5421,7 +5427,8 @@ static inline void register_as_ext2(void)
 
 static inline void unregister_as_ext2(void)
 {
-	unregister_filesystem(&ext2_fs_type);
+	if (ext4_used_for_ext2)
+		unregister_filesystem(&ext2_fs_type);
 }
 
 static inline int ext2_feature_set_ok(struct super_block *sb)

@@ -327,6 +327,18 @@ __setup("rootflags=", root_data_setup);
 __setup("rootfstype=", fs_names_setup);
 __setup("rootdelay=", root_delay_setup);
 
+bool ext4_used_for_ext2 = true;
+EXPORT_SYMBOL(ext4_used_for_ext2);
+static int __init ext4_used_for_ext2_setup(char *str)
+{
+	if (simple_strtoul(str, NULL, 0) > 0)
+		ext4_used_for_ext2 = true;
+	else
+		ext4_used_for_ext2 = false;
+	return 1;
+}
+__setup("ext4_used_for_ext2=", ext4_used_for_ext2_setup);
+
 static void __init get_fs_names(char *page)
 {
 	char *s = page;
