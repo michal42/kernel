@@ -937,8 +937,9 @@ static void net_rx_action(unsigned long group)
 		   non-linear skbs destined for flipping interfaces) */
 		if (!netif->copying_receiver) {
 			atomic_set(&(skb_shinfo(skb)->dataref), 1);
-			skb_shinfo(skb)->frag_list = NULL;
 			skb_shinfo(skb)->nr_frags = 0;
+			skb_shinfo(skb)->tx_flags = 0;
+			skb_frag_list_init(skb);
 			netbk_free_pages(nr_frags,
 					 netbk->meta + npo.meta_cons + 1);
 		}
