@@ -212,7 +212,7 @@ static int xen_hotplug_notifier(struct acpi_processor *pr, int event)
 		return -EOPNOTSUPP;
 	}
 
-	apic_id = acpi_get_cpuid(pr->handle, ~device_decl, pr->acpi_id);
+	apic_id = acpi_get_apicid(pr->handle, device_decl, pr->acpi_id);
 	if (apic_id == -1) {
 		pr_warn("can't get apic_id for acpi_id %#x\n", pr->acpi_id);
 		return -ENODATA;
