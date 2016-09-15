@@ -1056,7 +1056,6 @@ static int acpi_processor_setup_cpuidle_states(struct acpi_processor *pr)
 #else
 static void acpi_processor_setup_cpuidle_cx(struct acpi_processor *pr,
 					    struct cpuidle_device *dev) {}
-static void acpi_processor_setup_cpuidle_states(struct acpi_processor *pr) {}
 #endif /* CONFIG_PROCESSOR_EXTERNAL_CONTROL */
 
 int acpi_processor_hotplug(struct acpi_processor *pr)
@@ -1100,10 +1099,6 @@ int acpi_processor_hotplug(struct acpi_processor *pr)
 
 int acpi_processor_cst_has_changed(struct acpi_processor *pr)
 {
-	int cpu;
-	struct acpi_processor *_pr;
-	struct cpuidle_device *dev;
-
 	if (disabled_by_idle_boot_param())
 		return 0;
 
@@ -1116,6 +1111,7 @@ int acpi_processor_cst_has_changed(struct acpi_processor *pr)
 	if (!pr->flags.power_setup_done)
 		return -ENODEV;
 
+#ifndef CONFIG_PROCESSOR_EXTERNAL_CONTROL
 	/*
 	 * FIXME:  Design the ACPI notification to make it once per
 	 * system instead of once per-cpu.  This condition is a hack
@@ -1123,6 +1119,9 @@ int acpi_processor_cst_has_changed(struct acpi_processor *pr)
 	 */
 
 	if (pr->id == 0 && cpuidle_get_driver() == &acpi_idle_driver) {
+		int cpu;
+		struct acpi_processor *_pr;
+		struct cpuidle_device *dev;
 
 		/* Protect against cpu-hotplug */
 		get_online_cpus();
@@ -1156,6 +1155,7 @@ int acpi_processor_cst_has_changed(struct acpi_processor *pr)
 		cpuidle_resume_and_unlock();
 		put_online_cpus();
 	}
+#endif
 
 	return 0;
 }
