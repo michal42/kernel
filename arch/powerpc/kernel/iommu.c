@@ -65,6 +65,23 @@ static int __init setup_iommu(char *str)
 
 __setup("iommu=", setup_iommu);
 
+/*
+ * iommu_alloc_quiet: string with one driver name
+ * not to print 'iommu_alloc failed' messages for.
+ */
+#define IOMMU_ALLOC_QUIET_LEN	16 /* includes '\0' */
+static char iommu_alloc_quiet[IOMMU_ALLOC_QUIET_LEN];
+
+static int __init setup_iommu_alloc_quiet(char *str)
+{
+	strncpy(iommu_alloc_quiet, str, IOMMU_ALLOC_QUIET_LEN);
+	iommu_alloc_quiet[IOMMU_ALLOC_QUIET_LEN - 1] = '\0';
+	pr_info("iommu_alloc_quiet: driver '%s'\n", iommu_alloc_quiet);
+	return 1;
+}
+
+__setup("iommu_alloc_quiet=", setup_iommu_alloc_quiet);
+
 static DEFINE_PER_CPU(unsigned int, iommu_pool_hash);
 
 /*
@@ -479,7 +496,7 @@ int iommu_map_sg(struct device *dev, struct iommu_table *tbl,
 
 		/* Handle failure */
 		if (unlikely(entry == DMA_ERROR_CODE)) {
-			if (printk_ratelimit())
+			if (strncmp(iommu_alloc_quiet, dev->driver->name, IOMMU_ALLOC_QUIET_LEN) && printk_ratelimit())
 				dev_info(dev, "iommu_alloc failed, tbl %p "
 					 "vaddr %lx npages %lu\n", tbl, vaddr,
 					 npages);
@@ -779,7 +796,7 @@ dma_addr_t iommu_map_page(struct device *dev, struct iommu_table *tbl,
 					 mask >> tbl->it_page_shift, align,
 					 attrs);
 		if (dma_handle == DMA_ERROR_CODE) {
-			if (printk_ratelimit())  {
+			if (strncmp(iommu_alloc_quiet, dev->driver->name, IOMMU_ALLOC_QUIET_LEN) && printk_ratelimit()) {
 				dev_info(dev, "iommu_alloc failed, tbl %p "
 					 "vaddr %p npages %d\n", tbl, vaddr,
 					 npages);
