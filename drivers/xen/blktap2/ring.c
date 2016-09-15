@@ -26,15 +26,27 @@ blktap_read_ring(struct blktap *tap)
 	int usr_idx;
 	RING_IDX rc, rp;
 	blkif_response_t res;
-	struct blktap_ring *ring;
+	struct blktap_ring *ring = &tap->ring;
 	struct blktap_request *request;
 
-	down_read(&tap->tap_sem);
+	/*
+	 * We can't acquire ring->vma->vm_mm->mmap_sem before tap->tap_sem
+	 * here (as would be needed to match the vm_munmap() ->
+	 * blktap_device_fail_pending_requests() call tree) since ring->vma
+	 * may become NULL while not holding tap->tap_sem. To acquire them
+	 * in the wrong order we need to use a retry loop.
+	 */
+	for (;;) {
+		down_read(&tap->tap_sem);
+		if (!ring->vma) {
+			up_read(&tap->tap_sem);
+			return 0;
+		}
 
-	ring = &tap->ring;
-	if (!ring->vma) {
+		if (down_read_trylock(&ring->vma->vm_mm->mmap_sem))
+			break;
 		up_read(&tap->tap_sem);
-		return 0;
+		cpu_relax();
 	}
 
 	/* for each outstanding message on the ring  */
@@ -59,6 +71,7 @@ blktap_read_ring(struct blktap *tap)
 		blktap_device_finish_request(tap, &res, request);
 	}
 
+	up_read(&ring->vma->vm_mm->mmap_sem);
 	up_read(&tap->tap_sem);
 
 	blktap_run_deferred();
