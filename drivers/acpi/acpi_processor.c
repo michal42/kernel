@@ -303,8 +303,8 @@ static int acpi_processor_get_info(struct acpi_device *device)
 	if (pr->id == -1) {
 		int ret = acpi_processor_hotadd_init(pr, device_declaration);
 		if (ret && (ret != -ENODEV ||
-			    acpi_get_cpuid(pr->handle, ~device_declaration,
-					   pr->acpi_id) < 0))
+			    acpi_get_apicid(pr->handle, device_declaration,
+					    pr->acpi_id) < 0))
 			return ret;
 	}
 #if defined(CONFIG_SMP) && defined(CONFIG_PROCESSOR_EXTERNAL_CONTROL)
