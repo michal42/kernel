@@ -351,7 +351,8 @@ void netif_disconnect(struct backend_info *be)
 		netif_put(netif);
 	}
 
-	wait_event(netif->waiting_to_free, atomic_read(&netif->refcnt) == 1);
+	atomic_dec(&netif->refcnt);
+	wait_event(netif->waiting_to_free, atomic_read(&netif->refcnt) == 0);
 
 	del_timer_sync(&netif->credit_timeout);
 	del_timer_sync(&netif->tx_queue_timeout);
