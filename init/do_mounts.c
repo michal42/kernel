@@ -327,7 +327,7 @@ __setup("rootflags=", root_data_setup);
 __setup("rootfstype=", fs_names_setup);
 __setup("rootdelay=", root_delay_setup);
 
-bool ext4_used_for_ext2 = true;
+bool ext4_used_for_ext2 = IS_ENABLED(CONFIG_EXT4_USE_FOR_EXT23);
 EXPORT_SYMBOL(ext4_used_for_ext2);
 static int __init ext4_used_for_ext2_setup(char *str)
 {
