@@ -762,11 +762,15 @@ static int sd_setup_discard_cmnd(struct scsi_device *sdp, struct request *rq)
 		goto out;
 	}
 
-	if (len) {
+	if (len)
 		blk_add_request_payload(rq, page, len);
-		rq->buffer = page_address(page);
-	}
+
 	ret = scsi_setup_blk_pc_cmnd(sdp, rq);
+	if (ret)
+		goto out;
+
+	if (page)
+		rq->buffer = page_address(page);
 
 	rq->__data_len = nr_bytes;
 
