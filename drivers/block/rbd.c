@@ -199,7 +199,7 @@ struct rbd_obj_request {
 	 * 0..(img_request->obj_request_count-1).
 	 */
 	union {
-		struct rbd_obj_request	*obj_request;	/* STAT op */
+		struct rbd_obj_request	*obj_request;	/* STAT or CREATE op */
 		struct {
 			struct rbd_img_request	*img_request;
 			u64			img_offset;
@@ -1784,20 +1784,43 @@ static void rbd_osd_write_callback(struct rbd_obj_request *obj_request)
 	obj_request_done_set(obj_request);
 }
 
+static int rbd_img_obj_creatrunc_submit(struct rbd_obj_request *obj_request);
+
 static void rbd_osd_cmpext_callback(struct rbd_obj_request *obj_request,
 				    struct ceph_osd_request *osd_req)
 {
 	dout("%s: obj %p result %d %llu\n", __func__, obj_request,
 		obj_request->result, obj_request->length);
 
-	if (obj_request->result == -EILSEQ)
+	rbd_assert(osd_req->r_ops[0].op == CEPH_OSD_OP_SETALLOCHINT);
+	rbd_assert(osd_req->r_ops[1].op == CEPH_OSD_OP_CMPEXT);
+	rbd_assert(osd_req->r_ops[2].op == CEPH_OSD_OP_WRITE);
+
+	if (!obj_request->result) {
+		obj_request->xferred = obj_request->length;
+	} else if (obj_request->result == -EILSEQ) {
 		/*
 		 * on mismatch reply buf will contain offset and mismatched
 		 * data
 		 */
 		obj_request->xferred = osd_req->r_ops[1].outdata_len;
-	else
-		obj_request->xferred = obj_request->length;
+	} else if ((obj_request->result == -EINVAL) &&
+		   (osd_req->r_ops[1].rval == -EINVAL))	{
+		int ret;
+		/*
+		 * cmpext failed to read the full compare range. truncate and
+		 * retry. Truncate is issued as a separate request, so it could
+		 * theoretically race with a discard.
+		 */
+		ret = rbd_img_obj_creatrunc_submit(obj_request);
+		if (!ret) {
+			/* orig request will be reissued following truncate */
+			return;
+		}
+	} else {
+		rbd_warn(NULL, "unexpected cmpext result: %d",
+			 obj_request->result);
+	}
 	obj_request_done_set(obj_request);
 }
 
@@ -1834,6 +1857,15 @@ static void rbd_osd_call_callback(struct rbd_obj_request *obj_request)
 		rbd_osd_copyup_callback(obj_request);
 	else
 		obj_request_done_set(obj_request);
+}
+
+/*
+ * Nothing to do here, rbd_img_obj_creatrunc_callback() handles everything
+ */
+static void rbd_osd_creatrunc_callback(struct rbd_obj_request *obj_request)
+{
+	dout("%s: obj %p\n", __func__, obj_request);
+	obj_request_done_set(obj_request);
 }
 
 static void rbd_osd_req_callback(struct ceph_osd_request *osd_req,
@@ -1901,6 +1933,11 @@ static void rbd_osd_req_callback(struct ceph_osd_request *osd_req,
 	case CEPH_OSD_OP_CMPXATTR:
 	case CEPH_OSD_OP_GETXATTR:
 		rbd_osd_trivial_callback(obj_request);
+		break;
+	case CEPH_OSD_OP_CREATE:
+		rbd_assert(osd_req->r_num_ops == 2);
+		rbd_assert(osd_req->r_ops[1].op == CEPH_OSD_OP_TRUNCATE);
+		rbd_osd_creatrunc_callback(obj_request);
 		break;
 	default:
 		rbd_warn(NULL, "%s: unsupported op %hu",
@@ -3077,6 +3114,127 @@ out:
 	if (ret)
 		rbd_obj_request_put(obj_request);
 
+	return ret;
+}
+
+static void
+rbd_img_obj_creatrunc_callback(struct rbd_obj_request *obj_request)
+{
+	struct rbd_obj_request *orig_request;
+	int result;
+
+	rbd_assert(!obj_request_img_data_test(obj_request));
+
+	/*
+	 * All we need from the object request is the original
+	 * request and the result of the TRUNCATE op.
+	 */
+	orig_request = obj_request->obj_request;
+	obj_request->obj_request = NULL;
+	rbd_obj_request_put(orig_request);
+	rbd_assert(orig_request);
+	rbd_assert(orig_request->img_request);
+
+	result = obj_request->result;
+	obj_request->result = 0;
+
+	dout("%s: obj %p for obj %p result %d %llu/%llu\n", __func__,
+		obj_request, orig_request, result,
+		obj_request->xferred, obj_request->length);
+	rbd_obj_request_put(obj_request);
+
+	if (result) {
+		orig_request->result = result;
+		goto out;
+	}
+
+	/*
+	 * Resubmit the original request now that we have truncated
+	 * the target object.
+	 */
+	orig_request->result = rbd_img_obj_request_submit(orig_request);
+out:
+	if (orig_request->result)
+		rbd_obj_request_complete(orig_request);
+}
+
+/*
+ * compare and write failed with -EINVAL, indicating an unwritten range
+ * for cmpext - truncate the object to its full size and then reissue
+ * the same request.
+ * Like rbd_img_obj_exists_submit(), this function tracks the original request
+ * through to the callback via creatrunc_req->osd_req, which means that
+ * creatrunc_req->img_request users (e.g. rbd_osd_req_create() and
+ * rbd_osd_req_format_write()) must be avoided.
+ */
+static int
+rbd_img_obj_creatrunc_submit(struct rbd_obj_request *obj_request)
+{
+	struct rbd_img_request *img_request;
+	struct rbd_obj_request *creatrunc_req;
+	struct ceph_osd_request *osd_req;
+	struct rbd_device *rbd_dev;
+	struct ceph_osd_client *osdc;
+	struct timespec mtime;
+	u64 object_size;
+	int ret;
+
+	rbd_assert(obj_request_img_data_test(obj_request));
+	img_request = obj_request->img_request;
+	rbd_assert(img_request);
+	rbd_assert(obj_request->result == (s32)-EINVAL);
+	rbd_assert(obj_request_type_valid(obj_request->type));
+	rbd_assert(img_request_cmp_and_write_test(img_request));
+
+	creatrunc_req = rbd_obj_request_create(obj_request->object_name, 0, 0,
+							OBJ_REQUEST_NODATA);
+	if (!creatrunc_req)
+		return -ENOMEM;
+
+	rbd_dev = img_request->rbd_dev;
+	osdc = &rbd_dev->rbd_client->client->osdc;
+	object_size = rbd_obj_bytes(&rbd_dev->header);
+
+	/* rbd_osd_req_create() using snapc from img_request */
+	osd_req = ceph_osdc_alloc_request(osdc, img_request->snapc,
+					  2, false, GFP_NOIO);
+	if (!osd_req) {
+		ret = -ENOMEM;
+		goto fail_creatrunc_request;
+	}
+
+	osd_req->r_flags = CEPH_OSD_FLAG_WRITE | CEPH_OSD_FLAG_ONDISK;
+	osd_req->r_callback = rbd_osd_req_callback;
+	osd_req->r_priv = creatrunc_req;
+	osd_req->r_base_oloc.pool = ceph_file_layout_pg_pool(rbd_dev->layout);
+	ceph_oid_set_name(&osd_req->r_base_oid, creatrunc_req->object_name);
+
+	creatrunc_req->osd_req = osd_req;
+	rbd_obj_request_get(obj_request);
+	creatrunc_req->obj_request = obj_request;
+	creatrunc_req->callback = rbd_img_obj_creatrunc_callback;
+
+	osd_req_op_init(creatrunc_req->osd_req, 0, CEPH_OSD_OP_CREATE, 0);
+	osd_req_op_extent_init(creatrunc_req->osd_req, 1, CEPH_OSD_OP_TRUNCATE,
+				object_size, 0, 0, 0);
+
+	/* rbd_osd_req_format_write() using snapc from img_request */
+	mtime = CURRENT_TIME;
+	ceph_osdc_build_request(creatrunc_req->osd_req, creatrunc_req->offset,
+			img_request->snapc, CEPH_NOSNAP, &mtime);
+
+	ret = rbd_obj_request_submit(osdc, creatrunc_req);
+	if (ret) {
+		goto fail_submit;
+	}
+
+	return 0;
+
+fail_submit:
+	rbd_obj_request_put(obj_request);
+fail_creatrunc_request:
+	creatrunc_req->img_request = NULL;
+	rbd_obj_request_put(creatrunc_req);
 	return ret;
 }
 
