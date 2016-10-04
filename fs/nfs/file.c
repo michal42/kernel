@@ -621,6 +621,9 @@ static int nfs_vm_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	/* make sure the cache has finished storing the page */
 	nfs_fscache_wait_on_page_write(NFS_I(dentry->d_inode), page);
 
+	wait_on_bit(&NFS_I(dentry->d_inode)->flags, NFS_INO_INVALIDATING,
+		    nfs_wait_bit_killable, TASK_KILLABLE);
+
 	lock_page(page);
 	mapping = page_file_mapping(page);
 	if (mapping != dentry->d_inode->i_mapping)
