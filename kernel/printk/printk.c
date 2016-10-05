@@ -2194,7 +2194,6 @@ asmlinkage int vprintk_emit(int facility, int level,
 	}
 
 	lockdep_off();
-
 	/*
 	 * Get lock for a log buffer. Make sure we are not going to deadlock
 	 * when we managed to preempt the currently running printk from NMI
@@ -2237,17 +2236,16 @@ asmlinkage int vprintk_emit(int facility, int level,
 		logbuf_cpu = this_cpu;
 		merge_nmi_delayed_printk();
 
-		if (recursion_bug) {
+		if (unlikely(recursion_bug)) {
 			static const char recursion_msg[] =
 				"BUG: recent printk recursion!";
 
 			recursion_bug = 0;
-			text_len = strlen(recursion_msg);
 			/* emit KERN_CRIT message */
 			printed_len += log_store(log, 0, 2,
 						 LOG_PREFIX|LOG_NEWLINE, 0,
 						 NULL, 0, recursion_msg,
-						 text_len);
+					 	 strlen(recursion_msg));
 		}
 	}
 
