@@ -14,10 +14,12 @@
 	{ TLB_LOCAL_MM_SHOOTDOWN,	"local mm shootdown" },		\
 	{ TLB_REMOTE_SEND_IPI,		"remote ipi send" }
 
-TRACE_EVENT(tlb_flush,
+TRACE_EVENT_CONDITION(tlb_flush,
 
 	TP_PROTO(int reason, unsigned long pages),
 	TP_ARGS(reason, pages),
+
+	TP_CONDITION(cpu_online(smp_processor_id())),
 
 	TP_STRUCT__entry(
 		__field(	  int, reason)
