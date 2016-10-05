@@ -161,7 +161,7 @@ static struct sk_buff **udp_gro_receive(struct sk_buff **head, struct sk_buff *s
 	    (!skb->encapsulation && skb->ip_summed != CHECKSUM_COMPLETE))
 		goto out;
 
-	/* mark that this skb passed once through the udp gro layer */
+	/* mark that this skb passed once through the tunnel gro layer */
 	NAPI_GRO_CB(skb)->udp_mark = 1;
 
 	off  = skb_gro_offset(skb);
