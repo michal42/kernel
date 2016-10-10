@@ -4807,6 +4807,7 @@ static int mem_cgroup_usage_register_event(struct cgroup_subsys_state *css,
 	ret = page_counter_memparse(args, "-1", &threshold);
 	if (ret)
 		return ret;
+	threshold <<= PAGE_SHIFT;
 
 	mutex_lock(&memcg->thresholds_lock);
 
