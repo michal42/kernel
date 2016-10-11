@@ -1671,7 +1671,7 @@ struct napi_gro_cb {
 	/* Used in ipv6_gro_receive() */
 	u16	proto;
 
-	/* Used in udp_gro_receive */
+	/* Used in tunnel GRO receive */
 	u16	udp_mark;
 
 	/* used to support CHECKSUM_COMPLETE for tunneling protocols */
