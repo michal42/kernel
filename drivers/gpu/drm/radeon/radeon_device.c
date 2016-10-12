@@ -30,9 +30,11 @@
 #include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/radeon_drm.h>
+#include <linux/pm_runtime.h>
 #include <linux/vgaarb.h>
 #include <linux/vga_switcheroo.h>
 #include <linux/efi.h>
+#include <xen/xen.h>
 #include "radeon_reg.h"
 #include "radeon.h"
 #include "atom.h"
@@ -641,7 +643,7 @@ void radeon_gtt_location(struct radeon_device *rdev, struct radeon_mc *mc)
 static bool radeon_device_is_virtual(void)
 {
 #ifdef CONFIG_X86
-	return boot_cpu_has(X86_FEATURE_HYPERVISOR);
+	return boot_cpu_has(X86_FEATURE_HYPERVISOR) && !xen_initial_domain();
 #else
 	return false;
 #endif
@@ -1538,6 +1540,9 @@ int radeon_device_init(struct radeon_device *rdev,
 	return 0;
 
 failed:
+	/* balance pm_runtime_get_sync() in radeon_driver_unload_kms() */
+	if (radeon_is_px(ddev))
+		pm_runtime_put_noidle(ddev->dev);
 	if (runtime)
 		vga_switcheroo_fini_domain_pm_ops(rdev->dev);
 	return r;

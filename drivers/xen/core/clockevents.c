@@ -174,10 +174,12 @@ static irqreturn_t timer_interrupt(int irq, void *dev_id)
 		 + offline - __this_cpu_read(offline_snapshot)
 		 + __this_cpu_read(residual_stolen);
 
-	if (stolen >= NS_PER_TICK)
-		account_steal_ticks(div_u64_rem(stolen, NS_PER_TICK,
-						this_cpu_ptr(&residual_stolen)));
-	else
+	if (stolen >= NS_PER_TICK) {
+		unsigned long ticks = div_u64_rem(stolen, NS_PER_TICK,
+						  this_cpu_ptr(&residual_stolen));
+
+		account_steal_time(jiffies_to_cputime(ticks));
+	} else
 		__this_cpu_write(residual_stolen, stolen > 0 ? stolen : 0);
 
 	__this_cpu_write(runnable_snapshot, runnable);

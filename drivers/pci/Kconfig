@@ -25,8 +25,8 @@ config PCI_MSI
 	   If you don't know what to do here, say Y.
 
 config PCI_MSI_IRQ_DOMAIN
-	bool
-	depends on PCI_MSI
+	def_bool ARM || ARM64 || X86
+	depends on PCI_MSI && !XEN
 	select GENERIC_MSI_IRQ_DOMAIN
 
 config PCI_DEBUG

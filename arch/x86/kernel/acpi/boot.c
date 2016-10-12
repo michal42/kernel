@@ -28,7 +28,7 @@
 #include <linux/acpi_pmtmr.h>
 #include <linux/efi.h>
 #include <linux/cpumask.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/dmi.h>
 #include <linux/irq.h>
 #include <linux/slab.h>
@@ -168,6 +168,7 @@ static int __init acpi_parse_madt(struct acpi_table_header *table)
 /**
  * acpi_register_lapic - register a local apic and generates a logic cpu number
  * @id: local apic id to register
+ * @acpiid: ACPI id to register
  * @enabled: this cpu is enabled or not
  *
  * Returns the logic cpu number which maps to the local apic
@@ -178,10 +179,11 @@ int
 #else
 void
 #endif
-acpi_register_lapic(int id, u8 enabled)
+acpi_register_lapic(int id, u32 acpiid, u8 enabled)
 {
 #ifndef CONFIG_XEN
 	unsigned int ver = 0;
+	int cpu;
 
 	if (id >= MAX_LOCAL_APIC) {
 		printk(KERN_INFO PREFIX "skipped apicid that is too big\n");
@@ -196,7 +198,11 @@ acpi_register_lapic(int id, u8 enabled)
 	if (boot_cpu_physical_apicid != -1U)
 		ver = apic_version[boot_cpu_physical_apicid];
 
-	return generic_processor_info(id, ver);
+	cpu = generic_processor_info(id, ver);
+	if (cpu >= 0)
+		early_per_cpu(x86_cpu_to_acpiid, cpu) = acpiid;
+
+	return cpu;
 #endif
 }
 
@@ -227,7 +233,7 @@ acpi_parse_x2apic(struct acpi_subtable_header *header, const unsigned long end)
 	if (!apic->apic_id_valid(apic_id) && enabled)
 		printk(KERN_WARNING PREFIX "x2apic entry ignored\n");
 	else
-		acpi_register_lapic(apic_id, enabled);
+		acpi_register_lapic(apic_id, processor->uid, enabled);
 #elif !defined(CONFIG_XEN)
 	printk(KERN_WARNING PREFIX "x2apic entry ignored\n");
 #endif
@@ -255,6 +261,7 @@ acpi_parse_lapic(struct acpi_subtable_header * header, const unsigned long end)
 	 * when we use CPU hotplug.
 	 */
 	acpi_register_lapic(processor->id,	/* APIC ID */
+			    processor->processor_id, /* ACPI ID */
 			    processor->lapic_flags & ACPI_MADT_ENABLED);
 
 	return 0;
@@ -273,6 +280,7 @@ acpi_parse_sapic(struct acpi_subtable_header *header, const unsigned long end)
 	acpi_table_print_madt_entry(header);
 
 	acpi_register_lapic((processor->id << 8) | processor->eid,/* APIC ID */
+			    processor->processor_id, /* ACPI ID */
 			    processor->lapic_flags & ACPI_MADT_ENABLED);
 
 	return 0;
@@ -734,7 +742,7 @@ int acpi_map_cpu(acpi_handle handle, phys_cpuid_t physid, int *pcpu)
 #ifndef CONFIG_XEN
 	int cpu;
 
-	cpu = acpi_register_lapic(physid, ACPI_MADT_ENABLED);
+	cpu = acpi_register_lapic(physid, U32_MAX, ACPI_MADT_ENABLED);
 	if (cpu < 0) {
 		pr_info(PREFIX "Unable to map lapic to logical cpu number\n");
 		return cpu;

@@ -1913,7 +1913,8 @@ struct irq_cfg *alloc_irq_and_cfg_at(unsigned int at, int node)
 {
 #ifdef CONFIG_IRQ_DOMAIN_HIERARCHY
 	struct irq_alloc_info info = {};
-	int res = __irq_domain_alloc_irqs(NULL, at, 1, node, &info, false);
+	int res = __irq_domain_alloc_irqs(NULL, at, 1, node, &info, false,
+					  NULL);
 
 	return res >= 0 || res == -EEXIST ? irq_cfg(at) : NULL;
 #else

@@ -7,7 +7,7 @@
 #include <linux/init.h>
 #include <linux/ioport.h>
 #include <linux/list.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/pci.h>
 #include <linux/spinlock_types.h>
 #include <linux/threads.h>
@@ -88,7 +88,6 @@ struct x86_init_ops x86_init __initdata = {
 static int default_i8042_detect(void) { return 1; };
 
 struct x86_platform_ops x86_platform = {
-	.calibrate_tsc			= NULL,
 	.get_wallclock			= xen_read_wallclock,
 	.set_wallclock			= xen_write_wallclock,
 	.is_untracked_pat_range		= is_ISA_range,

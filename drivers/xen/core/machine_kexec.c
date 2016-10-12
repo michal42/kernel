@@ -375,7 +375,7 @@ void __noreturn machine_kexec(struct kimage *image)
 }
 
 #ifdef CONFIG_X86
-unsigned long paddr_vmcoreinfo_note(void)
+phys_addr_t paddr_vmcoreinfo_note(void)
 {
 	return virt_to_machine(&vmcoreinfo_note);
 }

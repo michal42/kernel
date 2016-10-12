@@ -61,7 +61,7 @@ static void submit_message(struct blkfront_info *info, void *sp)
 {
 	struct request *req = NULL;
 
-	req = blk_get_request(info->rq, READ, __GFP_RECLAIM);
+	req = blk_get_request(info->rq, REQ_OP_READ, __GFP_RECLAIM);
 	if (blk_rq_map_kern(info->rq, req, sp, PAGE_SIZE, __GFP_RECLAIM))
 		goto out;
 

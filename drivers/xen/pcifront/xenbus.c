@@ -388,8 +388,8 @@ static int pcifront_detach_devices(struct pcifront_device *pdev)
 	return err;
 }
 
-static void __init_refok pcifront_backend_changed(struct xenbus_device *xdev,
-						  enum xenbus_state be_state)
+static void pcifront_backend_changed(struct xenbus_device *xdev,
+				     enum xenbus_state be_state)
 {
 	struct pcifront_device *pdev = dev_get_drvdata(&xdev->dev);
 

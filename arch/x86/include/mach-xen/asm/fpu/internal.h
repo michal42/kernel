@@ -49,11 +49,13 @@ static inline fpu_switch_t xen_switch_fpu_prepare(struct fpu *old_fpu,
 
 		/* But leave fpu_fpregs_owner_ctx! */
 		old_fpu->fpregs_active = 0;
+		trace_x86_fpu_regs_deactivated(old_fpu);
 
 		/* Don't change CR0.TS if we just switch! */
 		if (fpu.preload) {
 			new_fpu->counter++;
 			__fpregs_activate(new_fpu);
+			trace_x86_fpu_regs_activated(new_fpu);
 			prefetch(&new_fpu->state);
 		} else {
 			xen_fpregs_deactivate_hw(mcl);

@@ -381,7 +381,7 @@ static void dispatch_discard(blkif_t *blkif, struct blkif_request_discard *req)
 	preq.sector_number = req->sector_number;
 	preq.nr_sects      = req->nr_sectors;
 
-	if (vbd_translate(&preq, blkif, REQ_DISCARD) != 0) {
+	if (vbd_translate(&preq, blkif, REQ_OP_DISCARD) != 0) {
 		DPRINTK("access denied: discard of [%Lu,%Lu) on dev=%04x\n",
 			preq.sector_number,
 			preq.sector_number + preq.nr_sects,
@@ -596,25 +596,27 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 	unsigned int nseg, i, nbio = 0;
 	struct bio *bio = NULL;
 	uint32_t flags;
-	int ret, operation;
+	int ret, operation, operation_flags = 0;
 	struct blk_plug plug;
 
 	switch (req->operation) {
 	case BLKIF_OP_READ:
 		blkif->st_rd_req++;
-		operation = READ;
+		operation = REQ_OP_READ;
 		break;
 	case BLKIF_OP_WRITE:
 		blkif->st_wr_req++;
-		operation = WRITE;
+		operation = REQ_OP_WRITE;
 		break;
 	case BLKIF_OP_WRITE_BARRIER:
 		blkif->st_br_req++;
-		operation = WRITE_FLUSH_FUA;
+		operation = REQ_OP_WRITE;
+		operation_flags = WRITE_FLUSH_FUA;
 		break;
 	case BLKIF_OP_FLUSH_DISKCACHE:
 		blkif->st_fl_req++;
-		operation = WRITE_FLUSH;
+		operation = REQ_OP_WRITE;
+		operation_flags = WRITE_FLUSH;
 		break;
 	default:
 		goto fail_response;
@@ -622,7 +624,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 
 	/* Check that number of segments is sane. */
 	nseg = req->nr_segments;
-	if (unlikely(nseg == 0 && !(operation & REQ_FLUSH)) ||
+	if (unlikely(nseg == 0 && !(operation_flags & REQ_PREFLUSH)) ||
 	    unlikely(nseg > max_seg)) {
 		DPRINTK("Bad number of segments in request (%d)\n", nseg);
 		goto fail_response;
@@ -637,7 +639,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 	pending_req->nr_pages  = nseg;
 
 	flags = GNTMAP_host_map;
-	if (operation != READ)
+	if (operation != REQ_OP_READ)
 		flags |= GNTMAP_readonly;
 
 	for (i = 0; i < nseg; i++) {
@@ -685,7 +687,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 
 	if (vbd_translate(&preq, blkif, operation) != 0) {
 		DPRINTK("access denied: %s of [%llu,%llu] on dev=%04x\n", 
-			operation == READ ? "read" : "write",
+			operation == REQ_OP_READ ? "read" : "write",
 			preq.sector_number,
 			preq.sector_number + preq.nr_sects,
 			blkif->vbd.pdevice);
@@ -720,6 +722,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 			bio->bi_bdev    = preq.bdev;
 			bio->bi_private = pending_req;
 			bio->bi_end_io  = end_block_io_op;
+			bio_set_op_attrs(bio, operation, operation_flags);
 			bio->bi_iter.bi_sector = preq.sector_number;
 		}
 
@@ -731,7 +734,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 	}
 
 	if (!bio) {
-		BUG_ON(!(operation & (REQ_FLUSH|REQ_FUA)));
+		BUG_ON(!(operation_flags & (REQ_PREFLUSH|REQ_FUA)));
 		bio = bio_alloc(GFP_KERNEL, 0);
 		if (unlikely(bio == NULL))
 			goto fail_put_bio;
@@ -741,6 +744,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 		bio->bi_bdev    = preq.bdev;
 		bio->bi_private = pending_req;
 		bio->bi_end_io  = end_block_io_op;
+		bio_set_op_attrs(bio, operation, operation_flags);
 		bio->bi_iter.bi_sector = -1;
 	}
 
@@ -748,11 +752,11 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 	blk_start_plug(&plug);
 
 	for (i = 0; i < nbio; ++i)
-		submit_bio(operation, seg[i].bio);
+		submit_bio(seg[i].bio);
 
 	blk_finish_plug(&plug);
 
-	if (operation == READ)
+	if (operation == REQ_OP_READ)
 		blkif->st_rd_sect += preq.nr_sects;
 	else
 		blkif->st_wr_sect += preq.nr_sects;

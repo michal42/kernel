@@ -272,7 +272,7 @@ static struct sk_buff *netbk_copy_skb(struct sk_buff *skb)
 	int len;
 	int headlen;
 
-	BUG_ON(skb_shinfo(skb)->frag_list != NULL);
+	BUG_ON(skb_has_frag_list(skb));
 
 	nskb = alloc_skb(SKB_MAX_HEAD(0), GFP_ATOMIC | __GFP_NOWARN);
 	if (unlikely(!nskb))
@@ -679,6 +679,11 @@ static void netbk_gop_frag(netif_t *netif, struct netbk_rx_meta *meta,
 		copy_gop->dest.u.ref = req->gref;
 		copy_gop->len = size;
 	} else {
+		gop = npo->trans - npo->trans_prod++;
+		gop->mfn = pfn_to_mfn(page_to_pfn(page));
+		gop->domid = netif->domid;
+		gop->ref = req->gref;
+
 		if (!xen_feature(XENFEAT_auto_translated_physmap)) {
 			unsigned long new_mfn =
 				alloc_mfn(&xen_netbk[GET_GROUP_INDEX(netif)].rx);
@@ -701,11 +706,6 @@ static void netbk_gop_frag(netif_t *netif, struct netbk_rx_meta *meta,
 				MMU_MACHPHYS_UPDATE;
 			mmu->val = page_to_pfn(page);
 		}
-
-		gop = npo->trans - npo->trans_prod++;
-		gop->mfn = pfn_to_mfn(page_to_pfn(page));
-		gop->domid = netif->domid;
-		gop->ref = req->gref;
 	}
 	meta->id = req->id;
 }
@@ -1018,8 +1018,9 @@ static void net_rx_action(unsigned long group)
 		   non-linear skbs destined for flipping interfaces) */
 		if (!netif->copying_receiver) {
 			atomic_set(&(skb_shinfo(skb)->dataref), 1);
-			skb_shinfo(skb)->frag_list = NULL;
 			skb_shinfo(skb)->nr_frags = 0;
+			skb_shinfo(skb)->tx_flags = 0;
+			skb_frag_list_init(skb);
 			netbk_free_pages(nr_frags,
 					 netbk->meta + npo.meta_cons + 1);
 		}

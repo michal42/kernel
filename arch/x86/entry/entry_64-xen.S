@@ -727,7 +727,6 @@ ENTRY(error_entry)
 	testb	$3, CS+8(%rsp)
 	jz	.Lerror_kernelspace
 
-.Lerror_entry_from_usermode_swapgs:
 	/*
 	 * We entered from user mode or we're pretending to have entered
 	 * from user mode due to an IRET fault.
@@ -772,7 +771,8 @@ ENTRY(error_entry)
 	 * gsbase and proceed.  We'll fix up the exception and land in
 	 * .Lgs_change's error handler with kernel gsbase.
 	 */
-	jmp	.Lerror_entry_from_usermode_swapgs
+	SWAPGS
+	jmp .Lerror_entry_done
 
 .Lbstep_iret:
 	/* Fix truncated RIP */
@@ -829,7 +829,6 @@ do_nmi_callback:
 1:
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_OFF
-	GET_THREAD_INFO(%rcx)
 	jmp	restore_regs_and_iret
 END(do_nmi_callback)
 
@@ -841,3 +840,14 @@ ENTRY(ignore_sysret)
 	HYPERVISOR_IRET VGCF_i387_valid
 END(ignore_sysret)
 #endif
+
+ENTRY(rewind_stack_do_exit)
+	/* Prevent any naive code from trying to unwind to our caller. */
+	xorl	%ebp, %ebp
+
+	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rax
+	leaq	-TOP_OF_KERNEL_STACK_PADDING-PTREGS_SIZE(%rax), %rsp
+
+	call	do_exit
+1:	jmp 1b
+END(rewind_stack_do_exit)

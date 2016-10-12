@@ -9,7 +9,6 @@
 #include <linux/bootmem.h>
 #include <linux/init.h>
 #include <linux/io.h>
-#include <linux/module.h>
 #include <linux/pfn.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>

@@ -21,7 +21,6 @@
 #include "pciback.h"
 
 #define INVALID_EVTCHN_IRQ  (-1)
-struct workqueue_struct *xen_pcibk_wq;
 
 static char __read_mostly mode[16] = CONFIG_XEN_PCIDEV_BACKEND_DEFAULT;
 module_param_string(mode, mode, sizeof(mode), S_IRUGO);
@@ -127,8 +126,7 @@ static void xen_pcibk_disconnect(struct xen_pcibk_device *pdev)
 	/* If the driver domain started an op, make sure we complete it
 	 * before releasing the shared memory */
 
-	/* Note, the workqueue does not use spinlocks at all.*/
-	flush_workqueue(xen_pcibk_wq);
+	flush_work(&pdev->op_work);
 
 	if (pdev->sh_info != NULL) {
 #ifndef CONFIG_XEN
@@ -813,11 +811,6 @@ int __init xen_pcibk_xenbus_register(void)
 {
 	unsigned int i;
 
-	xen_pcibk_wq = create_workqueue("xen_pciback_workqueue");
-	if (!xen_pcibk_wq) {
-		pr_err("%s: create xen_pciback_workqueue failed\n", __func__);
-		return -EFAULT;
-	}
 	for (i = 0; i < ARRAY_SIZE(xen_pcibk_backends); ++i) {
 		if (!xen_pcibk_backends[i])
 			continue;
@@ -832,6 +825,5 @@ int __init xen_pcibk_xenbus_register(void)
 
 void __exit xen_pcibk_xenbus_unregister(void)
 {
-	destroy_workqueue(xen_pcibk_wq);
 	xenbus_unregister_driver(&xen_pcibk_driver);
 }

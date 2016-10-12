@@ -1,6 +1,6 @@
 #include <linux/mm.h>
 #include <linux/gfp.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/smp.h>
 #include <xen/features.h>
 #include <asm/pgalloc.h>
@@ -10,7 +10,7 @@
 #include <asm/hypervisor.h>
 #include <asm/mmu_context.h>
 
-#define PGALLOC_GFP GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO
+#define PGALLOC_GFP (GFP_KERNEL_ACCOUNT | __GFP_NOTRACK | __GFP_ZERO)
 
 #ifdef CONFIG_HIGHPTE
 #define PGALLOC_USER_GFP __GFP_HIGHMEM
@@ -22,7 +22,7 @@ gfp_t __userpte_alloc_gfp = PGALLOC_GFP | PGALLOC_USER_GFP;
 
 pte_t *pte_alloc_one_kernel(struct mm_struct *mm, unsigned long address)
 {
-	pte_t *pte = (pte_t *)__get_free_page(PGALLOC_GFP);
+	pte_t *pte = (pte_t *)__get_free_page(PGALLOC_GFP & ~__GFP_ACCOUNT);
 	if (pte)
 		make_lowmem_page_readonly(pte, XENFEAT_writable_page_tables);
 	return pte;
@@ -110,8 +110,12 @@ static void _pmd_free(struct page *page, unsigned int order)
 pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long address)
 {
 	struct page *pmd;
+	gfp_t gfp = PGALLOC_GFP;
 
-	pmd = alloc_pages(PGALLOC_GFP, 0);
+	if (mm == &init_mm)
+		gfp &= ~__GFP_ACCOUNT;
+
+	pmd = alloc_pages(gfp, 0);
 	if (!pmd)
 		return NULL;
 	if (!pgtable_pmd_page_ctor(pmd)) {

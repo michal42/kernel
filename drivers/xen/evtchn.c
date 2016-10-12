@@ -56,10 +56,12 @@
 #ifdef CONFIG_PARAVIRT_XEN
 #include <xen/events.h>
 #include <xen/evtchn.h>
+#include <xen/xen-ops.h>
 #include <asm/xen/hypervisor.h>
 #else
 #include <xen/evtchn.h>
 #include <xen/public/evtchn.h>
+#define xen_vcpu_nr(cpu) (cpu)
 #define bind_evtchn_to_irqhandler bind_caller_port_to_irqhandler
 #endif
 
@@ -79,7 +81,11 @@ struct per_user_data {
 	wait_queue_head_t evtchn_wait;
 	struct fasync_struct *evtchn_async_queue;
 	const char *name;
+
+	domid_t restrict_domid;
 };
+
+#define UNRESTRICTED_DOMID ((domid_t)-1)
 
 struct user_evtchn {
 	struct rb_node node;
@@ -452,12 +458,16 @@ static long evtchn_ioctl(struct file *file,
 		struct ioctl_evtchn_bind_virq bind;
 		struct evtchn_bind_virq bind_virq;
 
+		rc = -EACCES;
+		if (u->restrict_domid != UNRESTRICTED_DOMID)
+			break;
+
 		rc = -EFAULT;
 		if (copy_from_user(&bind, uarg, sizeof(bind)))
 			break;
 
 		bind_virq.virq = bind.virq;
-		bind_virq.vcpu = 0;
+		bind_virq.vcpu = xen_vcpu_nr(0);
 		rc = HYPERVISOR_event_channel_op(EVTCHNOP_bind_virq,
 						 &bind_virq);
 		if (rc != 0)
@@ -477,6 +487,11 @@ static long evtchn_ioctl(struct file *file,
 		if (copy_from_user(&bind, uarg, sizeof(bind)))
 			break;
 
+		rc = -EACCES;
+		if (u->restrict_domid != UNRESTRICTED_DOMID &&
+		    u->restrict_domid != bind.remote_domain)
+			break;
+
 		bind_interdomain.remote_dom  = bind.remote_domain;
 		bind_interdomain.remote_port = bind.remote_port;
 		rc = HYPERVISOR_event_channel_op(EVTCHNOP_bind_interdomain,
@@ -493,6 +508,10 @@ static long evtchn_ioctl(struct file *file,
 	case IOCTL_EVTCHN_BIND_UNBOUND_PORT: {
 		struct ioctl_evtchn_bind_unbound_port bind;
 		struct evtchn_alloc_unbound alloc_unbound;
+
+		rc = -EACCES;
+		if (u->restrict_domid != UNRESTRICTED_DOMID)
+			break;
 
 		rc = -EFAULT;
 		if (copy_from_user(&bind, uarg, sizeof(bind)))
@@ -562,6 +581,27 @@ static long evtchn_ioctl(struct file *file,
 		break;
 	}
 
+	case IOCTL_EVTCHN_RESTRICT_DOMID: {
+		struct ioctl_evtchn_restrict_domid ierd;
+
+		rc = -EACCES;
+		if (u->restrict_domid != UNRESTRICTED_DOMID)
+			break;
+
+		rc = -EFAULT;
+		if (copy_from_user(&ierd, uarg, sizeof(ierd)))
+		    break;
+
+		rc = -EINVAL;
+		if (ierd.domid == 0 || ierd.domid >= DOMID_FIRST_RESERVED)
+			break;
+
+		u->restrict_domid = ierd.domid;
+		rc = 0;
+
+		break;
+	}
+
 	default:
 		rc = -ENOSYS;
 		break;
@@ -610,6 +650,8 @@ static int evtchn_open(struct inode *inode, struct file *filp)
 	mutex_init(&u->bind_mutex);
 	mutex_init(&u->ring_cons_mutex);
 	spin_lock_init(&u->ring_prod_lock);
+
+	u->restrict_domid = UNRESTRICTED_DOMID;
 
 	filp->private_data = u;
 

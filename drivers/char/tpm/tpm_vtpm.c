@@ -484,8 +484,8 @@ struct tpm_chip *init_vtpm(struct device *dev,
 	}
 
 	chip_set_private(chip, vtpms);
-	for (rc = 0; rc < ARRAY_SIZE(chip->vendor.duration); ++rc)
-		chip->vendor.duration[rc] = TPM_LONG_TIMEOUT;
+	for (rc = 0; rc < ARRAY_SIZE(chip->duration); ++rc)
+		chip->duration[rc] = TPM_LONG_TIMEOUT;
 
 	return chip;
 

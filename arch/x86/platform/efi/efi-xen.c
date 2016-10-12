@@ -46,7 +46,6 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 #include <asm/x86_init.h>
-#include <asm/rtc.h>
 
 #include <xen/interface/platform.h>
 
@@ -323,7 +322,7 @@ int efi_set_rtc_mmss(const struct timespec *now)
 	return 0;
 }
 
-void efi_get_time(struct timespec *now)
+static void efi_get_time(struct timespec *now)
 {
 	efi_status_t status;
 	efi_time_t eft;

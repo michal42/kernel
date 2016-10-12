@@ -57,6 +57,10 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0)
+# define REQ_PREFLUSH REQ_FLUSH
+#endif
+
 #define DPRINTK(_f, _a...) pr_debug(_f, ## _a)
 
 #if 0

@@ -233,11 +233,10 @@ extern crash_vmclear_fn __rcu *crash_vmclear_loaded_vmcss;
  */
 
 #ifdef CONFIG_XEN
-#define KEXEC_ARCH_HAS_PAGE_MACROS
-#define kexec_page_to_pfn(page)  pfn_to_mfn(page_to_pfn(page))
-#define kexec_pfn_to_page(pfn)   pfn_to_page(mfn_to_pfn(pfn))
-#define kexec_virt_to_phys(addr) virt_to_machine(addr)
-#define kexec_phys_to_virt(addr) phys_to_virt(machine_to_phys(addr))
+#define page_to_boot_pfn(page)	pfn_to_mfn(page_to_pfn(page))
+#define boot_pfn_to_page(mfn)	pfn_to_page(mfn_to_pfn(mfn))
+#define phys_to_boot_phys	phys_to_machine
+#define boot_phys_to_phys	machine_to_phys
 #endif
 
 #endif /* __ASSEMBLY__ */

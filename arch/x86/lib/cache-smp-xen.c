@@ -1,5 +1,5 @@
 #include <linux/smp.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <asm/hypervisor.h>
 
 static void __wbinvd(void *dummy)

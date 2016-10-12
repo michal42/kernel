@@ -373,7 +373,7 @@ xlvbd_init_blk_queue(struct gendisk *gd, unsigned int sector_size,
 		rq->limits.discard_granularity = info->discard_granularity;
 		rq->limits.discard_alignment = info->discard_alignment;
 		if (info->feature_secdiscard)
-			queue_flag_set_unlocked(QUEUE_FLAG_SECDISCARD, rq);
+			queue_flag_set_unlocked(QUEUE_FLAG_SECERASE, rq);
 	}
 
 	/* Hard sector size and max sectors impersonate the equiv. hardware. */
@@ -512,7 +512,6 @@ xlvbd_add(blkif_sector_t capacity, int vdevice, unsigned int vdisk_info,
 	gd->first_minor = minor;
 	gd->fops = &xlvbd_block_fops;
 	gd->private_data = info;
-	gd->driverfs_dev = &(info->xbdev->dev);
 	set_capacity(gd, capacity);
 
 	if (xlvbd_init_blk_queue(gd, sector_size, physical_sector_size, info)) {
@@ -573,10 +572,10 @@ xlvbd_del(struct blkfront_info *info)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
 static const char *flush_info(unsigned int feature_flush)
 {
-	switch (feature_flush & (REQ_FLUSH | REQ_FUA)) {
-	case REQ_FLUSH | REQ_FUA:
+	switch (feature_flush & (REQ_PREFLUSH | REQ_FUA)) {
+	case REQ_PREFLUSH | REQ_FUA:
 		return "barrier";
-	case REQ_FLUSH:
+	case REQ_PREFLUSH:
 		return "flush diskcache";
 	default:
 		return "barrier or flush";
@@ -589,7 +588,7 @@ xlvbd_flush(struct blkfront_info *info)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
 # if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
-	blk_queue_write_cache(info->rq, info->feature_flush & REQ_FLUSH,
+	blk_queue_write_cache(info->rq, info->feature_flush & REQ_PREFLUSH,
 				info->feature_flush & REQ_FUA);
 # else
 	blk_queue_flush(info->rq, info->feature_flush);
@@ -641,7 +640,7 @@ int xlvbd_sysfs_addif(struct blkfront_info *info)
 	int error = 0;
 
 	for (i = 0; i < ARRAY_SIZE(xlvbd_attrs); i++) {
-		error = device_create_file(info->gd->driverfs_dev,
+		error = device_create_file(&info->xbdev->dev,
 				&xlvbd_attrs[i]);
 		if (error)
 			goto fail;
@@ -650,7 +649,7 @@ int xlvbd_sysfs_addif(struct blkfront_info *info)
 
 fail:
 	while (--i >= 0)
-		device_remove_file(info->gd->driverfs_dev, &xlvbd_attrs[i]);
+		device_remove_file(&info->xbdev->dev, &xlvbd_attrs[i]);
 	return error;
 }
 
@@ -659,7 +658,7 @@ void xlvbd_sysfs_delif(struct blkfront_info *info)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(xlvbd_attrs); i++)
-		device_remove_file(info->gd->driverfs_dev, &xlvbd_attrs[i]);
+		device_remove_file(&info->xbdev->dev, &xlvbd_attrs[i]);
 }
 
 #endif /* CONFIG_SYSFS */

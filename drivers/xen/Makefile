@@ -31,6 +31,7 @@ priv-$(CONFIG_PCI)			+= pci.o
 
 obj-$(CONFIG_XEN)			+= features.o $(xen-backend-y) $(xen-backend-m)
 obj-$(CONFIG_XEN_PRIVILEGED_GUEST)	+= $(priv-y)
+dom0-$(CONFIG_ARM64) += arm-device.o
 dom0-$(CONFIG_PCI) += pci.o
 dom0-$(CONFIG_USB_SUPPORT) += dbgp.o
 dom0-$(CONFIG_XEN_ACPI) += acpi.o $(xen-pad-y)

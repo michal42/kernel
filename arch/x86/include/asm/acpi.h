@@ -150,7 +150,6 @@ static inline void disable_acpi(void) { }
 #endif
 
 #ifdef CONFIG_ACPI_NUMA
-extern int acpi_numa;
 extern int x86_acpi_numa_init(void);
 #endif /* CONFIG_ACPI_NUMA */
 
@@ -178,5 +177,7 @@ static inline pgprot_t arch_apei_get_mem_attribute(phys_addr_t addr)
 #endif
 }
 #endif
+
+#define ACPI_TABLE_UPGRADE_MAX_PHYS (max_low_pfn_mapped << PAGE_SHIFT)
 
 #endif /* _ASM_X86_ACPI_H */

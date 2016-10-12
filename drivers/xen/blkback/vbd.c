@@ -115,7 +115,7 @@ int vbd_create(blkif_t *blkif, blkif_vdev_t handle, unsigned major,
 	if (q && test_bit(QUEUE_FLAG_WC, &q->queue_flags))
 		vbd->flush_support = true;
 
-	if (q && blk_queue_secdiscard(q))
+	if (q && blk_queue_secure_erase(q))
 		vbd->discard_secure = true;
 
 	DPRINTK("Successful creation of handle=%04x (dom=%u)\n",
@@ -135,7 +135,7 @@ int vbd_translate(struct phys_req *req, blkif_t *blkif, int operation)
 	struct vbd *vbd = &blkif->vbd;
 	int rc = -EACCES;
 
-	if ((operation != READ) && !(vbd->mode & FMODE_WRITE))
+	if ((operation != REQ_OP_READ) && !(vbd->mode & FMODE_WRITE))
 		goto out;
 
 	if (vbd->bdev == NULL) {

@@ -396,7 +396,7 @@ static struct bio *request_map_sg(pending_req_t *pending_req)
 			if (bio->bi_vcnt >= nr_vecs) {
 				bio->bi_flags &= ~(1 << BIO_SEG_VALID);
 				if (pending_req->sc_data_direction == WRITE)
-					bio->bi_rw |= REQ_WRITE;
+					bio_set_op_attrs(bio, REQ_OP_WRITE, 0);
 				bio = NULL;
 			}
 
@@ -425,7 +425,7 @@ int scsiback_cmd_exec(pending_req_t *pending_req)
 	unsigned int timeout;
 	struct bio *bio;
 	struct request *rq;
-	int write;
+	int err;
 
 	DPRINTK("%s\n", __func__);
 
@@ -435,7 +435,6 @@ int scsiback_cmd_exec(pending_req_t *pending_req)
 	else
 		timeout = VSCSIIF_TIMEOUT;
 
-	write = (data_dir == DMA_TO_DEVICE);
 	if (pending_req->nr_segments) {
 		bio = request_map_sg(pending_req);
 		if (IS_ERR(bio)) {
@@ -446,27 +445,26 @@ int scsiback_cmd_exec(pending_req_t *pending_req)
 	} else
 		bio = NULL;
 
-	if (bio) {
-		rq = blk_make_request(pending_req->sdev->request_queue, bio,
-				      GFP_KERNEL);
-		if (IS_ERR(rq)) {
-			do {
-				struct bio *b = bio->bi_next;
+	rq = blk_get_request(pending_req->sdev->request_queue,
+			     data_dir == DMA_TO_DEVICE ? WRITE : READ,
+			     GFP_KERNEL);
 
-				bio_put(bio);
-				bio = b;
-			} while (bio);
-			pr_err("scsiback: Make Request Error %ld\n",
-			       PTR_ERR(rq));
-			return PTR_ERR(rq);
-		}
-	} else {
-		rq = blk_get_request(pending_req->sdev->request_queue, write,
-				     GFP_KERNEL);
-		if (unlikely(!rq)) {
-			pr_err("scsiback: Get Request Error\n");
-			return -ENOMEM;
-		}
+	err = PTR_ERR_OR_ZERO(rq);
+	while (bio) {
+		struct bio *b = bio->bi_next;
+
+		if (!err)
+			err = blk_rq_append_bio(rq, bio);
+		else
+			bio_put(bio);
+		bio = b;
+	}
+
+	if (err) {
+		if (!IS_ERR(rq))
+			blk_put_request(rq);
+		pr_err("scsiback: Get Request Error\n");
+		return err;
 	}
 
 	rq->cmd_type = REQ_TYPE_BLOCK_PC;

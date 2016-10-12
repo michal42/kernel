@@ -768,7 +768,7 @@ config XEN_HAVE_PVMMU
 
 config XEN_EFI
 	def_bool y
-	depends on X86_64 && EFI && PARAVIRT_XEN
+	depends on (ARM || ARM64 || X86_64) && EFI && PARAVIRT_XEN
 
 config XEN_AUTO_XLATE
 	def_bool y

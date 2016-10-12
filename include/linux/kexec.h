@@ -14,6 +14,8 @@
 
 #if !defined(__ASSEMBLY__)
 
+#include <asm/io.h>
+
 #include <uapi/linux/kexec.h>
 #ifdef CONFIG_XEN
 #include <asm/hypervisor.h>
@@ -45,7 +47,7 @@
 #endif
 
 #ifndef KEXEC_CONTROL_MEMORY_GFP
-#define KEXEC_CONTROL_MEMORY_GFP GFP_KERNEL
+#define KEXEC_CONTROL_MEMORY_GFP (GFP_KERNEL | __GFP_NORETRY)
 #endif
 
 #ifndef KEXEC_CONTROL_PAGE_SIZE
@@ -77,13 +79,6 @@
 #define KEXEC_NOTE_BYTES ( (KEXEC_NOTE_HEAD_BYTES * 2) +		\
 			    KEXEC_CORE_NOTE_NAME_BYTES +		\
 			    KEXEC_CORE_NOTE_DESC_BYTES )
-#endif
-
-#ifndef KEXEC_ARCH_HAS_PAGE_MACROS
-#define kexec_page_to_pfn(page)  page_to_pfn(page)
-#define kexec_pfn_to_page(pfn)   pfn_to_page(pfn)
-#define kexec_virt_to_phys(addr) virt_to_phys(addr)
-#define kexec_phys_to_virt(addr) phys_to_virt(addr)
 #endif
 
 /*
@@ -245,12 +240,13 @@ extern void *kexec_purgatory_get_symbol_addr(struct kimage *image,
 extern void __crash_kexec(struct pt_regs *);
 extern void crash_kexec(struct pt_regs *);
 int kexec_should_crash(struct task_struct *);
+int kexec_crash_loaded(void);
 void crash_save_cpu(struct pt_regs *regs, int cpu);
 void crash_save_vmcoreinfo(void);
 void arch_crash_save_vmcoreinfo(void);
 __printf(1, 2)
 void vmcoreinfo_append_str(const char *fmt, ...);
-unsigned long paddr_vmcoreinfo_note(void);
+phys_addr_t paddr_vmcoreinfo_note(void);
 
 #define VMCOREINFO_OSRELEASE(value) \
 	vmcoreinfo_append_str("OSRELEASE=%s\n", value)
@@ -342,6 +338,44 @@ int __weak arch_kexec_apply_relocations(const Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 void arch_kexec_protect_crashkres(void);
 void arch_kexec_unprotect_crashkres(void);
 
+#ifndef page_to_boot_pfn
+static inline unsigned long page_to_boot_pfn(struct page *page)
+{
+	return page_to_pfn(page);
+}
+#endif
+
+#ifndef boot_pfn_to_page
+static inline struct page *boot_pfn_to_page(unsigned long boot_pfn)
+{
+	return pfn_to_page(boot_pfn);
+}
+#endif
+
+#ifndef phys_to_boot_phys
+static inline unsigned long phys_to_boot_phys(phys_addr_t phys)
+{
+	return phys;
+}
+#endif
+
+#ifndef boot_phys_to_phys
+static inline phys_addr_t boot_phys_to_phys(unsigned long boot_phys)
+{
+	return boot_phys;
+}
+#endif
+
+static inline unsigned long virt_to_boot_phys(void *addr)
+{
+	return phys_to_boot_phys(__pa((unsigned long)addr));
+}
+
+static inline void *boot_phys_to_virt(unsigned long entry)
+{
+	return phys_to_virt(boot_phys_to_phys(entry));
+}
+
 #else /* !CONFIG_KEXEC_CORE */
 struct pt_regs;
 struct task_struct;
@@ -357,6 +391,7 @@ static inline void crash_kexec(struct pt_regs *regs) {
 #endif
 }
 static inline int kexec_should_crash(struct task_struct *p) { return 0; }
+static inline int kexec_crash_loaded(void) { return 0; }
 #define kexec_in_progress false
 #endif /* CONFIG_KEXEC_CORE */
 

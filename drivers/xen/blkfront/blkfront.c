@@ -617,7 +617,7 @@ static void connect(struct blkfront_info *info)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
 	info->feature_flush = 0;
 	if (err > 0 && barrier)
-		info->feature_flush = REQ_FLUSH | REQ_FUA;
+		info->feature_flush = REQ_PREFLUSH | REQ_FUA;
 	/*
 	 * And if there is "feature-flush-cache" use that above
 	 * barriers.
@@ -625,7 +625,7 @@ static void connect(struct blkfront_info *info)
 	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
 			   "feature-flush-cache", "%d", &flush);
 	if (err > 0 && flush)
-		info->feature_flush = REQ_FLUSH;
+		info->feature_flush = REQ_PREFLUSH;
 #else
 	if (err <= 0)
 		info->feature_flush = QUEUE_ORDERED_DRAIN;
@@ -664,7 +664,7 @@ static void connect(struct blkfront_info *info)
 	kick_pending_request_queues(info);
 	spin_unlock_irq(&info->io_lock);
 
-	add_disk(info->gd);
+	device_add_disk(&info->xbdev->dev, info->gd);
 
 	info->is_ready = 1;
 
@@ -1163,12 +1163,16 @@ static int blkif_queue_request(struct request *req)
 	ring_req->operation = rq_data_dir(req) ?
 		BLKIF_OP_WRITE : BLKIF_OP_READ;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(4,8,0)
+	if (req_op(req) == REQ_OP_FLUSH || (req->cmd_flags & REQ_FUA))
+# else
 	if (req->cmd_flags & (REQ_FLUSH | REQ_FUA))
-		switch (info->feature_flush & (REQ_FLUSH | REQ_FUA)) {
-		case REQ_FLUSH | REQ_FUA:
+# endif
+		switch (info->feature_flush & (REQ_PREFLUSH | REQ_FUA)) {
+		case REQ_PREFLUSH | REQ_FUA:
 			ring_req->operation = BLKIF_OP_WRITE_BARRIER;
 			break;
-		case REQ_FLUSH:
+		case REQ_PREFLUSH:
 			ring_req->operation = BLKIF_OP_FLUSH_DISKCACHE;
 			break;
 		}
@@ -1179,7 +1183,8 @@ static int blkif_queue_request(struct request *req)
 	if (req->cmd_type == REQ_TYPE_BLOCK_PC)
 		ring_req->operation = BLKIF_OP_PACKET;
 
-	if (unlikely(req->cmd_flags & (REQ_DISCARD | REQ_SECURE))) {
+	if (unlikely(req_op(req) == REQ_OP_DISCARD) ||
+	    unlikely(req_op(req) == REQ_OP_SECURE_ERASE)) {
 		struct blkif_request_discard *discard = (void *)ring_req;
 
 		/* id, sector_number and handle are set above. */
@@ -1187,7 +1192,8 @@ static int blkif_queue_request(struct request *req)
 		discard->flag = 0;
 		discard->handle = info->handle;
 		discard->nr_sectors = blk_rq_sectors(req);
-		if ((req->cmd_flags & REQ_SECURE) && info->feature_secdiscard)
+		if (req_op(req) == REQ_OP_SECURE_ERASE &&
+		    info->feature_secdiscard)
 			discard->flag = BLKIF_DISCARD_SECURE;
 	} else {
 		struct blkif_request_segment *segs;
@@ -1275,8 +1281,13 @@ void do_blkif_request(struct request_queue *rq)
 
 		if ((req->cmd_type != REQ_TYPE_FS &&
 		     (req->cmd_type != REQ_TYPE_BLOCK_PC || req->cmd_len)) ||
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,8,0)
+		    (((req_op(req) == REQ_OP_FLUSH ? REQ_PREFLUSH : 0) |
+		      (req->cmd_flags & REQ_FUA)) >
+#else
 		    ((req->cmd_flags & (REQ_FLUSH | REQ_FUA)) >
-		     (info->feature_flush & (REQ_FLUSH | REQ_FUA)))) {
+#endif
+		     (info->feature_flush & (REQ_PREFLUSH | REQ_FUA)))) {
 			req->errors = (DID_ERROR << 16) |
 				      (DRIVER_INVALID << 24);
 			__blk_end_request_all(req, -EOPNOTSUPP);
@@ -1409,7 +1420,7 @@ static irqreturn_t blkif_int(int irq, void *dev_id)
 				info->feature_discard = 0;
 				info->feature_secdiscard = 0;
 				queue_flag_clear(QUEUE_FLAG_DISCARD, rq);
-				queue_flag_clear(QUEUE_FLAG_SECDISCARD, rq);
+				queue_flag_clear(QUEUE_FLAG_SECERASE, rq);
 			}
 			__blk_end_request_all(req, ret);
 			break;

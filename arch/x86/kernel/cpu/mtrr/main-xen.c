@@ -1,7 +1,7 @@
 #define DEBUG
 
 #include <linux/uaccess.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/mutex.h>
 #include <linux/init.h>
 

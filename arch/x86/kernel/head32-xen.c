@@ -23,8 +23,6 @@ static void __init i386_default_early_setup(void)
 	x86_init.resources.reserve_resources = i386_reserve_resources;
 #ifndef CONFIG_XEN
 	x86_init.mpparse.setup_ioapic_ids = setup_ioapic_ids_from_mpc;
-
-	reserve_ebda_region();
 #endif
 }
 

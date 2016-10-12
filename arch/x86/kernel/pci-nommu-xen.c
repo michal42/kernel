@@ -23,7 +23,7 @@ do {							\
 static dma_addr_t
 gnttab_map_page(struct device *dev, struct page *page, unsigned long offset,
 		size_t size, enum dma_data_direction dir,
-		struct dma_attrs *attrs)
+		unsigned long attrs)
 {
 	dma_addr_t dma;
 
@@ -39,14 +39,14 @@ gnttab_map_page(struct device *dev, struct page *page, unsigned long offset,
 
 static void
 gnttab_unmap_page(struct device *dev, dma_addr_t dma_addr, size_t size,
-		  enum dma_data_direction dir, struct dma_attrs *attrs)
+		  enum dma_data_direction dir, unsigned long attrs)
 {
 	gnttab_dma_unmap_page(dma_addr);
 }
 
 static int
 gnttab_map_sg(struct device *hwdev, struct scatterlist *sgl, int nents,
-	      enum dma_data_direction dir, struct dma_attrs *attrs)
+	      enum dma_data_direction dir, unsigned long attrs)
 {
 	unsigned int i;
 	struct scatterlist *sg;
@@ -66,7 +66,7 @@ gnttab_map_sg(struct device *hwdev, struct scatterlist *sgl, int nents,
 
 static void
 gnttab_unmap_sg(struct device *hwdev, struct scatterlist *sgl, int nents,
-		enum dma_data_direction dir, struct dma_attrs *attrs)
+		enum dma_data_direction dir, unsigned long attrs)
 {
 	unsigned int i;
 	struct scatterlist *sg;

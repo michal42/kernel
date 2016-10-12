@@ -682,6 +682,19 @@ static void init_amd_gh(struct cpuinfo_x86 *c)
 #endif
 }
 
+#define MSR_AMD64_DE_CFG	0xC0011029
+
+static void init_amd_ln(struct cpuinfo_x86 *c)
+{
+#ifndef CONFIG_XEN
+	/*
+	 * Apply erratum 665 fix unconditionally so machines without a BIOS
+	 * fix work.
+	 */
+	msr_set_bit(MSR_AMD64_DE_CFG, 31);
+#endif
+}
+
 static void init_amd_bd(struct cpuinfo_x86 *c)
 {
 #ifndef CONFIG_XEN
@@ -745,6 +758,7 @@ static void init_amd(struct cpuinfo_x86 *c)
 	case 6:	   init_amd_k7(c); break;
 	case 0xf:  init_amd_k8(c); break;
 	case 0x10: init_amd_gh(c); break;
+	case 0x12: init_amd_ln(c); break;
 	case 0x15: init_amd_bd(c); break;
 	}
 

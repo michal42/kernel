@@ -15,14 +15,6 @@ DECLARE_PER_CPU(int, cpu_number);
 #define raw_smp_processor_id() this_cpu_read_4(cpu_number)
 #define safe_smp_processor_id() smp_processor_id()
 
-#ifdef CONFIG_X86_64_SMP
-#define stack_smp_processor_id()					\
-({									\
-	struct thread_info *ti;						\
-	__asm__("andq %%rsp,%0; ":"=r" (ti) : "0" (CURRENT_MASK));	\
-	ti->cpu;							\
-})
-#endif
 
 #ifdef CONFIG_DEBUG_PREEMPT
 extern unsigned int debug_smp_processor_id(void);
