@@ -28,6 +28,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/efi.h>
+#include <linux/vmalloc.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1429,8 +1430,10 @@ int snapshot_image_verify(void)
 	size_t digest_size, desc_size;
 	int i, ret = 0;
 
-	if (!h_buf)
-		return 0;
+	if (!h_buf) {
+		ret = -ENOMEM;
+		goto forward_ret;
+	}
 
 	ret = get_hibernation_key(&key);
 	if (ret)
@@ -1480,7 +1483,7 @@ int snapshot_image_verify(void)
 		ret = -EKEYREJECTED;
 
 error_shash:
-	kfree(h_buf);
+	vfree(h_buf);
 	kfree(digest);
 error_setkey:
 error_digest:
@@ -1501,7 +1504,7 @@ forward_ret:
 
 static void alloc_h_buf(void)
 {
-	h_buf = kmalloc(sizeof(void *) * nr_copy_pages, GFP_KERNEL);
+	h_buf = vmalloc(sizeof(void *) * nr_copy_pages);
 	if (!h_buf)
 		pr_err("PM: Allocate buffer point array failed\n");
 }
