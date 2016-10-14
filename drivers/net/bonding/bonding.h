@@ -40,6 +40,10 @@
 
 #define BOND_DEFAULT_MIIMON	100
 
+#ifndef __long_aligned
+#define __long_aligned __attribute__((aligned((sizeof(long)))))
+#endif
+
 #define IS_UP(dev)					   \
 	      ((((dev)->flags & IFF_UP) == IFF_UP)	&& \
 	       netif_running(dev)			&& \
