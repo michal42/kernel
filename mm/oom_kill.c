@@ -390,10 +390,12 @@ static void dump_tasks(const struct mem_cgroup *memcg, const nodemask_t *nodemas
 static void dump_header(struct task_struct *p, gfp_t gfp_mask, int order,
 			struct mem_cgroup *memcg, const nodemask_t *nodemask)
 {
+	const nodemask_t *nm = (nodemask) ? nodemask : &cpuset_current_mems_allowed;
+
 	task_lock(current);
-	pr_warning("%s invoked oom-killer: gfp_mask=0x%x, order=%d, "
+	pr_warning("%s invoked oom-killer: gfp_mask=0x%x, nodemask=%*pbl, order=%d, "
 		"oom_score_adj=%hd\n",
-		current->comm, gfp_mask, order,
+		current->comm, gfp_mask, nodemask_pr_args(nm), order,
 		current->signal->oom_score_adj);
 	cpuset_print_task_mems_allowed(current);
 	task_unlock(current);
