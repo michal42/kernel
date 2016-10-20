@@ -3414,7 +3414,7 @@ nfs4_proc_create(struct inode *dir, struct dentry *dentry, struct iattr *sattr,
 	int opened = 0;
 	int status = 0;
 
-	ctx = alloc_nfs_open_context(dentry, FMODE_READ, NULL);
+	ctx = alloc_nfs_open_context(dentry, FMODE_READ);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 

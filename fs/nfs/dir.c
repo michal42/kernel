@@ -1465,7 +1465,10 @@ static fmode_t flags_to_mode(int flags)
 
 static struct nfs_open_context *create_nfs_open_context(struct dentry *dentry, int open_flags, struct file *filp)
 {
-	return alloc_nfs_open_context(dentry, flags_to_mode(open_flags), filp);
+	struct nfs_open_context *ctx = alloc_nfs_open_context(dentry, flags_to_mode(open_flags));
+	if (!IS_ERR_OR_NULL(ctx))
+		ctx->flock_owner = (fl_owner_t)filp;
+	return ctx;
 }
 
 static int do_open(struct inode *inode, struct file *filp)
