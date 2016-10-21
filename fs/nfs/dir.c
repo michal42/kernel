@@ -1463,9 +1463,12 @@ static fmode_t flags_to_mode(int flags)
 	return res;
 }
 
-static struct nfs_open_context *create_nfs_open_context(struct dentry *dentry, int open_flags)
+static struct nfs_open_context *create_nfs_open_context(struct dentry *dentry, int open_flags, struct file *filp)
 {
-	return alloc_nfs_open_context(dentry, flags_to_mode(open_flags));
+	struct nfs_open_context *ctx = alloc_nfs_open_context(dentry, flags_to_mode(open_flags));
+	if (!IS_ERR_OR_NULL(ctx))
+		ctx->flock_owner = (fl_owner_t)filp;
+	return ctx;
 }
 
 static int do_open(struct inode *inode, struct file *filp)
@@ -1540,7 +1543,7 @@ int nfs_atomic_open(struct inode *dir, struct dentry *dentry,
 		attr.ia_size = 0;
 	}
 
-	ctx = create_nfs_open_context(dentry, open_flags);
+	ctx = create_nfs_open_context(dentry, open_flags, file);
 	err = PTR_ERR(ctx);
 	if (IS_ERR(ctx))
 		goto out;

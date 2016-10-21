@@ -90,6 +90,9 @@ struct nfs_open_context {
 
 	struct list_head list;
 	struct nfs4_threshold	*mdsthreshold;
+#ifndef __GENKSYMS__
+	fl_owner_t flock_owner;
+#endif
 };
 
 struct nfs_open_dir_context {

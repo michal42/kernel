@@ -784,19 +784,33 @@ void nfs4_close_sync(struct nfs4_state *state, fmode_t fmode)
 
 /*
  * Search the state->lock_states for an existing lock_owner
- * that is compatible with current->files
+ * that is compatible with either of the given owners.
+ * If the second is non-zero, then the first refers to a Posix-lock
+ * owner (current->files) and the second refers to a flock/OFD
+ * owner (struct file*).  In that case, prefer a match for the first
+ * owner.
+ * If both sorts of locks are held on the one file we cannot know
+ * which stateid was intended to be used, so a "correct" choice cannot
+ * be made.  Failing that, a "consistent" choice is preferable.  The
+ * consistent choice we make is to prefer the first owner, that of a
+ * Posix lock.
  */
 static struct nfs4_lock_state *
-__nfs4_find_lock_state(struct nfs4_state *state, fl_owner_t fl_owner)
+__nfs4_find_lock_state(struct nfs4_state *state,
+		       fl_owner_t fl_owner, fl_owner_t fl_owner2)
 {
-	struct nfs4_lock_state *pos;
+	struct nfs4_lock_state *pos, *ret = NULL;
 	list_for_each_entry(pos, &state->lock_states, ls_locks) {
-		if (pos->ls_owner != fl_owner)
-			continue;
-		atomic_inc(&pos->ls_count);
-		return pos;
+		if (pos->ls_owner == fl_owner) {
+			ret = pos;
+			break;
+		}
+		if (pos->ls_owner == fl_owner2)
+			ret = pos;
 	}
-	return NULL;
+	if (ret)
+		atomic_inc(&ret->ls_count);
+	return ret;
 }
 
 /*
@@ -844,7 +858,7 @@ static struct nfs4_lock_state *nfs4_get_lock_state(struct nfs4_state *state, fl_
 	
 	for(;;) {
 		spin_lock(&state->state_lock);
-		lsp = __nfs4_find_lock_state(state, owner);
+		lsp = __nfs4_find_lock_state(state, owner, 0);
 		if (lsp != NULL)
 			break;
 		if (new != NULL) {
@@ -926,22 +940,23 @@ int nfs4_set_lock_state(struct nfs4_state *state, struct file_lock *fl)
 
 static int nfs4_copy_lock_stateid(nfs4_stateid *dst,
 		struct nfs4_state *state,
-		const struct nfs_lockowner *lockowner)
+		const struct nfs_lock_context *l_ctx)
 {
 	struct nfs4_lock_state *lsp;
-	fl_owner_t fl_owner;
+	fl_owner_t fl_owner, fl_flock_owner;
 	int ret = -ENOENT;
 
-
-	if (lockowner == NULL)
+	if (l_ctx == NULL)
 		goto out;
 
 	if (test_bit(LK_STATE_IN_USE, &state->flags) == 0)
 		goto out;
 
-	fl_owner = lockowner->l_owner;
+	fl_owner = l_ctx->lockowner.l_owner;
+	fl_flock_owner = l_ctx->open_context->flock_owner;
+
 	spin_lock(&state->state_lock);
-	lsp = __nfs4_find_lock_state(state, fl_owner);
+	lsp = __nfs4_find_lock_state(state, fl_owner, fl_flock_owner);
 	if (lsp && test_bit(NFS_LOCK_LOST, &lsp->ls_flags))
 		ret = -EIO;
 	else if (lsp != NULL && test_bit(NFS_LOCK_INITIALIZED, &lsp->ls_flags) != 0) {
@@ -982,9 +997,9 @@ static int nfs4_copy_open_stateid(nfs4_stateid *dst, struct nfs4_state *state)
  * requests.
  */
 int nfs4_select_rw_stateid(nfs4_stateid *dst, struct nfs4_state *state,
-		fmode_t fmode, const struct nfs_lockowner *lockowner)
+		fmode_t fmode, const struct nfs_lock_context *l_ctx)
 {
-	int ret = nfs4_copy_lock_stateid(dst, state, lockowner);
+	int ret = nfs4_copy_lock_stateid(dst, state, l_ctx);
 	if (ret == -EIO)
 		/* A lost lock - don't even consider delegations */
 		goto out;

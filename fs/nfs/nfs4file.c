@@ -48,6 +48,7 @@ nfs4_file_open(struct inode *inode, struct file *filp)
 	err = PTR_ERR(ctx);
 	if (IS_ERR(ctx))
 		goto out;
+	ctx->flock_owner = (fl_owner_t)filp;
 
 	attr.ia_valid = ATTR_OPEN;
 	if (openflags & O_TRUNC) {
