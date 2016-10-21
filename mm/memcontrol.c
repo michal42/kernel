@@ -4198,9 +4198,9 @@ static unsigned long tree_stat(struct mem_cgroup *memcg,
 	return val;
 }
 
-static inline u64 mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
+static inline unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 {
-	u64 val;
+	unsigned long val;
 
 	if (mem_cgroup_is_root(memcg)) {
 		val = tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
@@ -4213,7 +4213,7 @@ static inline u64 mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 		else
 			val = page_counter_read(&memcg->memsw);
 	}
-	return val << PAGE_SHIFT;
+	return val;
 }
 
 enum {
@@ -4252,9 +4252,9 @@ static ssize_t mem_cgroup_read(struct cgroup_subsys_state *css,
 	switch (MEMFILE_ATTR(cft->private)) {
 	case RES_USAGE:
 		if (counter == &memcg->memory)
-			val = mem_cgroup_usage(memcg, false);
+			val = (u64)mem_cgroup_usage(memcg, false) * PAGE_SIZE;
 		else if (counter == &memcg->memsw)
-			val = mem_cgroup_usage(memcg, true);
+			val = (u64)mem_cgroup_usage(memcg, true) * PAGE_SIZE;
 		else
 			val = (u64)page_counter_read(counter) * PAGE_SIZE;
 		break;
