@@ -2522,7 +2522,6 @@ static void __dm_destroy(struct mapped_device *md, bool wait)
 		dm_table_presuspend_targets(map);
 		dm_table_postsuspend_targets(map);
 	}
-
 	/* dm_put_live_table must be before msleep, otherwise deadlock is possible */
 	dm_put_live_table(md, srcu_idx);
 	mutex_unlock(&md->suspend_lock);
