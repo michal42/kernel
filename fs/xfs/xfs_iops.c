@@ -498,9 +498,7 @@ xfs_vn_change_ok(
 	struct dentry	*dentry,
 	struct iattr	*iattr)
 {
-	struct inode		*inode = dentry->d_inode;
-	struct xfs_inode	*ip = XFS_I(inode);
-	struct xfs_mount	*mp = ip->i_mount;
+	struct xfs_mount	*mp = XFS_I(dentry->d_inode)->i_mount;
 	int error;
 
 	if (mp->m_flags & XFS_MOUNT_RDONLY)
@@ -509,7 +507,7 @@ xfs_vn_change_ok(
 	if (XFS_FORCED_SHUTDOWN(mp))
 		return XFS_ERROR(EIO);
 
-	error = -inode_change_ok(inode, iattr);
+	error = -setattr_prepare(dentry, iattr);
 	if (error)
 		return XFS_ERROR(error);
 	return 0;
@@ -519,7 +517,7 @@ xfs_vn_change_ok(
  * Set non-size attributes of an inode.
  *
  * Caution: The caller of this function is responsible for calling
- * inode_change_ok() or otherwise verifying the change is fine.
+ * setattr_prepare() or otherwise verifying the change is fine.
  */
 int
 xfs_setattr_nonsize(
@@ -758,7 +756,7 @@ xfs_vn_setattr_nonsize(
  * Truncate file.  Must have write permission and not be a directory.
  *
  * Caution: The caller of this function is responsible for calling
- * inode_change_ok() or otherwise verifying the change is fine.
+ * setattr_prepare() or otherwise verifying the change is fine.
  */
 int
 xfs_setattr_size(
