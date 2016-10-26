@@ -671,7 +671,8 @@ xfs_ioc_space(
 	error = mnt_want_write_file(filp);
 	if (error)
 		return error;
-	error = xfs_change_file_space(ip, cmd, bf, filp->f_pos, attr_flags);
+	error = xfs_change_file_space(filp->f_dentry, cmd, bf, filp->f_pos,
+				      attr_flags);
 	mnt_drop_write_file(filp);
 	return -error;
 }

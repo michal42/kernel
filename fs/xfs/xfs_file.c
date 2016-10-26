@@ -1015,7 +1015,7 @@ xfs_file_fallocate(
 	if (file->f_flags & O_DSYNC)
 		attr_flags |= XFS_ATTR_SYNC;
 
-	error = -xfs_change_file_space(ip, cmd, &bf, 0, attr_flags);
+	error = -xfs_change_file_space(file->f_dentry, cmd, &bf, 0, attr_flags);
 	if (error)
 		goto out_unlock;
 
@@ -1025,7 +1025,8 @@ xfs_file_fallocate(
 
 		iattr.ia_valid = ATTR_SIZE;
 		iattr.ia_size = new_size;
-		error = -xfs_setattr_size(ip, &iattr, attr_flags);
+		error = -xfs_vn_setattr_size(file->f_dentry, &iattr,
+					     attr_flags);
 	}
 
 out_unlock:
