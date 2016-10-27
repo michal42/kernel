@@ -296,7 +296,7 @@ bool nfs_generic_pg_test(struct nfs_pageio_descriptor *desc, struct nfs_page *pr
 	 * for it without upsetting the slab allocator.
 	 */
 	if (((desc->pg_count + req->wb_bytes) >> PAGE_SHIFT) *
-			sizeof(struct page) > PAGE_SIZE)
+			sizeof(struct page *) > PAGE_SIZE)
 		return false;
 
 	return desc->pg_count + req->wb_bytes <= desc->pg_bsize;
