@@ -2199,15 +2199,8 @@ static int _nfs4_open_and_get_state(struct nfs4_opendata *opendata,
 	seq = raw_seqcount_begin(&sp->so_reclaim_seqcount);
 
 	ret = _nfs4_proc_open(opendata);
-	if (ret != 0) {
-		if (ret == -ENOENT && opendata->dentry->d_inode == NULL) {
-			d_drop(opendata->dentry);
-			d_add(opendata->dentry, NULL);
-			nfs_set_verifier(opendata->dentry,
-					 nfs_save_change_attribute(opendata->dir->d_inode));
-		}
+	if (ret != 0)
 		goto out;
-	}
 
 	state = nfs4_opendata_to_nfs4_state(opendata);
 	ret = PTR_ERR(state);
@@ -5724,16 +5717,19 @@ static int _nfs4_proc_setlk(struct nfs4_state *state, int cmd, struct file_lock 
 	status = do_vfs_lock(request->fl_file, request);
 	if (status < 0)
 		goto out;
+	mutex_lock(&sp->so_delegreturn_mutex);
 	down_read(&nfsi->rwsem);
 	if (test_bit(NFS_DELEGATED_STATE, &state->flags)) {
 		/* Yes: cache locks! */
 		/* ...but avoid races with delegation recall... */
 		request->fl_flags = fl_flags & ~FL_SLEEP;
 		status = do_vfs_lock(request->fl_file, request);
+		mutex_unlock(&sp->so_delegreturn_mutex);
 		goto out_unlock;
 	}
 	seq = raw_seqcount_begin(&sp->so_reclaim_seqcount);
 	up_read(&nfsi->rwsem);
+	mutex_unlock(&sp->so_delegreturn_mutex);
 	status = _nfs4_do_setlk(state, cmd, request, NFS_LOCK_NEW);
 	if (status != 0)
 		goto out;
