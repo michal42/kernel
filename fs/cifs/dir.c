@@ -47,18 +47,33 @@ renew_parental_timestamps(struct dentry *direntry)
 
 char *
 cifs_build_path_to_root(struct smb_vol *vol, struct cifs_sb_info *cifs_sb,
-			struct cifs_tcon *tcon)
+			struct cifs_tcon *tcon, int add_treename)
 {
 	int pplen = vol->prepath ? strlen(vol->prepath) + 1 : 0;
+	int dfsplen;
 	char *full_path = NULL;
 
-	full_path = kmalloc(pplen + 1, GFP_KERNEL);
+	/* if no prefix path, simply set path to the root of share to "" */
+	if (pplen == 0) {
+		full_path = kzalloc(1, GFP_KERNEL);
+		return full_path;
+	}
+
+	if (add_treename)
+		dfsplen = strnlen(tcon->treeName, MAX_TREE_SIZE + 1);
+	else
+		dfsplen = 0;
+
+	full_path = kmalloc(dfsplen + pplen + 1, GFP_KERNEL);
 	if (full_path == NULL)
 		return full_path;
 
-	strncpy(full_path, vol->prepath, pplen);
+	if (dfsplen)
+		strncpy(full_path, tcon->treeName, dfsplen);
+	full_path[dfsplen] = CIFS_DIR_SEP(cifs_sb);
+	strncpy(full_path + dfsplen + 1, vol->prepath, pplen);
 	convert_delimiter(full_path, CIFS_DIR_SEP(cifs_sb));
-	full_path[pplen] = 0; /* add trailing null */
+	full_path[dfsplen + pplen] = 0; /* add trailing null */
 	return full_path;
 }
 
@@ -69,6 +84,7 @@ build_path_from_dentry(struct dentry *direntry)
 	struct dentry *temp;
 	int namelen;
 	int dfsplen;
+	int pplen = 0;
 	char *full_path;
 	char dirsep;
 	struct cifs_sb_info *cifs_sb = CIFS_SB(direntry->d_sb);
@@ -80,8 +96,12 @@ build_path_from_dentry(struct dentry *direntry)
 		dfsplen = strnlen(tcon->treeName, MAX_TREE_SIZE + 1);
 	else
 		dfsplen = 0;
+
+	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_USE_PREFIX_PATH)
+		pplen = cifs_sb->prepath ? strlen(cifs_sb->prepath) + 1 : 0;
+
 cifs_bp_rename_retry:
-	namelen = dfsplen;
+	namelen = dfsplen + pplen;
 	seq = read_seqbegin(&rename_lock);
 	rcu_read_lock();
 	for (temp = direntry; !IS_ROOT(temp);) {
@@ -122,7 +142,7 @@ cifs_bp_rename_retry:
 		}
 	}
 	rcu_read_unlock();
-	if (namelen != dfsplen || read_seqretry(&rename_lock, seq)) {
+	if (namelen != dfsplen + pplen || read_seqretry(&rename_lock, seq)) {
 		cifs_dbg(FYI, "did not end path lookup where expected. namelen=%ddfsplen=%d\n",
 			 namelen, dfsplen);
 		/* presumably this is only possible if racing with a rename
@@ -137,6 +157,17 @@ cifs_bp_rename_retry:
 	   since the '\' is a valid posix character so we can not switch
 	   those safely to '/' if any are found in the middle of the prepath */
 	/* BB test paths to Windows with '/' in the midst of prepath */
+
+	if (pplen) {
+		int i;
+
+		cifs_dbg(FYI, "using cifs_sb prepath <%s>\n", cifs_sb->prepath);
+		memcpy(full_path+dfsplen+1, cifs_sb->prepath, pplen-1);
+		full_path[dfsplen] = '\\';
+		for (i = 0; i < pplen-1; i++)
+			if (full_path[dfsplen+1+i] == '/')
+				full_path[dfsplen+1+i] = CIFS_DIR_SEP(cifs_sb);
+	}
 
 	if (dfsplen) {
 		strncpy(full_path, tcon->treeName, dfsplen);
