@@ -24,7 +24,11 @@ enum mmc_packed_type {
 
 struct mmc_packed {
 	struct list_head	list;
+#ifdef __GENKSYMS__
 	u32			cmd_hdr[1024];
+#else
+	__le32			cmd_hdr[1024];
+#endif
 	unsigned int		blocks;
 	u8			nr_entries;
 	u8			retries;

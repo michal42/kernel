@@ -189,13 +189,13 @@ static int reiserfs_quota_on_mount(struct super_block *, int);
 #endif
 
 /*
- *look for uncompleted unlinks and truncates and complete them
+ * Look for uncompleted unlinks and truncates and complete them
  *
- * Called with superblock write locked.  If quotas are enabled,
- * we have to release/retake lest we call dquot_quota_on_mount(),
- * proceed to schedule_on_each_cpu() and deadlock waiting for
- * the per cpu worklets to complete flush_async_commits() that
- * in turn wait for the superblock write lock.
+ * Called with superblock write locked.  If quotas are enabled, we have to
+ * release/retake lest we call dquot_quota_on_mount(), proceed to
+ * schedule_on_each_cpu() in invalidate_bdev() and deadlock waiting for the per
+ * cpu worklets to complete flush_async_commits() that in turn wait for the
+ * superblock write lock.
  */
 static int finish_unfinished(struct super_block *s)
 {

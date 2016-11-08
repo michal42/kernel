@@ -150,9 +150,6 @@ int iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
 		  __be32 src, __be32 dst, __u8 proto,
 		  __u8 tos, __u8 ttl, __be16 df, bool xnet);
 
-struct sk_buff *iptunnel_handle_offloads(struct sk_buff *skb, bool gre_csum,
-					 int gso_type_mask);
-
 static inline int iptunnel_pull_offloads(struct sk_buff *skb)
 {
 	if (skb_is_gso(skb)) {
@@ -168,6 +165,9 @@ static inline int iptunnel_pull_offloads(struct sk_buff *skb)
 	skb->encapsulation = 0;
 	return 0;
 }
+
+struct sk_buff *iptunnel_handle_offloads(struct sk_buff *skb, bool gre_csum,
+					 int gso_type_mask);
 
 static inline void iptunnel_xmit_stats(int err,
 				       struct net_device_stats *err_stats,
