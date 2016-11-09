@@ -621,7 +621,7 @@ static int msix_capability_init(struct pci_dev *dev,
 		int avail = i - 1;
 		for (j = --i; j >= 0; j--) {
 			list_for_each_entry(pirq_entry, &dev->msi_list, list)
-				if (pirq_entry->entry_nr == entries[i].entry)
+				if (pirq_entry->entry_nr == entries[j].entry)
 					break;
 			msi_unmap_pirq(dev, entries[j].vector, 1,
 				       msi_dev_entry->owner,
