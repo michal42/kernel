@@ -1046,6 +1046,9 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 				    slots, skb->len);
 		if (skb_linearize(skb))
 			goto drop;
+		data = skb->data;
+		offset = offset_in_page(data);
+		len = skb_headlen(skb);
 	}
 
 	spin_lock_irqsave(&np->tx_lock, flags);
