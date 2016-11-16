@@ -31,6 +31,7 @@
 #include "async-thread.h"
 #include "free-space-cache.h"
 #include "inode-map.h"
+#include "qgroup.h"
 
 /*
  * backref_node, mapping_node and tree_block start with this
@@ -1883,6 +1884,29 @@ again:
 		ret = btrfs_search_slot(trans, src, &key, path, 0, 1);
 		path->lowest_level = 0;
 		BUG_ON(ret);
+
+		/*
+		 * Info qgroup to trace both subtrees.
+		 *
+		 * We must trace both trees.
+		 * 1) Tree reloc subtree
+		 *    If not traced, we will leak data numbers
+		 * 2) Fs subtree
+		 *    If not traced, we will double count old data
+		 *    and tree block numbers, if current trans doesn't free
+		 *    data reloc tree inode.
+		 */
+		ret = btrfs_qgroup_trace_subtree(trans, src, parent,
+				btrfs_header_generation(parent),
+				btrfs_header_level(parent));
+		if (ret < 0)
+			break;
+		ret = btrfs_qgroup_trace_subtree(trans, dest,
+				path->nodes[level],
+				btrfs_header_generation(path->nodes[level]),
+				btrfs_header_level(path->nodes[level]));
+		if (ret < 0)
+			break;
 
 		/*
 		 * swap blocks in fs tree and reloc tree.
