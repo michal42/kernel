@@ -4431,8 +4431,6 @@ int iscsit_close_connection(
 	     atomic_read(&sess->session_fall_back_to_erl0)) {
 		spin_unlock_bh(&sess->conn_lock);
 		target_put_session(sess->se_sess);
-                if (atomic_read(&sess->sleep_on_sess_wait_comp))
-                        complete(&sess->session_wait_comp);
 
 		return 0;
 	} else if (atomic_read(&sess->session_logout)) {
