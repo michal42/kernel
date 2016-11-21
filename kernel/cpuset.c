@@ -713,6 +713,7 @@ restart:
 			struct cpuset *b = csa[j];
 
 			if (apn == b->pn) {
+				cpumask_or(dp, dp, b->cpus_allowed);
 				cpumask_and(dp, dp, non_isolated_cpus);
 				if (dattr)
 					update_domain_attr_tree(dattr + nslot, b);
