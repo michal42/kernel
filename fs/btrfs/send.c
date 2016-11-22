@@ -267,6 +267,39 @@ struct name_cache_entry {
 	char name[];
 };
 
+static void inconsistent_snapshot_error(struct send_ctx *sctx,
+					enum btrfs_compare_tree_result result,
+					const char *what)
+{
+	const char *result_string;
+
+	switch (result) {
+	case BTRFS_COMPARE_TREE_NEW:
+		result_string = "new";
+		break;
+	case BTRFS_COMPARE_TREE_DELETED:
+		result_string = "deleted";
+		break;
+	case BTRFS_COMPARE_TREE_CHANGED:
+		result_string = "updated";
+		break;
+	case BTRFS_COMPARE_TREE_SAME:
+		ASSERT(0);
+		result_string = "unchanged";
+		break;
+	default:
+		ASSERT(0);
+		result_string = "unexpected";
+	}
+
+	btrfs_err(sctx->send_root->fs_info,
+		  "Send: inconsistent snapshot, found %s %s for inode %llu without updated inode item, send root is %llu, parent root is %llu",
+		  result_string, what, sctx->cmp_key->objectid,
+		  sctx->send_root->root_key.objectid,
+		  (sctx->parent_root ?
+		   sctx->parent_root->root_key.objectid : 0));
+}
+
 static int is_waiting_for_move(struct send_ctx *sctx, u64 ino);
 
 static struct waiting_dir_move *
@@ -5269,7 +5302,10 @@ static int changed_ref(struct send_ctx *sctx,
 {
 	int ret = 0;
 
-	BUG_ON(sctx->cur_ino != sctx->cmp_key->objectid);
+	if (sctx->cur_ino != sctx->cmp_key->objectid) {
+		inconsistent_snapshot_error(sctx, result, "reference");
+		return -EIO;
+	}
 
 	if (!sctx->cur_inode_new_gen &&
 	    sctx->cur_ino != BTRFS_FIRST_FREE_OBJECTID) {
@@ -5294,7 +5330,10 @@ static int changed_xattr(struct send_ctx *sctx,
 {
 	int ret = 0;
 
-	BUG_ON(sctx->cur_ino != sctx->cmp_key->objectid);
+	if (sctx->cur_ino != sctx->cmp_key->objectid) {
+		inconsistent_snapshot_error(sctx, result, "xattr");
+		return -EIO;
+	}
 
 	if (!sctx->cur_inode_new_gen && !sctx->cur_inode_deleted) {
 		if (result == BTRFS_COMPARE_TREE_NEW)
@@ -5318,7 +5357,68 @@ static int changed_extent(struct send_ctx *sctx,
 {
 	int ret = 0;
 
-	BUG_ON(sctx->cur_ino != sctx->cmp_key->objectid);
+	if (sctx->cur_ino != sctx->cmp_key->objectid) {
+
+		if (result == BTRFS_COMPARE_TREE_CHANGED) {
+			struct extent_buffer *leaf_l;
+			struct extent_buffer *leaf_r;
+			struct btrfs_file_extent_item *ei_l;
+			struct btrfs_file_extent_item *ei_r;
+
+			leaf_l = sctx->left_path->nodes[0];
+			leaf_r = sctx->right_path->nodes[0];
+			ei_l = btrfs_item_ptr(leaf_l,
+					      sctx->left_path->slots[0],
+					      struct btrfs_file_extent_item);
+			ei_r = btrfs_item_ptr(leaf_r,
+					      sctx->right_path->slots[0],
+					      struct btrfs_file_extent_item);
+
+			/*
+			 * We may have found an extent item that has changed
+			 * only its disk_bytenr field and the corresponding
+			 * inode item was not updated. This case happens due to
+			 * very specific timings during relocation when a leaf
+			 * that contains file extent items is COWed while
+			 * relocation is ongoing and its in the stage where it
+			 * updates data pointers. So when this happens we can
+			 * safely ignore it since we know it's the same extent,
+			 * but just at different logical and physical locations
+			 * (when an extent is fully replaced with a new one, we
+			 * know the generation number must have changed too,
+			 * since snapshot creation implies committing the current
+			 * transaction, and the inode item must have been updated
+			 * as well).
+			 * This replacement of the disk_bytenr happens at
+			 * relocation.c:replace_file_extents() through
+			 * relocation.c:btrfs_reloc_cow_block().
+			 */
+			if (btrfs_file_extent_generation(leaf_l, ei_l) ==
+			    btrfs_file_extent_generation(leaf_r, ei_r) &&
+			    btrfs_file_extent_ram_bytes(leaf_l, ei_l) ==
+			    btrfs_file_extent_ram_bytes(leaf_r, ei_r) &&
+			    btrfs_file_extent_compression(leaf_l, ei_l) ==
+			    btrfs_file_extent_compression(leaf_r, ei_r) &&
+			    btrfs_file_extent_encryption(leaf_l, ei_l) ==
+			    btrfs_file_extent_encryption(leaf_r, ei_r) &&
+			    btrfs_file_extent_other_encoding(leaf_l, ei_l) ==
+			    btrfs_file_extent_other_encoding(leaf_r, ei_r) &&
+			    btrfs_file_extent_type(leaf_l, ei_l) ==
+			    btrfs_file_extent_type(leaf_r, ei_r) &&
+			    btrfs_file_extent_disk_bytenr(leaf_l, ei_l) !=
+			    btrfs_file_extent_disk_bytenr(leaf_r, ei_r) &&
+			    btrfs_file_extent_disk_num_bytes(leaf_l, ei_l) ==
+			    btrfs_file_extent_disk_num_bytes(leaf_r, ei_r) &&
+			    btrfs_file_extent_offset(leaf_l, ei_l) ==
+			    btrfs_file_extent_offset(leaf_r, ei_r) &&
+			    btrfs_file_extent_num_bytes(leaf_l, ei_l) ==
+			    btrfs_file_extent_num_bytes(leaf_r, ei_r))
+				return 0;
+		}
+
+		inconsistent_snapshot_error(sctx, result, "extent");
+		return -EIO;
+	}
 
 	if (!sctx->cur_inode_new_gen && !sctx->cur_inode_deleted) {
 		if (result != BTRFS_COMPARE_TREE_DELETED)
