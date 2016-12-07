@@ -744,9 +744,8 @@ static inline void exiting_irq(void)
 #ifndef CONFIG_XEN
 static inline void exiting_ack_irq(void)
 {
-	irq_exit();
-	/* Ack only at the end to avoid potential reentry */
 	ack_APIC_irq();
+	irq_exit();
 }
 #endif
 
