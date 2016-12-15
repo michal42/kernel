@@ -181,6 +181,10 @@ struct rpc_xprt {
 	/*
 	 * Connection of transports
 	 */
+#ifndef __GENKSYMS__
+	/* pahole says this is a hole - on 64 bit archs */
+	unsigned int            max_reconnect_timeout;
+#endif
 	unsigned long		bind_timeout,
 				reestablish_timeout;
 	unsigned int		connect_cookie;	/* A cookie that gets bumped
@@ -193,8 +197,7 @@ struct rpc_xprt {
 	struct work_struct	task_cleanup;
 	struct timer_list	timer;
 	unsigned long		last_used,
-				idle_timeout,
-				max_reconnect_timeout;
+				idle_timeout;
 
 	/*
 	 * Send stuff
