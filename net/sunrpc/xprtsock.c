@@ -2093,6 +2093,8 @@ static void xs_udp_finish_connecting(struct rpc_xprt *xprt, struct socket *sock)
 		write_unlock_bh(&sk->sk_callback_lock);
 	}
 	xs_udp_do_set_buffer_size(xprt);
+
+	xprt->stat.connect_start = jiffies;
 }
 
 static void xs_udp_setup_socket(struct work_struct *work)
@@ -2331,6 +2333,16 @@ out:
 	current->flags &= ~PF_FSTRANS;
 }
 
+static unsigned long xs_reconnect_delay(const struct rpc_xprt *xprt)
+{
+	unsigned long start, now = jiffies;
+
+	start = xprt->stat.connect_start + xprt->reestablish_timeout;
+	if (time_after(start, now))
+		return start - now;
+	return 0;
+}
+
 /**
  * xs_connect - connect a socket to a remote endpoint
  * @xprt: pointer to transport structure
@@ -2348,24 +2360,25 @@ out:
 static void xs_connect(struct rpc_xprt *xprt, struct rpc_task *task)
 {
 	struct sock_xprt *transport = container_of(xprt, struct sock_xprt, xprt);
+	unsigned long delay = 0;
 
 	if (transport->sock != NULL && !RPC_IS_SOFTCONN(task)) {
 		dprintk("RPC:       xs_connect delayed xprt %p for %lu "
 				"seconds\n",
 				xprt, xprt->reestablish_timeout / HZ);
-		queue_delayed_work(rpciod_workqueue,
-				   &transport->connect_worker,
-				   xprt->reestablish_timeout);
+		delay = xs_reconnect_delay(xprt);
+
 		xprt->reestablish_timeout <<= 1;
 		if (xprt->reestablish_timeout < XS_TCP_INIT_REEST_TO)
 			xprt->reestablish_timeout = XS_TCP_INIT_REEST_TO;
 		if (xprt->reestablish_timeout > XS_TCP_MAX_REEST_TO)
 			xprt->reestablish_timeout = XS_TCP_MAX_REEST_TO;
-	} else {
+	} else
 		dprintk("RPC:       xs_connect scheduled xprt %p\n", xprt);
-		queue_delayed_work(rpciod_workqueue,
-				   &transport->connect_worker, 0);
-	}
+
+	queue_delayed_work(rpciod_workqueue,
+			&transport->connect_worker,
+			delay);
 }
 
 /**
