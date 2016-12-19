@@ -64,9 +64,12 @@ void foo(void)
 	DEFINE(SYSENTER_stack_sp0, 0);
 #endif
 
-#ifdef CONFIG_XEN
+#ifdef CONFIG_CC_STACKPROTECTOR
 	BLANK();
-	OFFSET(TI_cpu, thread_info, cpu);
+	OFFSET(stack_canary_offset, stack_canary, canary);
+#endif
+
+#ifdef CONFIG_XEN
 	BLANK();
 	OFFSET(XEN_START_mfn_list, start_info, mfn_list);
 #endif

@@ -240,7 +240,7 @@ bool mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 		barrier();
 
 		if (!owner->on_cpu ||
-		    !arch_cpu_is_running(task_thread_info(owner)->cpu) ||
+		    !arch_cpu_is_running(task_cpu(owner)) ||
 		    need_resched()) {
 			ret = false;
 			break;
@@ -267,8 +267,7 @@ static inline int mutex_can_spin_on_owner(struct mutex *lock)
 	rcu_read_lock();
 	owner = READ_ONCE(lock->owner);
 	if (owner)
-		retval = owner->on_cpu &&
-			 arch_cpu_is_running(task_thread_info(owner)->cpu);
+		retval = owner->on_cpu && arch_cpu_is_running(task_cpu(owner));
 	rcu_read_unlock();
 	/*
 	 * if lock->owner is not set, the mutex owner may have just acquired

@@ -23,6 +23,7 @@
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/errno.h>
+#include <linux/cpu.h>
 #include <linux/gfp.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -242,45 +243,15 @@ static ssize_t host_control_on_shutdown_store(struct device *dev,
 	return count;
 }
 
-/**
- * dcdbas_smi_request: generate SMI request
- *
- * Called with smi_data_lock.
- */
-int dcdbas_smi_request(struct smi_cmd *smi_cmd)
+static int raise_smi(void *par)
 {
-#ifndef CONFIG_XEN
-	cpumask_var_t old_mask;
-#endif
-	int ret = 0;
+	struct smi_cmd *smi_cmd = par;
 
-	if (smi_cmd->magic != SMI_CMD_MAGIC) {
-		dev_info(&dcdbas_pdev->dev, "%s: invalid magic value\n",
-			 __func__);
-		return -EBADR;
-	}
-
-	/* SMI requires CPU 0 */
-#ifndef CONFIG_XEN
-	if (!alloc_cpumask_var(&old_mask, GFP_KERNEL))
-		return -ENOMEM;
-
-	cpumask_copy(old_mask, &current->cpus_allowed);
-	set_cpus_allowed_ptr(current, cpumask_of(0));
 	if (smp_processor_id() != 0) {
 		dev_dbg(&dcdbas_pdev->dev, "%s: failed to get CPU 0\n",
 			__func__);
-		ret = -EBUSY;
-		goto out;
+		return -EBUSY;
 	}
-#else
-	ret = xen_set_physical_cpu_affinity(0);
-	if (ret) {
-		dev_dbg(&dcdbas_pdev->dev, "%s: failed (%d) to get CPU 0\n",
-			__func__, ret);
-		return ret;
-	}
-#endif
 
 	/* generate SMI */
 	/* inb to force posted write through and make SMI happen now */
@@ -295,13 +266,38 @@ int dcdbas_smi_request(struct smi_cmd *smi_cmd)
 		: "memory"
 	);
 
+	return 0;
+}
+/**
+ * dcdbas_smi_request: generate SMI request
+ *
+ * Called with smi_data_lock.
+ */
+int dcdbas_smi_request(struct smi_cmd *smi_cmd)
+{
+	int ret;
+
+	if (smi_cmd->magic != SMI_CMD_MAGIC) {
+		dev_info(&dcdbas_pdev->dev, "%s: invalid magic value\n",
+			 __func__);
+		return -EBADR;
+	}
+
+	/* SMI requires CPU 0 */
 #ifndef CONFIG_XEN
-out:
-	set_cpus_allowed_ptr(current, old_mask);
-	free_cpumask_var(old_mask);
+	get_online_cpus();
+	ret = smp_call_on_cpu(0, raise_smi, smi_cmd, true);
+	put_online_cpus();
 #else
-	xen_set_physical_cpu_affinity(-1);
+	ret = xen_set_physical_cpu_affinity(0);
+	if (!ret) {
+		ret = raise_smi(smi_cmd);
+		xen_set_physical_cpu_affinity(-1);
+	} else
+		dev_dbg(&dcdbas_pdev->dev, "%s: failed (%d) to get CPU 0\n",
+			__func__, ret);
 #endif
+
 	return ret;
 }
 

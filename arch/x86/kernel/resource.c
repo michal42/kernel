@@ -1,6 +1,10 @@
 #ifdef CONFIG_XEN
-# define e820 machine_e820
+# define e820 xen_e820
 # include <asm/hypervisor.h>
+# ifdef CONFIG_XEN_PRIVILEGED_GUEST
+extern struct e820map machine_e820;
+/*static*/ struct e820map *xen_e820 = &machine_e820;
+# endif
 #endif
 #include <linux/ioport.h>
 #include <asm/e820.h>
@@ -31,8 +35,8 @@ static void remove_e820_regions(struct resource *avail)
 	int i;
 	struct e820entry *entry;
 
-	for (i = 0; i < e820.nr_map; i++) {
-		entry = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		entry = &e820->map[i];
 
 		resource_clip(avail, entry->addr,
 			      entry->addr + entry->size - 1);

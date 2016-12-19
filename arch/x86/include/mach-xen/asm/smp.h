@@ -44,9 +44,6 @@ DECLARE_EARLY_PER_CPU_READ_MOSTLY(int, x86_cpu_to_logical_apicid);
 
 #ifndef CONFIG_XEN
 
-/* Static state in head.S used to set up a CPU */
-extern unsigned long stack_start; /* Initial stack pointer address */
-
 struct task_struct;
 
 struct smp_ops {
@@ -55,6 +52,7 @@ struct smp_ops {
 	void (*smp_cpus_done)(unsigned max_cpus);
 
 	void (*stop_other_cpus)(int wait);
+	void (*crash_stop_other_cpus)(void);
 	void (*smp_send_reschedule)(int cpu);
 
 	int (*cpu_up)(unsigned cpu, struct task_struct *tidle);

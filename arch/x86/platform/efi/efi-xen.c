@@ -436,8 +436,6 @@ void __init efi_init(void)
 	efi_config_parse_tables(cfgtab, info->cfg.nent,
 				sizeof(efi_config_table_64_t), arch_tables);
 	early_iounmap(cfgtab, info->cfg.nent * sizeof(efi_config_table_64_t));
-
-	efi_esrt_init();
 }
 
 #undef DECLARE_CALL

@@ -77,6 +77,9 @@ config ACPI_DEBUGGER_USER
 
 endif
 
+config ACPI_SPCR_TABLE
+	bool
+
 config ACPI_SLEEP
 	bool
 	depends on SUSPEND || HIBERNATION
@@ -227,7 +230,6 @@ config ACPI_MCFG
 config ACPI_CPPC_LIB
 	bool
 	depends on ACPI_PROCESSOR
-	depends on !ACPI_CPU_FREQ_PSS
 	select MAILBOX
 	select PCC
 	help
@@ -463,6 +465,9 @@ source "drivers/acpi/nfit/Kconfig"
 source "drivers/acpi/apei/Kconfig"
 source "drivers/acpi/dptf/Kconfig"
 
+config ACPI_WATCHDOG
+	bool
+
 config ACPI_EXTLOG
 	tristate "Extended Error Log support"
 	depends on X86_MCE && X86_LOCAL_APIC && !XEN
@@ -531,4 +536,9 @@ config PROCESSOR_EXTERNAL_CONTROL
 	bool
 	depends on (X86 || IA64) && XEN
 	default y
+
+if ARM64
+source "drivers/acpi/arm64/Kconfig"
+endif
+
 endif	# ACPI

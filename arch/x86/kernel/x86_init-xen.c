@@ -87,7 +87,7 @@ struct x86_init_ops x86_init __initdata = {
 
 static int default_i8042_detect(void) { return 1; };
 
-struct x86_platform_ops x86_platform = {
+struct x86_platform_ops x86_platform __ro_after_init = {
 	.get_wallclock			= xen_read_wallclock,
 	.set_wallclock			= xen_write_wallclock,
 	.is_untracked_pat_range		= is_ISA_range,

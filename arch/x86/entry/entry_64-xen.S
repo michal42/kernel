@@ -38,6 +38,7 @@
 #include <asm/asm.h>
 #include <asm/smap.h>
 #include <asm/pgtable_types.h>
+#include <asm/export.h>
 #include <linux/err.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/features.h>
@@ -190,7 +191,8 @@ ENTRY(entry_SYSCALL_64)
 	 * If we need to do entry work or if we guess we'll need to do
 	 * exit work, go straight to the slow path.
 	 */
-	testl	$_TIF_WORK_SYSCALL_ENTRY|_TIF_ALLWORK_MASK, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
+	movq	PER_CPU_VAR(current_task), %r11
+	testl	$_TIF_WORK_SYSCALL_ENTRY|_TIF_ALLWORK_MASK, TASK_TI_flags(%r11)
 	jnz	entry_SYSCALL64_slow_path
 
 entry_SYSCALL_64_fastpath:
@@ -226,7 +228,8 @@ entry_SYSCALL_64_fastpath:
 	 */
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_OFF
-	testl	$_TIF_ALLWORK_MASK, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
+	movq	PER_CPU_VAR(current_task), %r11
+	testl	$_TIF_ALLWORK_MASK, TASK_TI_flags(%r11)
 	jnz	1f
 
 	LOCKDEP_SYS_EXIT
@@ -280,8 +283,7 @@ ENTRY(stub_ptregs_64)
 	jmp	entry_SYSCALL64_slow_path
 
 1:
-	/* Called from C */
-	jmp	*%rax				/* called from C */
+	jmp	*%rax				/* Called from C */
 END(stub_ptregs_64)
 
 .macro ptregs_stub func
@@ -298,41 +300,73 @@ END(ptregs_\func)
 #include <asm/syscalls_64.h>
 
 /*
+ * %rdi: prev task
+ * %rsi: next task
+ */
+ENTRY(__switch_to_asm)
+	/*
+	 * Save callee-saved registers
+	 * This must match the order in inactive_task_frame
+	 */
+	pushq	%rbp
+	pushq	%rbx
+	pushq	%r12
+	pushq	%r13
+	pushq	%r14
+	pushq	%r15
+
+	/* switch stack */
+	movq	%rsp, TASK_threadsp(%rdi)
+	movq	TASK_threadsp(%rsi), %rsp
+
+#ifdef CONFIG_CC_STACKPROTECTOR
+	movq	TASK_stack_canary(%rsi), %rbx
+	movq	%rbx, PER_CPU_VAR(irq_stack_union)+stack_canary_offset
+#endif
+
+	/* restore callee-saved registers */
+	popq	%r15
+	popq	%r14
+	popq	%r13
+	popq	%r12
+	popq	%rbx
+	popq	%rbp
+
+	jmp	__switch_to
+END(__switch_to_asm)
+
+/*
  * A newly forked process directly context switches into this address.
  *
- * rdi: prev task we switched from
+ * rax: prev task we switched from
+ * rbx: kernel thread func (NULL for user thread)
+ * r12: kernel thread arg
  */
 ENTRY(ret_from_fork)
-	LOCK ; btr $TIF_FORK, TI_flags(%r8)
-
+	movq	%rax, %rdi
 	call	schedule_tail			/* rdi: 'prev' task parameter */
 
-	testb	$3, CS(%rsp)			/* from kernel_thread? */
-	jnz	1f
+	testq	%rbx, %rbx			/* from kernel_thread? */
+	jnz	1f				/* kernel threads are uncommon */
 
-	/*
-	 * We came from kernel_thread.  This code path is quite twisted, and
-	 * someone should clean it up.
-	 *
-	 * copy_thread_tls stashes the function pointer in RBX and the
-	 * parameter to be passed in RBP.  The called function is permitted
-	 * to call do_execve and thereby jump to user mode.
-	 */
-	movq	RBP(%rsp), %rdi
-	call	*RBX(%rsp)
-	movl	$0, RAX(%rsp)
-
-	/*
-	 * Fall through as though we're exiting a syscall.  This makes a
-	 * twisted sort of sense if we just called do_execve.
-	 * Need to set the proper %ss (not NULL) for ring 3 iretq
-	 */
-	movl	$__KERNEL_DS, SS(%rsp)
-
-1:
+2:
 	movq	%rsp, %rdi
 	call	syscall_return_slowpath	/* returns with IRQs disabled */
 	jmp	restore_regs_and_iret
+
+1:
+	/* kernel thread */
+	movq	%r12, %rdi
+	call	*%rbx
+	/*
+	 * A kernel thread is allowed to return here after successfully
+	 * calling do_execve().  Exit to userspace to complete the execve()
+	 * syscall.
+	 * Need to set the proper %ss (not NULL) for ring 3 iretq
+	 */
+	movl	$__KERNEL_DS, SS(%rsp)
+	movq	$0, RAX(%rsp)
+	jmp	2b
 END(ret_from_fork)
 
 /*

@@ -58,6 +58,11 @@ int main(void)
 	BLANK();
 #endif
 
+#ifdef CONFIG_CC_STACKPROTECTOR
+	DEFINE(stack_canary_offset, offsetof(union irq_stack_union, stack_canary));
+	BLANK();
+#endif
+
 	DEFINE(__NR_syscall_max, sizeof(syscalls_64) - 1);
 	DEFINE(NR_syscalls, sizeof(syscalls_64));
 

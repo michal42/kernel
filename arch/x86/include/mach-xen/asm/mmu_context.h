@@ -4,6 +4,7 @@
 #include <asm/desc.h>
 #include <linux/atomic.h>
 #include <linux/mm_types.h>
+#include <linux/pkeys.h>
 
 #include <trace/events/tlb.h>
 
@@ -157,7 +158,16 @@ static inline int init_new_context(struct task_struct *tsk,
 				   struct mm_struct *mm)
 {
 	mm->context.has_foreign_mappings = false;
+	#ifdef CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS
+	if (cpu_feature_enabled(X86_FEATURE_OSPKE)) {
+		/* pkey 0 is the default and always allocated */
+		mm->context.pkey_allocation_map = 0x1;
+		/* -1 means unallocated or invalid */
+		mm->context.execute_only_pkey = -1;
+	}
+	#endif
 	init_new_context_ldt(tsk, mm);
+
 	return 0;
 }
 static inline void destroy_context(struct mm_struct *mm)
@@ -247,16 +257,20 @@ static inline void arch_unmap(struct mm_struct *mm, struct vm_area_struct *vma,
 		mpx_notify_unmap(mm, vma, start, end);
 }
 
+#ifdef CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS
 static inline int vma_pkey(struct vm_area_struct *vma)
 {
-	u16 pkey = 0;
-#ifdef CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS
 	unsigned long vma_pkey_mask = VM_PKEY_BIT0 | VM_PKEY_BIT1 |
 				      VM_PKEY_BIT2 | VM_PKEY_BIT3;
-	pkey = (vma->vm_flags & vma_pkey_mask) >> VM_PKEY_SHIFT;
-#endif
-	return pkey;
+
+	return (vma->vm_flags & vma_pkey_mask) >> VM_PKEY_SHIFT;
 }
+#else
+static inline int vma_pkey(struct vm_area_struct *vma)
+{
+	return 0;
+}
+#endif
 
 static inline bool __pkru_allows_pkey(u16 pkey, bool write)
 {
@@ -310,5 +324,4 @@ static inline bool arch_pte_access_permitted(pte_t pte, bool write)
 {
 	return __pkru_allows_pkey(pte_flags_pkey(pte_flags(pte)), write);
 }
-
 #endif /* _ASM_X86_MMU_CONTEXT_H */

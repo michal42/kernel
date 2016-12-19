@@ -41,14 +41,16 @@
  * user can e.g. boot the original kernel with mem=1G while still booting the
  * next kernel with full memory.
  */
-struct e820map e820;
+static struct e820map initial_e820  __initdata;
+struct e820map *e820 __refdata = &initial_e820;
 #if !defined(CONFIG_XEN)
-struct e820map e820_saved;
+static struct e820map initial_e820_saved  __initdata;
+struct e820map *e820_saved __refdata = &initial_e820_saved;
 #elif defined(CONFIG_XEN_PRIVILEGED_GUEST)
 struct e820map machine_e820;
-# define e820_saved machine_e820
+# define e820_saved (&machine_e820)
 #else
-# define machine_e820 e820
+# define machine_e820 (*e820)
 # define e820_saved e820
 #endif
 
@@ -68,8 +70,8 @@ e820_any_mapped(u64 start, u64 end, unsigned type)
 	int i;
 
 #ifndef CONFIG_XEN
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 #else
 	if (!is_initial_xendomain())
 		return 0;
@@ -98,8 +100,8 @@ int __init e820_all_mapped(u64 start, u64 end, unsigned type)
 	int i;
 
 #ifndef CONFIG_XEN
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 #else
 	if (!is_initial_xendomain())
 		return 0;
@@ -151,7 +153,7 @@ static void __init __e820_add_region(struct e820map *e820x, u64 start, u64 size,
 
 void __init e820_add_region(u64 start, u64 size, int type)
 {
-	__e820_add_region(&e820, start, size, type);
+	__e820_add_region(e820, start, size, type);
 }
 
 static void __init e820_print_type(u32 type)
@@ -415,11 +417,11 @@ static int __init __append_e820_map(struct e820entry *biosmap, int nr_map)
 	while (nr_map) {
 		u64 start = biosmap->addr;
 		u64 size = biosmap->size;
-		u64 end = start + size;
+		u64 end = start + size - 1;
 		u32 type = biosmap->type;
 
 		/* Overflow in 64 bits? Ignore the memory map. */
-		if (start > end)
+		if (start > end && likely(size))
 			return -1;
 
 		e820_add_region(start, size, type);
@@ -524,7 +526,7 @@ static u64 __init __e820_update_range(struct e820map *e820x, u64 start,
 u64 __init e820_update_range(u64 start, u64 size, unsigned old_type,
 			     unsigned new_type)
 {
-	return __e820_update_range(&e820, start, size, old_type, new_type);
+	return __e820_update_range(e820, start, size, old_type, new_type);
 }
 
 #ifndef CONFIG_XEN_UNPRIVILEGED_GUEST
@@ -537,7 +539,7 @@ static u64 __init e820_update_range_saved(u64 start, u64 size,
 	return __e820_update_range(&machine_e820, phys_to_machine(start),
 				   size, old_type, new_type);
 #else
-	return __e820_update_range(&e820_saved, start, size, old_type,
+	return __e820_update_range(e820_saved, start, size, old_type,
 				     new_type);
 #endif
 }
@@ -561,8 +563,8 @@ u64 __init e820_remove_range(u64 start, u64 size, unsigned old_type,
 		e820_print_type(old_type);
 	printk(KERN_CONT "\n");
 
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 		u64 final_start, final_end;
 		u64 ei_end;
 
@@ -606,21 +608,21 @@ u64 __init e820_remove_range(u64 start, u64 size, unsigned old_type,
 
 void __init update_e820(void)
 {
-	if (sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &e820.nr_map))
+	if (sanitize_e820_map(e820->map, ARRAY_SIZE(e820->map), &e820->nr_map))
 		return;
 	printk(KERN_INFO "e820: modified physical RAM map:\n");
-	_e820_print_map(&e820, "modified");
+	_e820_print_map(e820, "modified");
 }
 #ifndef CONFIG_XEN_UNPRIVILEGED_GUEST
 static void __init update_e820_saved(void)
 {
-	sanitize_e820_map(e820_saved.map, ARRAY_SIZE(e820_saved.map),
-				&e820_saved.nr_map);
+	sanitize_e820_map(e820_saved->map, ARRAY_SIZE(e820_saved->map),
+				&e820_saved->nr_map);
 }
 #endif
 
 #ifdef CONFIG_XEN
-#define e820 machine_e820
+#define e820 (&machine_e820)
 #endif
 
 #define MAX_GAP_END 0x100000000ull
@@ -631,7 +633,7 @@ __init int e820_search_gap(unsigned long *gapstart, unsigned long *gapsize,
 		unsigned long start_addr, unsigned long long end_addr)
 {
 	unsigned long long last;
-	int i = e820.nr_map;
+	int i = e820->nr_map;
 	int found = 0;
 
 	last = (end_addr && end_addr < MAX_GAP_END) ? end_addr : MAX_GAP_END;
@@ -641,8 +643,8 @@ __init int e820_search_gap(unsigned long *gapstart, unsigned long *gapsize,
 #endif
 
 	while (--i >= 0) {
-		unsigned long long start = e820.map[i].addr;
-		unsigned long long end = start + e820.map[i].size;
+		unsigned long long start = e820->map[i].addr;
+		unsigned long long end = start + e820->map[i].size;
 
 		if (end < start_addr)
 			continue;
@@ -703,6 +705,35 @@ __init void e820_setup_gap(void)
 
 #undef e820
 
+/*
+ * Called late during init, in free_initmem().
+ *
+ * Initial e820 and e820_saved are largish __initdata arrays.
+ * Copy them to (usually much smaller) dynamically allocated area.
+ * This is done after all tweaks we ever do to them:
+ * all functions which modify them are __init functions,
+ * they won't exist after this point.
+ */
+__init void e820_reallocate_tables(void)
+{
+	struct e820map *n;
+	int size;
+
+	size = offsetof(struct e820map, map) + sizeof(struct e820entry) * e820->nr_map;
+	n = kmalloc(size, GFP_KERNEL);
+	BUG_ON(!n);
+	memcpy(n, e820, size);
+	e820 = n;
+
+#ifndef e820_saved
+	size = offsetof(struct e820map, map) + sizeof(struct e820entry) * e820_saved->nr_map;
+	n = kmalloc(size, GFP_KERNEL);
+	BUG_ON(!n);
+	memcpy(n, e820_saved, size);
+	e820_saved = n;
+#endif
+}
+
 #ifndef CONFIG_XEN
 /**
  * Because of the size limitation of struct boot_params, only first
@@ -720,10 +751,10 @@ void __init parse_e820_ext(u64 phys_addr, u32 data_len)
 	entries = sdata->len / sizeof(struct e820entry);
 	extmap = (struct e820entry *)(sdata->data);
 	__append_e820_map(extmap, entries);
-	sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &e820.nr_map);
+	sanitize_e820_map(e820->map, ARRAY_SIZE(e820->map), &e820->nr_map);
 	early_memunmap(sdata, data_len);
 	printk(KERN_INFO "e820: extended physical RAM map:\n");
-	_e820_print_map(&e820, "extended");
+	_e820_print_map(e820, "extended");
 }
 
 #if defined(CONFIG_X86_64) || \
@@ -741,8 +772,8 @@ void __init e820_mark_nosave_regions(unsigned long limit_pfn)
 	int i;
 	unsigned long pfn = 0;
 
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 
 		if (pfn < PFN_UP(ei->addr))
 			register_nosave_region(pfn, PFN_UP(ei->addr));
@@ -767,8 +798,8 @@ static int __init e820_mark_nvs_memory(void)
 {
 	int i;
 
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 
 		if (ei->type == E820_NVS)
 			acpi_nvs_register(ei->addr, ei->size);
@@ -848,22 +879,18 @@ u64 __init early_reserve_e820(u64 size, u64 align)
 /*
  * Find the highest page frame number we have available
  */
-static unsigned long __init e820_end_pfn(unsigned long limit_pfn)
+static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 {
 	int i;
 	unsigned long last_pfn = 0;
 	unsigned long max_arch_pfn = MAX_ARCH_PFN;
 
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 		unsigned long start_pfn;
 		unsigned long end_pfn;
 
-		/*
-		 * Persistent memory is accounted as ram for purposes of
-		 * establishing max_pfn and mem_map.
-		 */
-		if (ei->type != E820_RAM && ei->type != E820_PRAM)
+		if (ei->type != type)
 			continue;
 
 		start_pfn = ei->addr >> PAGE_SHIFT;
@@ -888,15 +915,15 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn)
 }
 unsigned long __init e820_end_of_ram_pfn(void)
 {
-	return e820_end_pfn(MAX_ARCH_PFN);
+	return e820_end_pfn(MAX_ARCH_PFN, E820_RAM);
 }
 
 unsigned long __init e820_end_of_low_ram_pfn(void)
 {
-	return e820_end_pfn(1UL << (32-PAGE_SHIFT));
+	return e820_end_pfn(1UL << (32 - PAGE_SHIFT), E820_RAM);
 }
 
-static void early_panic(char *msg)
+static void __init early_panic(char *msg)
 {
 	early_printk(msg);
 	panic(msg);
@@ -952,15 +979,15 @@ static int __init parse_memopt(char *p)
 #endif
 	e820_remove_range(mem_size, ULLONG_MAX - mem_size, E820_RAM, 1);
 
-	i = e820.nr_map - 1;
-	current_end = e820.map[i].addr + e820.map[i].size;
+	i = e820->nr_map - 1;
+	current_end = e820->map[i].addr + e820->map[i].size;
 	if (current_end < mem_size) {
 		/*
 		 * The e820 map ends before our requested size so
 		 * extend the final entry to the requested address.
 		 */
-		if (e820.map[i].type == E820_RAM)
-			e820.map[i].size = mem_size - e820.map[i].addr;
+		if (e820->map[i].type == E820_RAM)
+			e820->map[i].size = mem_size - e820->map[i].addr;
 		else
 			e820_add_region(current_end, mem_size - current_end, E820_RAM);
 	}
@@ -987,7 +1014,7 @@ static int __init parse_memmap_one(char *p)
 		 */
 		saved_max_pfn = e820_end_of_ram_pfn();
 #endif
-		e820.nr_map = 0;
+		e820->nr_map = 0;
 		userdef = 1;
 		return 0;
 	}
@@ -1035,16 +1062,16 @@ early_param("memmap", parse_memmap_opt);
 void __init finish_e820_parsing(void)
 {
 	if (userdef) {
-		if (sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map),
-					&e820.nr_map) < 0)
+		if (sanitize_e820_map(e820->map, ARRAY_SIZE(e820->map),
+					&e820->nr_map) < 0)
 			early_panic("Invalid user supplied memory map");
 
 		printk(KERN_INFO "e820: user-defined physical RAM map:\n");
-		_e820_print_map(&e820, "user");
+		_e820_print_map(e820, "user");
 	}
 }
 
-static const char *e820_type_to_string(int e820_type)
+static const char *__init e820_type_to_string(int e820_type)
 {
 	switch (e820_type) {
 	case E820_RESERVED_KERN:
@@ -1058,7 +1085,7 @@ static const char *e820_type_to_string(int e820_type)
 	}
 }
 
-static unsigned long e820_type_to_iomem_type(int e820_type)
+static unsigned long __init e820_type_to_iomem_type(int e820_type)
 {
 	switch (e820_type) {
 	case E820_RESERVED_KERN:
@@ -1074,7 +1101,7 @@ static unsigned long e820_type_to_iomem_type(int e820_type)
 	}
 }
 
-static unsigned long e820_type_to_iores_desc(int e820_type)
+static unsigned long __init e820_type_to_iores_desc(int e820_type)
 {
 	switch (e820_type) {
 	case E820_ACPI:
@@ -1093,7 +1120,7 @@ static unsigned long e820_type_to_iores_desc(int e820_type)
 	}
 }
 
-static bool do_mark_busy(u32 type, struct resource *res)
+static bool __init do_mark_busy(u32 type, struct resource *res)
 {
 	/* this is the legacy bios/dos rom-shadow + mmio region */
 	if (res->start < (1ULL<<20))
@@ -1114,7 +1141,7 @@ static bool do_mark_busy(u32 type, struct resource *res)
 }
 
 #ifdef CONFIG_XEN
-#define e820 machine_e820
+#define e820 (&machine_e820)
 #endif
 
 /*
@@ -1127,35 +1154,35 @@ void __init e820_reserve_resources(void)
 	struct resource *res;
 	u64 end;
 
-	res = alloc_bootmem(sizeof(struct resource) * e820.nr_map);
+	res = alloc_bootmem(sizeof(struct resource) * e820->nr_map);
 	e820_res = res;
-	for (i = 0; i < e820.nr_map; i++) {
-		end = e820.map[i].addr + e820.map[i].size - 1;
+	for (i = 0; i < e820->nr_map; i++) {
+		end = e820->map[i].addr + e820->map[i].size - 1;
 		if (end != (resource_size_t)end) {
 			res++;
 			continue;
 		}
-		res->name = e820_type_to_string(e820.map[i].type);
-		res->start = e820.map[i].addr;
+		res->name = e820_type_to_string(e820->map[i].type);
+		res->start = e820->map[i].addr;
 		res->end = end;
 
-		res->flags = e820_type_to_iomem_type(e820.map[i].type);
-		res->desc = e820_type_to_iores_desc(e820.map[i].type);
+		res->flags = e820_type_to_iomem_type(e820->map[i].type);
+		res->desc = e820_type_to_iores_desc(e820->map[i].type);
 
 		/*
 		 * don't register the region that could be conflicted with
 		 * pci device BAR resource and insert them later in
 		 * pcibios_resource_survey()
 		 */
-		if (do_mark_busy(e820.map[i].type, res)) {
+		if (do_mark_busy(e820->map[i].type, res)) {
 			res->flags |= IORESOURCE_BUSY;
 			insert_resource(&iomem_resource, res);
 		}
 		res++;
 	}
 
-	for (i = 0; i < e820_saved.nr_map; i++) {
-		struct e820entry *entry = &e820_saved.map[i];
+	for (i = 0; i < e820_saved->nr_map; i++) {
+		struct e820entry *entry = &e820_saved->map[i];
 		firmware_map_add_early(entry->addr,
 			entry->addr + entry->size,
 			e820_type_to_string(entry->type));
@@ -1163,7 +1190,7 @@ void __init e820_reserve_resources(void)
 }
 
 /* How much should we pad RAM ending depending on where it is? */
-static unsigned long ram_alignment(resource_size_t pos)
+static unsigned long __init ram_alignment(resource_size_t pos)
 {
 	unsigned long mb = pos >> 20;
 
@@ -1187,7 +1214,7 @@ void __init e820_reserve_resources_late(void)
 	struct resource *res;
 
 	res = e820_res;
-	for (i = 0; i < e820.nr_map; i++) {
+	for (i = 0; i < e820->nr_map; i++) {
 		if (!res->parent && res->end)
 			insert_resource_expand_to_fit(&iomem_resource, res);
 		res++;
@@ -1197,8 +1224,8 @@ void __init e820_reserve_resources_late(void)
 	 * Try to bump up RAM regions to reasonable boundaries to
 	 * avoid stolen RAM:
 	 */
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *entry = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *entry = &e820->map[i];
 		u64 start, end;
 
 		if (entry->type != E820_RAM)
@@ -1249,9 +1276,9 @@ char *__init default_machine_specific_memory_setup(void)
 
 #ifdef CONFIG_XEN
 	/* See the comment in parse_memopt(). */
-	for (maxmem = rc = 0; rc < e820.nr_map; ++rc)
-		if (e820.map[rc].type == E820_RAM)
-			maxmem += e820.map[rc].size >> PAGE_SHIFT;
+	for (maxmem = rc = 0; rc < e820->nr_map; ++rc)
+		if (e820->map[rc].type == E820_RAM)
+			maxmem += e820->map[rc].size >> PAGE_SHIFT;
 	if (is_initial_xendomain()) {
 		domid_t domid = DOMID_SELF;
 		long res = HYPERVISOR_memory_op(XENMEM_maximum_reservation,
@@ -1297,10 +1324,10 @@ void __init setup_memory_map(void)
 		_e820_print_map(&machine_e820, "BIOS");
 	} else
 #endif
-		memcpy(&e820_saved, &e820, sizeof(struct e820map));
+		memcpy(e820_saved, e820, sizeof(struct e820map));
 #endif
 	printk(KERN_INFO "e820: Xen-provided physical RAM map:\n");
-	_e820_print_map(&e820, who);
+	_e820_print_map(e820, who);
 }
 
 void __init memblock_x86_fill(void)
@@ -1315,8 +1342,8 @@ void __init memblock_x86_fill(void)
 	 */
 	memblock_allow_resize();
 
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 
 		end = ei->addr + ei->size;
 		if (end != (resource_size_t)end)

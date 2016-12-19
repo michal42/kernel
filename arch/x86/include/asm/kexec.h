@@ -226,6 +226,7 @@ struct kexec_entry64_regs {
 
 typedef void crash_vmclear_fn(void);
 extern crash_vmclear_fn __rcu *crash_vmclear_loaded_vmcss;
+extern void kdump_nmi_shootdown_cpus(void);
 
 /* Under Xen we need to work with machine addresses. These macros give the
  * machine address of a certain page to the generic kexec code instead of

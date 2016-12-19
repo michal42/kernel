@@ -112,18 +112,12 @@ static int xen_smp_intr_init(unsigned int cpu)
 	else
 		BUG_ON(ipi_irq != rc);
 
-	rc = xen_spinlock_init(cpu);
-	if (rc < 0)
-		goto unbind_ipi;
-
 	if ((cpu != 0) && ((rc = local_setup_timer(cpu)) != 0))
 		goto fail;
 
 	return 0;
 
  fail:
-	xen_spinlock_cleanup(cpu);
- unbind_ipi:
 	unbind_from_per_cpu_irq(ipi_irq, cpu, NULL);
 	return rc;
 }
@@ -134,7 +128,6 @@ static void xen_smp_intr_exit(unsigned int cpu)
 		local_teardown_timer(cpu);
 
 	unbind_from_per_cpu_irq(ipi_irq, cpu, NULL);
-	xen_spinlock_cleanup(cpu);
 }
 
 static void cpu_bringup(void)
@@ -226,7 +219,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	if (HYPERVISOR_vcpu_op(VCPUOP_get_physid, 0, &cpu_id) == 0)
 		apicid = xen_vcpu_physid_to_x86_apicid(cpu_id.phys_id);
 	cpu_data(0) = boot_cpu_data;
-	current_thread_info()->cpu = 0;
+	current->cpu = 0;
 
 	if (xen_smp_intr_init(0))
 		BUG();
@@ -350,7 +343,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 		return rc;
 
 #ifdef CONFIG_X86_64
-	clear_tsk_thread_flag(idle, TIF_FORK);
 	per_cpu(cpu_sp0, cpu) = (unsigned long)task_stack_page(idle) +
 				THREAD_SIZE;
 #else

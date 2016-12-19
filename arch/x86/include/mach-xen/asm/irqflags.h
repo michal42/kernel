@@ -6,6 +6,10 @@
 #ifndef __ASSEMBLY__
 #include <linux/types.h>
 #include <xen/interface/vcpu.h>
+
+/* Provide __cpuidle; we can't safely include <linux/cpu.h> */
+#define __cpuidle __attribute__((__section__(".cpuidle.text")))
+
 /*
  * The use of 'barrier' in the following reflects their use as local-lock
  * operations. Reentrancy must be prevented (e.g., __cli()) /before/ following
@@ -88,10 +92,8 @@
 
 #ifdef CONFIG_X86_64
 # define __REG_si %rsi
-# define __CPU_num PER_CPU_VAR(cpu_number)
 #else
 # define __REG_si %esi
-# define __CPU_num TI_cpu(%ebp)
 #endif
 
 #ifdef CONFIG_XEN_VCPU_INFO_PLACEMENT
@@ -112,7 +114,7 @@
 #define sizeof_vcpu_shift	6
 
 #ifdef CONFIG_SMP
-#define GET_VCPU_INFO		movl __CPU_num,%esi			; \
+#define GET_VCPU_INFO		movl PER_CPU_VAR(cpu_number),%esi	; \
 				shl $sizeof_vcpu_shift,%esi		; \
 				add HYPERVISOR_shared_info,__REG_si
 #else

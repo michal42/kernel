@@ -232,14 +232,5 @@ void clear_ipi_evtchn(void);
 
 DECLARE_PER_CPU(bool, privcmd_hcall);
 
-#if defined(CONFIG_XEN_SPINLOCK_ACQUIRE_NESTING) \
-    && CONFIG_XEN_SPINLOCK_ACQUIRE_NESTING
-void xen_spin_irq_enter(void);
-void xen_spin_irq_exit(void);
-#else
-static inline void xen_spin_irq_enter(void) {}
-static inline void xen_spin_irq_exit(void) {}
-#endif
-
 #endif /* __ASM_EVTCHN_H__ */
 #endif /* CONFIG_PARAVIRT_XEN */

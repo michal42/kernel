@@ -828,7 +828,7 @@ no_skb:
 		np->rx_skbs[id] = skb;
 
 		ref = gnttab_claim_grant_reference(&np->gref_rx_head);
-		BUG_ON((signed short)ref < 0);
+		BUG_ON(IS_ERR_VALUE((long)(int32_t)ref));
 		np->grant_rx_ref[id] = ref;
 
 		page = skb_frag_page(skb_shinfo(skb)->frags);
@@ -936,7 +936,7 @@ static void xennet_make_frags(struct sk_buff *skb, struct net_device *dev,
 		tx = RING_GET_REQUEST(&np->tx, prod++);
 		tx->id = id;
 		ref = gnttab_claim_grant_reference(&np->gref_tx_head);
-		BUG_ON((signed short)ref < 0);
+		BUG_ON(IS_ERR_VALUE((long)(int32_t)ref));
 
 		mfn = virt_to_mfn(data);
 		gnttab_grant_foreign_access_ref(ref, np->xbdev->otherend_id,
@@ -973,7 +973,7 @@ static void xennet_make_frags(struct sk_buff *skb, struct net_device *dev,
 			tx = RING_GET_REQUEST(&np->tx, prod++);
 			tx->id = id;
 			ref = gnttab_claim_grant_reference(&np->gref_tx_head);
-			BUG_ON((signed short)ref < 0);
+			BUG_ON(IS_ERR_VALUE((long)(int32_t)ref));
 
 			mfn = pfn_to_mfn(page_to_pfn(page));
 			gnttab_grant_foreign_access_ref(ref,
@@ -1019,12 +1019,11 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct netfront_stats *stats = this_cpu_ptr(np->tx_stats);
 	struct netif_tx_request *tx;
 	struct netif_extra_info *extra;
-	char *data = skb->data;
 	RING_IDX i;
 	grant_ref_t ref;
 	unsigned long mfn, flags;
 	int notify;
-	unsigned int offset = offset_in_page(data);
+	unsigned int offset = offset_in_page(skb->data);
 	unsigned int slots, len = skb_headlen(skb);
 
 	/* Check the fast path, if hooks are available */
@@ -1050,7 +1049,24 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 				    slots, skb->len);
 		if (skb_linearize(skb))
 			goto drop;
+		offset = offset_in_page(skb->data);
 	}
+
+	/*
+	 * The first req should be at least ETH_HLEN size or the packet will be
+	 * dropped by netback.
+	 */
+	if (unlikely(PAGE_SIZE - offset < ETH_HLEN)) {
+		struct sk_buff *nskb = skb_copy(skb, GFP_ATOMIC);
+
+		if (!nskb)
+			goto drop;
+		dev_kfree_skb_any(skb);
+		skb = nskb;
+		offset = offset_in_page(skb->data);
+	}
+
+	len = skb_headlen(skb);
 
 	spin_lock_irqsave(&np->tx_lock, flags);
 
@@ -1070,8 +1086,8 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	tx->id   = id;
 	ref = gnttab_claim_grant_reference(&np->gref_tx_head);
-	BUG_ON((signed short)ref < 0);
-	mfn = virt_to_mfn(data);
+	BUG_ON(IS_ERR_VALUE((long)(int32_t)ref));
+	mfn = virt_to_mfn(skb->data);
 	gnttab_grant_foreign_access_ref(
 		ref, np->xbdev->otherend_id, mfn, GTF_readonly);
 	tx->gref = np->grant_tx_ref[id] = ref;

@@ -19,6 +19,7 @@
 #include <linux/smp.h>
 #include <linux/errno.h>
 #include <linux/io.h>
+#include <linux/acpi_iort.h>
 #include <linux/slab.h>
 
 #include <xen/interface/physdev.h>
@@ -43,6 +44,7 @@ struct msi_pirq_entry {
 	int pirq;
 	int entry_nr;
 	struct msi_dev_list *dev_entry;
+	struct cpumask *affinity;
 };
 
 struct msi_dev_list {
@@ -112,11 +114,20 @@ static struct msi_dev_list *get_msi_dev_pirq_list(struct pci_dev *dev)
 }
 
 static int attach_pirq_entry(int pirq, int entry_nr,
-                             struct msi_dev_list *msi_dev_entry)
+			     struct msi_dev_list *msi_dev_entry,
+			     const struct cpumask *affinity)
 {
 	struct msi_pirq_entry *entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
 	unsigned long flags;
 
+	if (entry && affinity) {
+		entry->affinity = kmemdup(affinity, sizeof(*affinity),
+					  GFP_ATOMIC);
+		if (!entry->affinity) {
+			kfree(entry);
+			entry = NULL;
+		}
+	}
 	if (!entry)
 		return -ENOMEM;
 	entry->pirq = pirq;
@@ -139,6 +150,7 @@ static void detach_pirq_entry(int entry_nr,
 			spin_lock_irqsave(&msi_dev_entry->pirq_list_lock, flags);
 			list_del(&pirq_entry->list);
 			spin_unlock_irqrestore(&msi_dev_entry->pirq_list_lock, flags);
+			kfree(pirq_entry->affinity);
 			kfree(pirq_entry);
 			return;
 		}
@@ -523,6 +535,7 @@ static void cleanup_msi_sysfs(struct pci_dev *pdev)
  * msi_capability_init - configure device's MSI capability structure
  * @dev: pointer to the pci_dev data structure of MSI device function
  * @nvec: number of interrupts to allocate
+ * @affinity: flag to indicate cpu irq affinity mask should be set
  *
  * Setup the MSI capability structure of the device with the requested
  * number of interrupts.  A return value of zero indicates the successful
@@ -530,10 +543,17 @@ static void cleanup_msi_sysfs(struct pci_dev *pdev)
  * an error, and a positive return value indicates the number of interrupts
  * which could have been allocated.
  */
-static int msi_capability_init(struct pci_dev *dev, int nvec)
+static int msi_capability_init(struct pci_dev *dev, int nvec, bool affinity)
 {
 	struct msi_dev_list *dev_entry = get_msi_dev_pirq_list(dev);
 	int pirq;
+	struct cpumask *masks = NULL;
+
+	if (affinity) {
+		masks = irq_create_affinity_masks(dev->irq_affinity, nvec);
+		if (!masks)
+			pr_err("Unable to allocate affinity masks, ignoring\n");
+	}
 
 	pci_msi_set_enable(dev, 0);	/* Disable MSI during set up */
 
@@ -541,6 +561,7 @@ static int msi_capability_init(struct pci_dev *dev, int nvec)
 	if (pirq < 0)
 		return pirq;
 	dev_entry->e.entry_nr = -nvec;
+	dev_entry->e.affinity = masks;
 
 	/* Set MSI enabled bits	 */
 	pci_intx_for_msi(dev, 0);
@@ -558,18 +579,20 @@ static int msi_capability_init(struct pci_dev *dev, int nvec)
  * @dev: pointer to the pci_dev data structure of MSI-X device function
  * @entries: pointer to an array of struct msix_entry entries
  * @nvec: number of @entries
+ * @affinity: flag to indicate cpu irq affinity mask should be set
  *
  * Setup the MSI-X capability structure of device function with a
  * single MSI-X irq. A return of zero indicates the successful setup of
  * requested MSI-X entries with allocated irqs or non-zero for otherwise.
  **/
-static int msix_capability_init(struct pci_dev *dev,
-				struct msix_entry *entries, int nvec)
+static int msix_capability_init(struct pci_dev *dev, struct msix_entry *entries,
+				int nvec, bool affinity)
 {
 	u64 table_base;
 	int pirq, i, j, mapped;
 	struct msi_dev_list *msi_dev_entry = get_msi_dev_pirq_list(dev);
 	struct msi_pirq_entry *pirq_entry;
+	struct cpumask *masks = NULL;
 
 	if (!msi_dev_entry)
 		return -ENOMEM;
@@ -580,6 +603,12 @@ static int msix_capability_init(struct pci_dev *dev,
 	table_base = find_table_base(dev);
 	if (!table_base)
 		return -ENODEV;
+
+	if (affinity) {
+		masks = irq_create_affinity_masks(dev->irq_affinity, nvec);
+		if (!masks)
+			pr_err("Unable to allocate affinity masks, ignoring\n");
+	}
 
 	/*
 	 * Some devices require MSI-X to be enabled before we can touch the
@@ -610,10 +639,12 @@ static int msix_capability_init(struct pci_dev *dev,
 		if (pirq < 0)
 			break;
 		attach_pirq_entry(pirq, entries ? entries[i].entry : i,
-				  msi_dev_entry);
+				  msi_dev_entry, masks ? &masks[i] : NULL);
 		if (entries)
 			entries[i].vector = pirq;
 	}
+
+	kfree(masks);
 
 	if (i != nvec) {
 		for (j = i - 1; j >= 0; j--) {
@@ -741,6 +772,9 @@ void pci_msi_shutdown(struct pci_dev *dev)
 		       msi_dev_entry->owner);
 	msi_dev_entry->owner = DOMID_IO;
 
+	kfree(msi_dev_entry->e.affinity);
+	msi_dev_entry->e.affinity = NULL;
+
 	/* Disable MSI mode */
 	pci_msi_set_enable(dev, 0);
 	pci_intx_for_msi(dev, 1);
@@ -774,22 +808,8 @@ int pci_msix_vec_count(struct pci_dev *dev)
 }
 EXPORT_SYMBOL(pci_msix_vec_count);
 
-/**
- * pci_enable_msix - configure device's MSI-X capability structure
- * @dev: pointer to the pci_dev data structure of MSI-X device function
- * @entries: pointer to an array of MSI-X entries (optional)
- * @nvec: number of MSI-X irqs requested for allocation by device driver
- *
- * Setup the MSI-X capability structure of device function with the number
- * of requested irqs upon its software driver call to request for
- * MSI-X mode enabled on its hardware device function. A return of zero
- * indicates the successful configuration of MSI-X capability structure
- * with new allocated MSI-X irqs. A return of < 0 indicates a failure.
- * Or a return of > 0 indicates that driver request is exceeding the number
- * of irqs or MSI-X vectors available. Driver should use the returned value to
- * re-send its request.
- **/
-int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
+static int __pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries,
+			     int nvec, bool affinity)
 {
 	int status, nr_entries;
 	int i, j, temp;
@@ -801,6 +821,7 @@ int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
 	if (!is_initial_xendomain()) {
 #ifdef CONFIG_XEN_PCIDEV_FRONTEND
 		struct msi_pirq_entry *pirq_entry;
+		struct cpumask *masks = NULL;
 		int ret, irq;
 
 		status = !entries;
@@ -812,11 +833,19 @@ int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
 				entries[i].entry = i;
 		}
 
+		if (affinity) {
+			masks = irq_create_affinity_masks(dev->irq_affinity,
+							  nvec);
+			if (!masks)
+				pr_err("Unable to allocate affinity masks, ignoring\n");
+		}
+
 		temp = dev->irq;
 		ret = pci_frontend_enable_msix(dev, entries, nvec);
 		if (ret) {
 			if (status)
 				kfree(entries);
+			kfree(masks);
 			dev_warn(&dev->dev,
 				 "got %x from frontend_enable_msix\n", ret);
 			return ret;
@@ -839,11 +868,13 @@ int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
 			if (mapped)
 				continue;
 			irq = evtchn_map_pirq(-1, entries[i].vector, 1);
-			attach_pirq_entry(irq, entries[i].entry, msi_dev_entry);
+			attach_pirq_entry(irq, entries[i].entry, msi_dev_entry,
+					  masks ? &masks[i] : NULL);
 			entries[i].vector = irq;
 		}
 		if (status)
 			kfree(entries);
+		kfree(masks);
 		populate_msi_sysfs(dev);
 		return 0;
 #else
@@ -876,12 +907,32 @@ int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
 		return -EINVAL;
 	}
 
-	status = msix_capability_init(dev, entries, nvec);
+	status = msix_capability_init(dev, entries, nvec, affinity);
 
 	if ( !status )
 		msi_dev_entry->default_irq = temp;
 
 	return status;
+}
+
+/**
+ * pci_enable_msix - configure device's MSI-X capability structure
+ * @dev: pointer to the pci_dev data structure of MSI-X device function
+ * @entries: pointer to an array of MSI-X entries (optional)
+ * @nvec: number of MSI-X irqs requested for allocation by device driver
+ *
+ * Setup the MSI-X capability structure of device function with the number
+ * of requested irqs upon its software driver call to request for
+ * MSI-X mode enabled on its hardware device function. A return of zero
+ * indicates the successful configuration of MSI-X capability structure
+ * with new allocated MSI-X irqs. A return of < 0 indicates a failure.
+ * Or a return of > 0 indicates that driver request is exceeding the number
+ * of irqs or MSI-X vectors available. Driver should use the returned value to
+ * re-send its request.
+ **/
+int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
+{
+	return __pci_enable_msix(dev, entries, nvec, false);
 }
 EXPORT_SYMBOL(pci_enable_msix);
 
@@ -959,6 +1010,7 @@ EXPORT_SYMBOL(pci_msi_enabled);
 static int __pci_enable_msi_range(struct pci_dev *dev, int minvec, int maxvec,
 		unsigned int flags)
 {
+	bool affinity = flags & PCI_IRQ_AFFINITY;
 	int nvec, temp;
 	int rc;
 	struct msi_dev_list *msi_dev_entry = get_msi_dev_pirq_list(dev);
@@ -990,14 +1042,15 @@ static int __pci_enable_msi_range(struct pci_dev *dev, int minvec, int maxvec,
 	temp = dev->irq;
 
 	for (;;) {
-		if (flags & PCI_IRQ_AFFINITY) {
-			dev->irq_affinity = irq_create_affinity_mask(&nvec);
+		if (affinity) {
+			nvec = irq_calc_affinity_vectors(dev->irq_affinity,
+					nvec);
 			if (nvec < minvec)
 				return -ENOSPC;
 		}
 
 		if (is_initial_xendomain())
-			rc = msi_capability_init(dev, nvec);
+			rc = msi_capability_init(dev, nvec, affinity);
 		else
 #ifdef CONFIG_XEN_PCIDEV_FRONTEND
 			rc = pci_frontend_enable_msi(dev, nvec);
@@ -1006,9 +1059,6 @@ static int __pci_enable_msi_range(struct pci_dev *dev, int minvec, int maxvec,
 #endif
 		if (rc == 0)
 			break;
-
-		kfree(dev->irq_affinity);
-		dev->irq_affinity = NULL;
 
 		if (rc < 0)
 			return rc;
@@ -1054,25 +1104,23 @@ static int __pci_enable_msix_range(struct pci_dev *dev,
 		struct msix_entry *entries, int minvec, int maxvec,
 		unsigned int flags)
 {
-	int nvec = maxvec;
-	int rc;
+	bool affinity = flags & PCI_IRQ_AFFINITY;
+	int rc, nvec = maxvec;
 
 	if (maxvec < minvec)
 		return -ERANGE;
 
 	for (;;) {
-		if (flags & PCI_IRQ_AFFINITY) {
-			dev->irq_affinity = irq_create_affinity_mask(&nvec);
+		if (affinity) {
+			nvec = irq_calc_affinity_vectors(dev->irq_affinity,
+					nvec);
 			if (nvec < minvec)
 				return -ENOSPC;
 		}
 
-		rc = pci_enable_msix(dev, entries, nvec);
+		rc = __pci_enable_msix(dev, entries, nvec, affinity);
 		if (rc == 0)
 			return nvec;
-
-		kfree(dev->irq_affinity);
-		dev->irq_affinity = NULL;
 
 		if (rc < 0)
 			return rc;
@@ -1194,3 +1242,34 @@ int pci_irq_vector(struct pci_dev *dev, unsigned int nr)
 	return dev->irq + nr;
 }
 EXPORT_SYMBOL(pci_irq_vector);
+
+/**
+ * pci_irq_get_affinity - return the affinity of a particular msi vector
+ * @dev:	PCI device to operate on
+ * @nr:		device-relative interrupt vector index (0-based).
+ */
+const struct cpumask *pci_irq_get_affinity(struct pci_dev *dev, int nr)
+{
+	if (dev->msix_enabled) {
+		const struct msi_pirq_entry *entry;
+
+		list_for_each_entry(entry, &dev->msi_list, list) {
+			if (entry->entry_nr == nr)
+				return entry->affinity;
+		}
+		WARN_ON_ONCE(1);
+		return NULL;
+	} else if (dev->msi_enabled) {
+		const struct msi_dev_list *entry = get_msi_dev_pirq_list(dev);
+
+		if (WARN_ON_ONCE(entry->e.entry_nr >= 0 ||
+				 nr >= -entry->e.entry_nr ||
+				 !entry->e.affinity))
+			return NULL;
+
+		return &entry->e.affinity[nr];
+	} else {
+		return cpu_possible_mask;
+	}
+}
+EXPORT_SYMBOL(pci_irq_get_affinity);

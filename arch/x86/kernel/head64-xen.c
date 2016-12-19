@@ -118,6 +118,7 @@ static unsigned long get_cmd_line_ptr(void)
 }
 #else
 const unsigned long phys_base = 0;
+EXPORT_SYMBOL(phys_base);
 #endif
 
 static void __init copy_bootdata(char *real_mode_data)

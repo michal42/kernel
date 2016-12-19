@@ -133,7 +133,7 @@ static notrace cycle_t vread_pvclock(int *mode)
 			return 0;
 		}
 
-		ret = __pvclock_read_cycles(pvti);
+		ret = __pvclock_read_cycles(pvti, rdtsc_ordered());
 	} while (pvclock_read_retry(pvti, version));
 
 	/* refer to vread_tsc() comment for rationale */

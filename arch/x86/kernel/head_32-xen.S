@@ -13,6 +13,7 @@
 #include <asm/asm-offsets.h>
 #include <asm/boot.h>
 #include <asm/percpu.h>
+#include <asm/export.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/arch-x86/xen-mca.h>
 #include <xen/interface/elfnote.h>
@@ -129,10 +130,13 @@ ENTRY(hypercall_page)
  */
 __PAGE_ALIGNED_BSS
 	.align PAGE_SIZE
-ENTRY(swapper_pg_fixmap)
+.globl swapper_pg_fixmap
+swapper_pg_fixmap:
 	.fill 1024,4,0
-ENTRY(empty_zero_page)
+.globl empty_zero_page
+empty_zero_page:
 	.fill 4096,1,0
+EXPORT_SYMBOL(empty_zero_page)
 
 /*
  * This starts the data section.

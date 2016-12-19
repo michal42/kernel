@@ -406,7 +406,6 @@ __irq_entry evtchn_do_upcall(struct pt_regs *regs)
 	}
 
 	old_regs = set_irq_regs(regs);
-	xen_spin_irq_enter();
 	irq_enter();
 	exit_idle();
 
@@ -518,7 +517,6 @@ __irq_entry evtchn_do_upcall(struct pt_regs *regs)
 
 	__this_cpu_write(upcall_state, UPC_INACTIVE);
 	irq_exit();
-	xen_spin_irq_exit();
 	set_irq_regs(old_regs);
 
 	return(__this_cpu_read(privcmd_hcall) && in_hypercall(regs));

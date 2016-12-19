@@ -45,7 +45,7 @@
  * @arg == Operation-specific extra argument(s), as described below.
  * ...  == Additional Operation-specific extra arguments, described below.
  *
- * Versions of Xen prior to 3.0.2 provide only the following legacy version
+ * Versions of Xen prior to 3.0.2 provided only the following legacy version
  * of this hypercall, supporting only the commands yield, block and shutdown:
  *  long sched_op(int cmd, unsigned long arg)
  * @cmd == SCHEDOP_??? (scheduler operation).
@@ -74,7 +74,7 @@
 
 /*
  * Halt execution of this domain (all VCPUs) and notify the system controller.
- * @arg == pointer to sched_shutdown_t structure.
+ * @arg == pointer to sched_shutdown structure.
  *
  * If the sched_shutdown_t reason is SHUTDOWN_suspend then
  * x86 PV guests must also set RDX (EDX for 32-bit guests) to the MFN
@@ -90,7 +90,7 @@
 /*
  * Poll a set of event-channel ports. Return when one or more are pending. An
  * optional timeout may be specified.
- * @arg == pointer to sched_poll_t structure.
+ * @arg == pointer to sched_poll structure.
  */
 #define SCHEDOP_poll        3
 
@@ -98,20 +98,20 @@
  * Declare a shutdown for another domain. The main use of this function is
  * in interpreting shutdown requests and reasons for fully-virtualized
  * domains.  A para-virtualized domain may use SCHEDOP_shutdown directly.
- * @arg == pointer to sched_remote_shutdown_t structure.
+ * @arg == pointer to sched_remote_shutdown structure.
  */
 #define SCHEDOP_remote_shutdown        4
 
 /*
  * Latch a shutdown code, so that when the domain later shuts down it
  * reports this code to the control tools.
- * @arg == sched_shutdown_t, as for SCHEDOP_shutdown.
+ * @arg == sched_shutdown, as for SCHEDOP_shutdown.
  */
 #define SCHEDOP_shutdown_code 5
 
 /*
  * Setup, poke and destroy a domain watchdog timer.
- * @arg == pointer to sched_watchdog_t structure.
+ * @arg == pointer to sched_watchdog structure.
  * With id == 0, setup a domain watchdog timer to cause domain shutdown
  *               after timeout, returns watchdog id.
  * With id != 0 and timeout == 0, destroy domain watchdog timer.
@@ -122,7 +122,7 @@
 /*
  * Override the current vcpu affinity by pinning it to one physical cpu or
  * undo this override restoring the previous affinity.
- * @arg == pointer to sched_pin_override_t structure.
+ * @arg == pointer to sched_pin_override structure.
  *
  * A negative pcpu value will undo a previous pin override and restore the
  * previous cpu affinity.
@@ -152,6 +152,7 @@ struct sched_remote_shutdown {
     domid_t domain_id;         /* Remote domain ID */
     unsigned int reason;       /* SHUTDOWN_* => enum sched_shutdown_reason */
 };
+DEFINE_GUEST_HANDLE_STRUCT(sched_remote_shutdown);
 typedef struct sched_remote_shutdown sched_remote_shutdown_t;
 DEFINE_XEN_GUEST_HANDLE(sched_remote_shutdown_t);
 
@@ -159,12 +160,14 @@ struct sched_watchdog {
     uint32_t id;                /* watchdog ID */
     uint32_t timeout;           /* timeout */
 };
+DEFINE_GUEST_HANDLE_STRUCT(sched_watchdog);
 typedef struct sched_watchdog sched_watchdog_t;
 DEFINE_XEN_GUEST_HANDLE(sched_watchdog_t);
 
 struct sched_pin_override {
     int32_t pcpu;
 };
+DEFINE_GUEST_HANDLE_STRUCT(sched_pin_override);
 typedef struct sched_pin_override sched_pin_override_t;
 DEFINE_XEN_GUEST_HANDLE(sched_pin_override_t);
 

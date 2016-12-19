@@ -44,8 +44,8 @@ LDFLAGS := -m elf_$(UTS_MACHINE)
 ifeq ($(CONFIG_XEN),y)
 LDFLAGS += -e 0
 endif
-ifeq ($(CONFIG_RELOCATABLE),y)
-# If kernel is relocatable, build compressed kernel as PIE.
+# Compressed kernel should be built as PIE since it may be loaded at any
+# address by the bootloader.
 ifeq ($(CONFIG_X86_32),y)
 LDFLAGS += $(call ld-option, -pie) $(call ld-option, --no-dynamic-linker)
 else
@@ -54,7 +54,6 @@ else
 # command-line option, -z noreloc-overflow.
 LDFLAGS += $(shell $(LD) --help 2>&1 | grep -q "\-z noreloc-overflow" \
 	&& echo "-z noreloc-overflow -pie --no-dynamic-linker")
-endif
 endif
 LDFLAGS_vmlinux := -T
 

@@ -1286,8 +1286,8 @@ fail0:
  */
 static int __init xenstored_local_init(void)
 {
-	int err = 0;
-	unsigned long page = 0;
+	int err = -ENOMEM;
+	unsigned long page;
 	struct evtchn_alloc_unbound alloc_unbound;
 
 	/* Allocate Xenstore page */
@@ -1554,7 +1554,6 @@ static int print_device_status(struct device *dev, void *data)
 {
 	struct xenbus_device *xendev = to_xenbus_device(dev);
 	struct device_driver *drv = data;
-	struct xenbus_driver *xendrv;
 
 	/* Is this operation limited to a particular driver? */
 	if (drv && (dev->driver != drv))
@@ -1563,21 +1562,21 @@ static int print_device_status(struct device *dev, void *data)
 	if (!dev->driver) {
 		/* Information only: is this too noisy? */
 		pr_info("Device with no driver: %s\n", xendev->nodename);
-		return 0;
-	}
-
-	if (xendev->state < XenbusStateConnected) {
+	} else if (xendev->state < XenbusStateConnected) {
 		enum xenbus_state rstate = XenbusStateUnknown;
 		if (xendev->otherend)
 			rstate = xenbus_read_driver_state(xendev->otherend);
 		pr_warn("Timeout connecting to device: %s"
 			" (local state %d, remote state %d)\n",
 			xendev->nodename, xendev->state, rstate);
-	}
+	} else if (xendev->state == XenbusStateConnected) {
+		struct xenbus_driver *xendrv = to_xenbus_driver(dev->driver);
 
-	xendrv = to_xenbus_driver(dev->driver);
-	if (xendrv->is_ready && !xendrv->is_ready(xendev))
-		pr_warn("Device not ready: %s\n", xendev->nodename);
+		if (xendrv->is_ready && !xendrv->is_ready(xendev))
+			pr_warn("Device not ready: %s\n", xendev->nodename);
+	} else
+		pr_warn("Unexpected state %d: %s\n",
+			xendev->state, xendev->nodename);
 
 	return 0;
 }

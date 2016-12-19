@@ -788,8 +788,14 @@ static inline pmd_t xen_local_pmdp_get_and_clear(pmd_t *pmdp)
 static inline void xen_set_pte_at(struct mm_struct *mm, unsigned long addr,
 				  pte_t *ptep , pte_t pte)
 {
+/*
+ * I don't think modules are permitted to use this function, but the i915
+ * DRM driver does nevertheless (and init_mm does not get exported).
+ */
+#ifndef MODULE
 	if ((mm != current->mm && mm != &init_mm) ||
 	    HYPERVISOR_update_va_mapping(addr, pte, 0))
+#endif
 		xen_set_pte(ptep, pte);
 }
 

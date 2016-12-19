@@ -37,7 +37,7 @@ static inline void fill_ldt(struct desc_struct *desc, const struct user_desc *in
 #ifndef CONFIG_X86_NO_IDT
 extern struct desc_ptr idt_descr;
 extern gate_desc idt_table[];
-extern struct desc_ptr debug_idt_descr;
+extern const struct desc_ptr debug_idt_descr;
 extern gate_desc debug_idt_table[];
 #endif
 

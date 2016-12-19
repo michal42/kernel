@@ -21,6 +21,7 @@
 #include <asm/msr.h>
 #include <asm/cache.h>
 #include <asm/percpu.h>
+#include <asm/export.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/arch-x86/xen-mca.h>
 #include <xen/interface/elfnote.h>
@@ -97,6 +98,7 @@ NEXT_PAGE(hypercall_page)
 	__PAGE_ALIGNED_BSS
 NEXT_PAGE(empty_zero_page)
 	.skip PAGE_SIZE
+EXPORT_SYMBOL(empty_zero_page)
 
 #undef NEXT_PAGE
 

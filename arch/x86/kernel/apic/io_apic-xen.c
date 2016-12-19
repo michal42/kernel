@@ -1668,7 +1668,7 @@ void __init setup_ioapic_ids_from_mpc(void)
 	 * no meaning without the serial APIC bus.
 	 */
 	if (!(boot_cpu_data.x86_vendor == X86_VENDOR_INTEL)
-		|| APIC_XAPIC(apic_version[boot_cpu_physical_apicid]))
+		|| APIC_XAPIC(boot_cpu_apic_version))
 		return;
 	setup_ioapic_ids_from_mpc_nocheck();
 }
@@ -2514,7 +2514,7 @@ static u8 io_apic_unique_id(int idx, u8 id)
 {
 #ifndef CONFIG_XEN
 	if ((boot_cpu_data.x86_vendor == X86_VENDOR_INTEL) &&
-	    !APIC_XAPIC(apic_version[boot_cpu_physical_apicid]))
+	    !APIC_XAPIC(boot_cpu_apic_version))
 		return io_apic_get_unique_id(idx, id);
 	else
 #endif

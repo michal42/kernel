@@ -32,7 +32,7 @@ static int xen_phys_pkg_id(int cpuid_apic, int index_msb)
 	return cpuid_apic;
 }
 
-static struct apic apic_xen = {
+static struct apic apic_xen __ro_after_init = {
 
 	.name				= "default",
 
@@ -54,5 +54,5 @@ static struct apic apic_xen = {
 #endif
 };
 
-struct apic *apic = &apic_xen;
+struct apic *apic __ro_after_init = &apic_xen;
 EXPORT_SYMBOL_GPL(apic);

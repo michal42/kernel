@@ -33,10 +33,25 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 		BUG_ON(!xen_feature(XENFEAT_writable_page_tables) &&
 		       !PagePinned(virt_to_page(next->pgd)));
 
+		if (IS_ENABLED(CONFIG_VMAP_STACK)) {
+			/*
+			 * If our current stack is in vmalloc space and isn't
+			 * mapped in the new pgd, we'll double-fault.  Forcibly
+			 * map it.
+			 */
+			unsigned int stack_pgd_index = pgd_index(current_stack_pointer());
+
+			pgd_t *pgd = next->pgd + stack_pgd_index;
+
+			if (unlikely(pgd_none(*pgd)))
+				set_pgd(pgd, init_mm.pgd[stack_pgd_index]);
+		}
+
 #if defined(CONFIG_SMP) && !defined(CONFIG_XEN) /* XEN: no lazy tlb */
 		this_cpu_write(cpu_tlbstate.state, TLBSTATE_OK);
 		this_cpu_write(cpu_tlbstate.active_mm, next);
 #endif
+
 		cpumask_set_cpu(cpu, mm_cpumask(next));
 
 		/*

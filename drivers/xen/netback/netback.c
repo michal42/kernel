@@ -1511,7 +1511,7 @@ static void netbk_fill_tx_copy(const netif_tx_request_t *txreq,
 		gop->ptr += first;
 
 		gop->copy--;
-		gop->copy->source = gop->copy[-1].source;
+		gop->copy->source = gop->copy[1].source;
 		gop->copy->source.offset += first;
 		gop->copy->dest.u.gmfn = virt_to_mfn(gop->ptr);
 		gop->copy->dest.domid = DOMID_SELF;

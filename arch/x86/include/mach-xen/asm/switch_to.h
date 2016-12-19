@@ -6,4 +6,6 @@
 
 #undef __switch_to_xtra
 
+asmlinkage void cstar_ret_from_fork(void);
+
 #endif /* _ASM_X86_SWITCH_TO_H */
