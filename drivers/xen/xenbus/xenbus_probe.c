@@ -1248,8 +1248,8 @@ fail0:
  */
 static int __init xenstored_local_init(void)
 {
-	int err = 0;
-	unsigned long page = 0;
+	int err = -ENOMEM;
+	unsigned long page;
 	struct evtchn_alloc_unbound alloc_unbound;
 
 	/* Allocate Xenstore page */
