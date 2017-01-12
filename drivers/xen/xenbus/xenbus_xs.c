@@ -885,7 +885,7 @@ static int process_msg(void)
 	 * A partial read across s/r leaves us out of sync with xenstored.
 	 */
 	for (;;) {
-		err = xb_wait_for_data_to_read();
+		err = xb_wait_for_data_to_read_kgraft();
 		if (err)
 			return err;
 		mutex_lock(&xs_state.response_mutex);
