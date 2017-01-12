@@ -224,11 +224,13 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 		sq->stats.stopped++;
 	}
 
-	cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
-	mlx5e_tx_notify_hw(sq, wqe);
+	if (netif_xmit_stopped(sq->txq)) {
+		cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
+		mlx5e_tx_notify_hw(sq, wqe);
+	}
 
 	/* fill sq edge with nops to avoid wqe wrap around */
-	while ((sq->pc & wq->sz_m1) > sq->edge)
+	 while ((sq->pc & wq->sz_m1) > sq->edge)
 		mlx5e_send_nop(sq, false);
 
 	sq->stats.packets++;
@@ -259,10 +261,6 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq)
 	u16 npkts;
 	u16 sqcc;
 	int i;
-
-	/* avoid accessing cq (dma coherent memory) if not needed */
-	if (!test_and_clear_bit(MLX5E_CQ_HAS_CQES, &cq->flags))
-		return false;
 
 	sq = container_of(cq, struct mlx5e_sq, cq);
 
@@ -339,10 +337,6 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq)
 				netif_tx_wake_queue(sq->txq);
 				sq->stats.wake++;
 	}
-	if (i == MLX5E_TX_CQ_POLL_BUDGET) {
-		set_bit(MLX5E_CQ_HAS_CQES, &cq->flags);
-		return true;
-	}
 
-	return false;
+	return (i == MLX5E_TX_CQ_POLL_BUDGET);
 }
