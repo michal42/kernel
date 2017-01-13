@@ -1649,6 +1649,7 @@ void transport_generic_request_failure(struct se_cmd *cmd,
 	case TCM_LOGICAL_BLOCK_APP_TAG_CHECK_FAILED:
 	case TCM_LOGICAL_BLOCK_REF_TAG_CHECK_FAILED:
 	case TCM_MISCOMPARE_VERIFY:
+	case TCM_COPY_TARGET_DEVICE_NOT_REACHABLE:
 		break;
 	case TCM_OUT_OF_RESOURCES:
 		sense_reason = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
@@ -2935,6 +2936,16 @@ transport_send_check_condition_and_sense(struct se_cmd *cmd,
 		buffer[SPC_ASC_KEY_OFFSET] = 0x10;
 		buffer[SPC_ASCQ_KEY_OFFSET] = 0x03;
 		transport_err_sector_info(buffer, cmd->bad_sector);
+		break;
+	case TCM_COPY_TARGET_DEVICE_NOT_REACHABLE:
+		/* CURRENT ERROR */
+		buffer[0] = 0x70;
+		buffer[SPC_ADD_SENSE_LEN_OFFSET] = 10;
+		/* COPY ABORTED */
+		buffer[SPC_SENSE_KEY_OFFSET] = COPY_ABORTED;
+		/* COPY TARGET DEVICE NOT REACHABLE */
+		buffer[SPC_ASC_KEY_OFFSET] = 0x0d;
+		buffer[SPC_ASCQ_KEY_OFFSET] = 0x02;
 		break;
 	case TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE:
 	default:
