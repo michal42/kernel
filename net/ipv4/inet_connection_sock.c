@@ -293,6 +293,9 @@ static int inet_csk_wait_for_connect(struct sock *sk, long timeo)
 		err = -EAGAIN;
 		if (!timeo)
 			break;
+		if ((current->flags & PF_KTHREAD) &&
+		    kgr_task_in_progress(current))
+			break;
 	}
 	finish_wait(sk_sleep(sk), &wait);
 	return err;
