@@ -550,8 +550,10 @@ struct sk_buff {
 	 * headers if needed
 	 */
 	__u8			encapsulation:1;
+#ifndef __GENKSYMS__
 	__u8			encap_hdr_csum:1; /* unused, for consistency */
 	__u8			csum_valid:1;
+#endif
 	/* 4/6 bit hole (depending on ndisc_nodetype presence) */
 	kmemcheck_bitfield_end(flags2);
 
