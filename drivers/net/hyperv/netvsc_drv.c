@@ -42,6 +42,9 @@
 #include "hyperv_net.h"
 
 
+/* Restrict GSO size to account for NVGRE */
+#define NETVSC_GSO_MAX_SIZE	62768
+
 #define RING_SIZE_MIN 64
 static int ring_size = 128;
 module_param(ring_size, int, S_IRUGO);
@@ -1124,6 +1127,7 @@ static int netvsc_probe(struct hv_device *dev,
 
 	SET_ETHTOOL_OPS(net, &ethtool_ops);
 	SET_NETDEV_DEV(net, &dev->device);
+	netif_set_gso_max_size(net, NETVSC_GSO_MAX_SIZE);
 
 	/*
 	 * Request additional head room in the skb.

@@ -744,6 +744,20 @@ static int segmented_read_std(struct x86_emulate_ctxt *ctxt,
 	return ctxt->ops->read_std(ctxt, linear, data, size, &ctxt->exception);
 }
 
+static int segmented_write_std(struct x86_emulate_ctxt *ctxt,
+			       struct segmented_address addr,
+			       void *data,
+			       unsigned int size)
+{
+	int rc;
+	ulong linear;
+
+	rc = linearize(ctxt, addr, size, true, &linear);
+	if (rc != X86EMUL_CONTINUE)
+		return rc;
+	return ctxt->ops->write_std(ctxt, linear, data, size, &ctxt->exception);
+}
+
 /*
  * Fetch the next byte of the instruction being emulated which is pointed to
  * by ctxt->_eip, then increment ctxt->_eip.
@@ -808,20 +822,6 @@ static int do_insn_fetch(struct x86_emulate_ctxt *ctxt,
 	if (rc != X86EMUL_CONTINUE)					\
 		goto done;						\
 })
-
-static int segmented_write_std(struct x86_emulate_ctxt *ctxt,
-			       struct segmented_address addr,
-			       void *data,
-			       unsigned int size)
-{
-	int rc;
-	ulong linear;
-
-	rc = linearize(ctxt, addr, size, true, &linear);
-	if (rc != X86EMUL_CONTINUE)
-		return rc;
-	return ctxt->ops->write_std(ctxt, linear, data, size, &ctxt->exception);
-}
 
 /*
  * Given the 'reg' portion of a ModRM byte, and a register block, return a
@@ -1471,6 +1471,7 @@ static int load_segment_descriptor(struct x86_emulate_ctxt *ctxt,
 	int ret;
 	u16 dummy;
 
+
 	/*
 	 * None of MOV, POP and LSS can load a NULL selector in CPL=3, but
 	 * they can load it at CPL<3 (Intel's manual says only LSS can,
@@ -1482,7 +1483,7 @@ static int load_segment_descriptor(struct x86_emulate_ctxt *ctxt,
 	 * and only forbid it here.
 	 */
 	if (seg == VCPU_SREG_SS && selector == 3 &&
-			ctxt->mode == X86EMUL_MODE_PROT64)
+	    ctxt->mode == X86EMUL_MODE_PROT64)
 		return emulate_exception(ctxt, GP_VECTOR, 0, true);
 
 	memset(&seg_desc, 0, sizeof seg_desc);
