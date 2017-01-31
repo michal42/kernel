@@ -2129,21 +2129,23 @@ out:
 /**
  * i40e_tso - set up the tso context descriptor
  * @tx_ring:  ptr to the ring to send
- * @skb:      ptr to the skb we're sending
+ * @first:    pointer to first Tx buffer for xmit
  * @hdr_len:  ptr to the size of the packet header
  * @cd_tunneling: ptr to context descriptor bits
  *
  * Returns 0 if no TSO can happen, 1 if tso is going, or error
  **/
-static int i40e_tso(struct i40e_ring *tx_ring, struct sk_buff *skb,
+static int i40e_tso(struct i40e_ring *tx_ring, struct i40e_tx_buffer *first,
 		    u8 *hdr_len, u64 *cd_type_cmd_tso_mss,
 		    u32 *cd_tunneling)
 {
+	struct sk_buff *skb = first->skb;
 	u32 cd_cmd, cd_tso_len, cd_mss;
 	struct ipv6hdr *ipv6h;
 	struct tcphdr *tcph;
 	struct iphdr *iph;
 	u32 l4len;
+	u16 gso_segs, gso_size;
 	int err;
 
 	if (!skb_is_gso(skb))
@@ -2174,10 +2176,23 @@ static int i40e_tso(struct i40e_ring *tx_ring, struct sk_buff *skb,
 		    ? (skb_inner_transport_header(skb) - skb->data)
 		    : skb_transport_offset(skb)) + l4len;
 
+	/* pull values out of skb_shinfo */
+	gso_size = skb_shinfo(skb)->gso_size;
+	gso_segs = skb_shinfo(skb)->gso_segs;
+
+	/* too small a TSO segment size causes problems */
+	if (gso_size < 64) {
+		gso_size = 64;
+		gso_segs = DIV_ROUND_UP(skb->len - *hdr_len, 64);
+	}
+	/* update gso size and bytecount with header size */
+	first->gso_segs = gso_segs;
+	first->bytecount += (first->gso_segs - 1) * *hdr_len;
+
 	/* find the field values */
 	cd_cmd = I40E_TX_CTX_DESC_TSO;
 	cd_tso_len = skb->len - *hdr_len;
-	cd_mss = skb_shinfo(skb)->gso_size;
+	cd_mss = gso_size;
 	*cd_type_cmd_tso_mss |= ((u64)cd_cmd << I40E_TXD_CTX_QW1_CMD_SHIFT) |
 				((u64)cd_tso_len <<
 				 I40E_TXD_CTX_QW1_TSO_LEN_SHIFT) |
@@ -2489,7 +2504,6 @@ static inline void i40e_tx_map(struct i40e_ring *tx_ring, struct sk_buff *skb,
 	u16 i = tx_ring->next_to_use;
 	u32 td_tag = 0;
 	dma_addr_t dma;
-	u16 gso_segs;
 
 	if (tx_flags & I40E_TX_FLAGS_HW_VLAN) {
 		td_cmd |= I40E_TX_DESC_CMD_IL2TAG1;
@@ -2497,15 +2511,6 @@ static inline void i40e_tx_map(struct i40e_ring *tx_ring, struct sk_buff *skb,
 			 I40E_TX_FLAGS_VLAN_SHIFT;
 	}
 
-	if (tx_flags & (I40E_TX_FLAGS_TSO | I40E_TX_FLAGS_FSO))
-		gso_segs = skb_shinfo(skb)->gso_segs;
-	else
-		gso_segs = 1;
-
-	/* multiply data chunks by size of headers */
-	first->bytecount = skb->len - hdr_len + (gso_segs * hdr_len);
-	first->gso_segs = gso_segs;
-	first->skb = skb;
 	first->tx_flags = tx_flags;
 
 	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
@@ -2646,8 +2651,10 @@ static netdev_tx_t i40e_xmit_frame_ring(struct sk_buff *skb,
 
 	count = i40e_xmit_descriptor_count(skb);
 	if (i40e_chk_linearize(skb, count)) {
-		if (__skb_linearize(skb))
-			goto out_drop;
+		if (__skb_linearize(skb)) {
+			dev_kfree_skb_any(skb);
+			return NETDEV_TX_OK;
+		}
 		count = TXD_USE_COUNT(skb->len);
 	}
 
@@ -2662,6 +2669,12 @@ static netdev_tx_t i40e_xmit_frame_ring(struct sk_buff *skb,
 		return NETDEV_TX_BUSY;
 	}
 
+	/* record the location of the first descriptor for this packet */
+	first = &tx_ring->tx_bi[tx_ring->next_to_use];
+	first->skb = skb;
+	first->bytecount = skb->len;
+	first->gso_segs = 1;
+
 	/* prepare the xmit flags */
 	if (i40e_tx_prepare_vlan_flags(skb, tx_ring, &tx_flags))
 		goto out_drop;
@@ -2669,16 +2682,13 @@ static netdev_tx_t i40e_xmit_frame_ring(struct sk_buff *skb,
 	/* obtain protocol of skb */
 	protocol = vlan_get_protocol(skb);
 
-	/* record the location of the first descriptor for this packet */
-	first = &tx_ring->tx_bi[tx_ring->next_to_use];
-
 	/* setup IPv4/IPv6 offloads */
 	if (protocol == htons(ETH_P_IP))
 		tx_flags |= I40E_TX_FLAGS_IPV4;
 	else if (protocol == htons(ETH_P_IPV6))
 		tx_flags |= I40E_TX_FLAGS_IPV6;
 
-	tso = i40e_tso(tx_ring, skb, &hdr_len,
+	tso = i40e_tso(tx_ring, first, &hdr_len,
 		       &cd_type_cmd_tso_mss, &cd_tunneling);
 
 	if (tso < 0)
@@ -2721,7 +2731,8 @@ static netdev_tx_t i40e_xmit_frame_ring(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 
 out_drop:
-	dev_kfree_skb_any(skb);
+	dev_kfree_skb_any(first->skb);
+	first->skb = NULL;
 	return NETDEV_TX_OK;
 }
 
