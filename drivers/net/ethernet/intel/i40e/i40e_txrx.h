@@ -305,9 +305,49 @@ int i40e_napi_poll(struct napi_struct *napi, int budget);
 void i40e_tx_map(struct i40e_ring *tx_ring, struct sk_buff *skb,
 		 struct i40e_tx_buffer *first, u32 tx_flags,
 		 const u8 hdr_len, u32 td_cmd, u32 td_offset);
-int i40e_maybe_stop_tx(struct i40e_ring *tx_ring, int size);
-int i40e_xmit_descriptor_count(struct sk_buff *skb, struct i40e_ring *tx_ring);
 int i40e_tx_prepare_vlan_flags(struct sk_buff *skb,
 			       struct i40e_ring *tx_ring, u32 *flags);
 #endif
+int __i40e_maybe_stop_tx(struct i40e_ring *tx_ring, int size);
+
+/**
+ * i40e_xmit_descriptor_count - calculate number of Tx descriptors needed
+ * @skb:     send buffer
+ * @tx_ring: ring to send buffer on
+ *
+ * Returns number of data descriptors needed for this skb. Returns 0 to indicate
+ * there is not enough descriptors available in this ring since we need at least
+ * one descriptor.
+ **/
+static inline int i40e_xmit_descriptor_count(struct sk_buff *skb)
+{
+	const struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[0];
+	unsigned int nr_frags = skb_shinfo(skb)->nr_frags;
+	int count = 0, size = skb_headlen(skb);
+
+	for (;;) {
+		count += TXD_USE_COUNT(size);
+
+		if (!nr_frags--)
+			break;
+
+		size = skb_frag_size(frag++);
+	}
+
+	return count;
+}
+
+/**
+ * i40e_maybe_stop_tx - 1st level check for Tx stop conditions
+ * @tx_ring: the ring to be checked
+ * @size:    the size buffer we want to assure is available
+ *
+ * Returns 0 if stop is not needed
+ **/
+static inline int i40e_maybe_stop_tx(struct i40e_ring *tx_ring, int size)
+{
+	if (likely(I40E_DESC_UNUSED(tx_ring) >= size))
+		return 0;
+	return __i40e_maybe_stop_tx(tx_ring, size);
+}
 #endif /* _I40E_TXRX_H_ */
