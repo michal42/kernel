@@ -299,6 +299,7 @@ void i40evf_free_tx_resources(struct i40e_ring *tx_ring);
 void i40evf_free_rx_resources(struct i40e_ring *rx_ring);
 int i40evf_napi_poll(struct napi_struct *napi, int budget);
 int __i40evf_maybe_stop_tx(struct i40e_ring *tx_ring, int size);
+bool __i40evf_chk_linearize(struct sk_buff *skb);
 
 /**
  * i40e_xmit_descriptor_count - calculate number of Tx descriptors needed
@@ -339,5 +340,23 @@ static inline int i40e_maybe_stop_tx(struct i40e_ring *tx_ring, int size)
 	if (likely(I40E_DESC_UNUSED(tx_ring) >= size))
 		return 0;
 	return __i40evf_maybe_stop_tx(tx_ring, size);
+}
+
+/**
+ * i40e_chk_linearize - Check if there are more than 8 fragments per packet
+ * @skb:      send buffer
+ * @count:    number of buffers used
+ *
+ * Note: Our HW can't scatter-gather more than 8 fragments to build
+ * a packet on the wire and so we need to figure out the cases where we
+ * need to linearize the skb.
+ **/
+static inline bool i40e_chk_linearize(struct sk_buff *skb, int count)
+{
+	/* we can only support up to 8 data buffers for a single send */
+	if (likely(count <= I40E_MAX_BUFFER_TXD))
+		return false;
+
+	return __i40evf_chk_linearize(skb);
 }
 #endif /* _I40E_TXRX_H_ */
