@@ -146,6 +146,7 @@ struct vxlan_dev {
 	spinlock_t	  hash_lock;
 	unsigned int	  addrcnt;
 	unsigned int	  addrmax;
+	struct gro_cells  gro_cells;
 
 	struct hlist_head fdb_head[FDB_HASH_SIZE];
 };
@@ -575,6 +576,7 @@ static struct sk_buff **vxlan_gro_receive(struct sk_buff **head, struct sk_buff 
 			goto out;
 	}
 	skb_gro_pull(skb, sizeof(struct vxlanhdr)); /* pull vxlan header */
+	skb_gro_postpull_rcsum(skb, vh, sizeof(struct vxlanhdr));
 
 	off_eth = skb_gro_offset(skb);
 	hlen = off_eth + sizeof(*eh);
@@ -609,6 +611,7 @@ static struct sk_buff **vxlan_gro_receive(struct sk_buff **head, struct sk_buff 
 	}
 
 	skb_gro_pull(skb, sizeof(*eh)); /* pull inner eth header */
+	skb_gro_postpull_rcsum(skb, eh, sizeof(*eh));
 	pp = ptype->callbacks.gro_receive(head, skb);
 
 out_unlock:
@@ -1164,15 +1167,7 @@ static int vxlan_udp_encap_recv(struct sock *sk, struct sk_buff *skb)
 	if (!vs)
 		goto drop;
 
-	/* If the NIC driver gave us an encapsulated packet
-	 * with the encapsulation mark, the device checksummed it
-	 * for us. Otherwise force the upper layers to verify it.
-	 */
-	if ((skb->ip_summed != CHECKSUM_UNNECESSARY && skb->ip_summed != CHECKSUM_PARTIAL) ||
-	    !skb->encapsulation)
-		skb->ip_summed = CHECKSUM_NONE;
-
-	skb->encapsulation = 0;
+	skb_pop_rcv_encapsulation(skb);
 
 	vs->rcv(vs, skb, vxh->vx_vni);
 	return 0;
@@ -1205,6 +1200,7 @@ static void vxlan_rcv(struct vxlan_sock *vs,
 	skb_reset_mac_header(skb);
 	skb_scrub_packet(skb, !net_eq(vxlan->net, dev_net(vxlan->dev)));
 	skb->protocol = eth_type_trans(skb, vxlan->dev);
+	skb_postpull_rcsum(skb, eth_hdr(skb), ETH_HLEN);
 
 	/* Ignore packet loops (and multicast echo) */
 	if (ether_addr_equal(eth_hdr(skb)->h_source, vxlan->dev->dev_addr))
@@ -1256,7 +1252,7 @@ static void vxlan_rcv(struct vxlan_sock *vs,
 	stats->rx_bytes += skb->len;
 	u64_stats_update_end(&stats->syncp);
 
-	netif_rx(skb);
+	gro_cells_receive(&vxlan->gro_cells, skb);
 
 	return;
 drop:
@@ -2325,6 +2321,8 @@ static void vxlan_setup(struct net_device *dev)
 
 	vxlan->dev = dev;
 
+	gro_cells_init(&vxlan->gro_cells, dev);
+
 	for (h = 0; h < FDB_HASH_SIZE; ++h)
 		INIT_HLIST_HEAD(&vxlan->fdb_head[h]);
 }
@@ -2756,6 +2754,7 @@ static void vxlan_dellink(struct net_device *dev, struct list_head *head)
 		hlist_del_rcu(&vxlan->hlist);
 	spin_unlock(&vn->sock_lock);
 
+	gro_cells_destroy(&vxlan->gro_cells);
 	list_del(&vxlan->next);
 	unregister_netdevice_queue(dev, head);
 }
@@ -2930,8 +2929,10 @@ static void __net_exit vxlan_exit_net(struct net *net)
 		/* If vxlan->dev is in the same netns, it has already been added
 		 * to the list by the previous loop.
 		 */
-		if (!net_eq(dev_net(vxlan->dev), net))
+		if (!net_eq(dev_net(vxlan->dev), net)) {
+			gro_cells_destroy(&vxlan->gro_cells);
 			unregister_netdevice_queue(vxlan->dev, &list);
+		}
 	}
 
 	unregister_netdevice_many(&list);
