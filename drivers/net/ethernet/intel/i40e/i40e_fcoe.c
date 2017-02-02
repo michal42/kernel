@@ -1192,7 +1192,7 @@ static void i40e_fcoe_handle_ddp(struct i40e_ring *tx_ring,
 /**
  * i40e_fcoe_tso - set up FCoE TSO
  * @tx_ring:  ring to send buffer on
- * @skb:      send buffer
+ * @first:    pointer to first Tx buffer for xmit
  * @tx_flags: collected send information
  * @hdr_len:  the tso header length
  * @sof: the SOF to indicate class of service
@@ -1205,13 +1205,15 @@ static void i40e_fcoe_handle_ddp(struct i40e_ring *tx_ring,
  * code to drop the frame.
  **/
 static int i40e_fcoe_tso(struct i40e_ring *tx_ring,
-			 struct sk_buff *skb,
+			 struct i40e_tx_buffer *first,
 			 u32 tx_flags, u8 *hdr_len, u8 sof)
 {
+	struct sk_buff *skb = first->skb;
 	struct i40e_tx_context_desc *context_desc;
 	u32 cd_type, cd_cmd, cd_tso_len, cd_mss;
 	struct fc_frame_header *fh;
 	u64 cd_type_cmd_tso_mss;
+	u16 gso_segs, gso_size;
 
 	/* must match gso type as FCoE */
 	if (!skb_is_gso(skb))
@@ -1229,6 +1231,19 @@ static int i40e_fcoe_tso(struct i40e_ring *tx_ring,
 	*hdr_len = skb_transport_offset(skb) + sizeof(struct fc_frame_header) +
 		   sizeof(struct fcoe_crc_eof);
 
+	/* pull values out of skb_shinfo */
+	gso_size = skb_shinfo(skb)->gso_size;
+	gso_segs = skb_shinfo(skb)->gso_segs;
+
+	/* too small a TSO segment size causes problems */
+	if (gso_size < 64) {
+		gso_size = 64;
+		gso_segs = DIV_ROUND_UP(skb->len - *hdr_len, 64);
+	}
+	/* update gso size and bytecount with header size */
+	first->gso_segs = gso_segs;
+	first->bytecount += (first->gso_segs - 1) * *hdr_len;
+
 	/* check sof to decide a class 2 or 3 TSO */
 	if (likely(i40e_fcoe_sof_is_class3(sof)))
 		cd_cmd = I40E_FCOE_TX_CTX_DESC_OPCODE_TSO_FC_CLASS3;
@@ -1243,7 +1258,7 @@ static int i40e_fcoe_tso(struct i40e_ring *tx_ring,
 	/* fill the field values */
 	cd_type = I40E_TX_DESC_DTYPE_FCOE_CTX;
 	cd_tso_len = skb->len - *hdr_len;
-	cd_mss = skb_shinfo(skb)->gso_size;
+	cd_mss = gso_size;
 	cd_type_cmd_tso_mss =
 		((u64)cd_type  << I40E_TXD_CTX_QW1_DTYPE_SHIFT)     |
 		((u64)cd_cmd     << I40E_TXD_CTX_QW1_CMD_SHIFT)	    |
@@ -1362,16 +1377,31 @@ static netdev_tx_t i40e_fcoe_xmit_frame(struct sk_buff *skb,
 	struct i40e_ring *tx_ring = vsi->tx_rings[skb->queue_mapping];
 	struct i40e_tx_buffer *first;
 	u32 tx_flags = 0;
+	int fso, count;
 	u8 hdr_len = 0;
 	u8 sof = 0;
 	u8 eof = 0;
-	int fso;
 
 	if (i40e_fcoe_set_skb_header(skb))
 		goto out_drop;
 
-	if (!i40e_xmit_descriptor_count(skb, tx_ring))
+	count = i40e_xmit_descriptor_count(skb);
+	if (i40e_chk_linearize(skb, count)) {
+		if (__skb_linearize(skb))
+			goto out_drop;
+		count = TXD_USE_COUNT(skb->len);
+	}
+
+	/* need: 1 descriptor per page * PAGE_SIZE/I40E_MAX_DATA_PER_TXD,
+	 *       + 1 desc for skb_head_len/I40E_MAX_DATA_PER_TXD,
+	 *       + 4 desc gap to avoid the cache line where head is,
+	 *       + 1 desc for context descriptor,
+	 * otherwise try next time
+	 */
+	if (i40e_maybe_stop_tx(tx_ring, count + 4 + 1)) {
+		tx_ring->tx_stats.tx_busy++;
 		return NETDEV_TX_BUSY;
+	}
 
 	/* prepare the xmit flags */
 	if (i40e_tx_prepare_vlan_flags(skb, tx_ring, &tx_flags))
@@ -1379,6 +1409,9 @@ static netdev_tx_t i40e_fcoe_xmit_frame(struct sk_buff *skb,
 
 	/* record the location of the first descriptor for this packet */
 	first = &tx_ring->tx_bi[tx_ring->next_to_use];
+	first->skb = skb;
+	first->bytecount = skb->len;
+	first->gso_segs = 1;
 
 	/* FIP is a regular L2 traffic w/o offload */
 	if (skb->protocol == htons(ETH_P_FIP))
@@ -1387,16 +1420,16 @@ static netdev_tx_t i40e_fcoe_xmit_frame(struct sk_buff *skb,
 	/* check sof and eof, only supports FC Class 2 or 3 */
 	if (i40e_fcoe_fc_sof(skb, &sof) || i40e_fcoe_fc_eof(skb, &eof)) {
 		netdev_err(netdev, "SOF/EOF error:%02x - %02x\n", sof, eof);
-		goto out_drop;
+		goto out_drop_first;
 	}
 
 	/* always do FCCRC for FCoE */
 	tx_flags |= I40E_TX_FLAGS_FCCRC;
 
 	/* check we should do sequence offload */
-	fso = i40e_fcoe_tso(tx_ring, skb, tx_flags, &hdr_len, sof);
+	fso = i40e_fcoe_tso(tx_ring, first, tx_flags, &hdr_len, sof);
 	if (fso < 0)
-		goto out_drop;
+		goto out_drop_first;
 	else if (fso)
 		tx_flags |= I40E_TX_FLAGS_FSO;
 	else
@@ -1409,6 +1442,8 @@ out_send:
 	i40e_maybe_stop_tx(tx_ring, DESC_NEEDED);
 	return NETDEV_TX_OK;
 
+out_drop_first:
+	first->skb = NULL;
 out_drop:
 	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
