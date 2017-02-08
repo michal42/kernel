@@ -1957,7 +1957,7 @@ static void blkfront_connect(struct blkfront_info *info)
 	if (err) {
 		xenbus_dev_fatal(info->xbdev, err, "xlvbd_add at %s",
 				 info->xbdev->otherend);
-		return;
+		goto fail;
 	}
 
 	xenbus_switch_state(info->xbdev, XenbusStateConnected);
@@ -1971,6 +1971,11 @@ static void blkfront_connect(struct blkfront_info *info)
 	add_disk(info->gd);
 
 	info->is_ready = 1;
+	return;
+
+fail:
+	blkif_free(info, 0);
+	return;
 }
 
 /**
