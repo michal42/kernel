@@ -1766,14 +1766,14 @@ static int blkfront_setup_indirect(struct blkfront_info *info)
 	err = xenbus_gather(XBT_NIL, info->xbdev->otherend,
 			    "feature-max-indirect-segments", "%u", &indirect_segments,
 			    NULL);
-	if (err) {
-		info->max_indirect_segments = 0;
-		segs = BLKIF_MAX_SEGMENTS_PER_REQUEST;
-	} else {
-		info->max_indirect_segments = min(indirect_segments,
-						  xen_blkif_max_segments);
-		segs = info->max_indirect_segments;
-	}
+	if (err)
+		indirect_segments = 0;
+	if (indirect_segments > xen_blkif_max_segments)
+		indirect_segments = xen_blkif_max_segments;
+	if (indirect_segments <= BLKIF_MAX_SEGMENTS_PER_REQUEST)
+		indirect_segments = 0;
+	info->max_indirect_segments = indirect_segments;
+	segs = indirect_segments ?: BLKIF_MAX_SEGMENTS_PER_REQUEST;
 
 	err = fill_grant_buffer(info, (segs + INDIRECT_GREFS(segs)) * BLK_RING_SIZE);
 	if (err)
@@ -2194,6 +2194,9 @@ static int __init xlblk_init(void)
 
 	if (!xen_domain())
 		return -ENODEV;
+
+	if (xen_blkif_max_segments < BLKIF_MAX_SEGMENTS_PER_REQUEST)
+		xen_blkif_max_segments = BLKIF_MAX_SEGMENTS_PER_REQUEST;
 
 	if (!xen_has_pv_disk_devices())
 		return -ENODEV;
