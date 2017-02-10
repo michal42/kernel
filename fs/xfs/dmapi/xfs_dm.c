@@ -206,11 +206,7 @@ xfs_vp_to_hexhandle(
 	int		error;
 	int		i;
 
-	/*
-	 * XXX: dm_vp_to_handle doesn't exist.
-	 * 	Looks like this debug code is rather dead.
-	 */
-	if ((error = dm_vp_to_handle(inode, &handle)))
+	if ((error = dm_ip_to_handle(inode, &handle)))
 		return(error);
 
 	if (type == DM_FSYS_OBJ) {	/* a filesystem handle */
@@ -973,10 +969,10 @@ xfs_dm_downgrade_right(
 	char		buffer[sizeof(dm_handle_t) * 2 + 1];
 
 	if (!xfs_vp_to_hexhandle(inode, type, buffer)) {
-		printf("dm_downgrade_right: old %d new %d type %d handle %s\n",
+		printk("dm_downgrade_right: old %d new %d type %d handle %s\n",
 			right, DM_RIGHT_SHARED, type, buffer);
 	} else {
-		printf("dm_downgrade_right: old %d new %d type %d handle "
+		printk("dm_downgrade_right: old %d new %d type %d handle "
 			"<INVALID>\n", right, DM_RIGHT_SHARED, type);
 	}
 #endif	/* DEBUG_RIGHTS */
@@ -2129,8 +2125,8 @@ xfs_dm_round_hole(
 			return -EINVAL; /* requested length is too small */
 	}
 #ifdef CONFIG_DMAPI_DEBUG
-	printk("xfs_dm_round_hole: off %lld, len %llu, align %llu, "
-	       "filesize %llu, roff %lld, rlen %llu\n",
+	printk("xfs_dm_round_hole: off %llu, len %llu, align %llu, "
+	       "filesize %llu, roff %llu, rlen %llu\n",
 	       (long long)offset, (unsigned long long)length,
 	       (unsigned long long)align, filesize, (long long)*roff,
 	       (unsigned long long)*rlen);
@@ -2264,7 +2260,7 @@ xfs_dm_punch_hole(
 	}
 
 #ifdef CONFIG_DMAPI_DEBUG
-	printk("xfs_dm_punch_hole: off %lld, len %llu, align %llu\n",
+	printk("xfs_dm_punch_hole: off %llu, len %llu, align %llu\n",
 	       (long long)off, (unsigned long long)len,
 	       (unsigned long long)align);
 #endif
@@ -2329,10 +2325,10 @@ xfs_dm_release_right(
 	char		buffer[sizeof(dm_handle_t) * 2 + 1];
 
 	if (!xfs_vp_to_hexhandle(inode, type, buffer)) {
-		printf("dm_release_right: old %d type %d handle %s\n",
+		printk("dm_release_right: old %d type %d handle %s\n",
 			right, type, buffer);
 	} else {
-		printf("dm_release_right: old %d type %d handle "
+		printk("dm_release_right: old %d type %d handle "
 			" <INVALID>\n", right, type);
 	}
 #endif	/* DEBUG_RIGHTS */
@@ -2383,10 +2379,10 @@ xfs_dm_request_right(
 	char		buffer[sizeof(dm_handle_t) * 2 + 1];
 
 	if (!xfs_vp_to_hexhandle(inode, type, buffer)) {
-		printf("dm_request_right: old %d new %d type %d flags 0x%x "
+		printk("dm_request_right: old %d new %d type %d flags 0x%x "
 			"handle %s\n", right, newright, type, flags, buffer);
 	} else {
-		printf("dm_request_right: old %d new %d type %d flags 0x%x "
+		printk("dm_request_right: old %d new %d type %d flags 0x%x "
 			"handle <INVALID>\n", right, newright, type, flags);
 	}
 #endif	/* DEBUG_RIGHTS */
@@ -2697,10 +2693,10 @@ xfs_dm_upgrade_right(
 	char		buffer[sizeof(dm_handle_t) * 2 + 1];
 
 	if (!xfs_vp_to_hexhandle(inode, type, buffer)) {
-		printf("dm_upgrade_right: old %d new %d type %d handle %s\n",
+		printk("dm_upgrade_right: old %d new %d type %d handle %s\n",
 			right, DM_RIGHT_EXCL, type, buffer);
 	} else {
-		printf("dm_upgrade_right: old %d new %d type %d handle "
+		printk("dm_upgrade_right: old %d new %d type %d handle "
 			"<INVALID>\n", right, DM_RIGHT_EXCL, type);
 	}
 #endif	/* DEBUG_RIGHTS */
