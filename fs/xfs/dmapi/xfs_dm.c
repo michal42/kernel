@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2006,2011 SGI.
+ * Copyright (c) 2000-2006,2011-2016 SGI.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -1585,7 +1585,7 @@ dm_filldir(struct dir_context *ctx, const char *name, int namelen,
 
 	memset(statp, 0, dm_stat_size(MAXNAMLEN));
 	error = -xfs_dm_bulkattr_iget_one(cb->mp, ino,
-			statp, needed);
+			statp, sizeof(dm_stat_t) + sizeof(dm_handle_t));
 	if (error)
 		goto out_err;
 
@@ -1600,6 +1600,8 @@ dm_filldir(struct dir_context *ctx, const char *name, int namelen,
 
 	/* Word-align the record */
 	statp->_link = dm_stat_align(len + namelen + 1);
+	ASSERT(needed == statp->_link);
+	ASSERT(cb->spaceleft >= statp->_link);
 
 	error = -EFAULT;
 	if (copy_to_user(cb->ubuf, statp, len))
@@ -1691,6 +1693,7 @@ xfs_dm_get_dirattrs_rvp(
 	error = -EFAULT;
 	if (cb.lastbuf && put_user(0, &cb.lastbuf->_link))
 		goto out_kfree;
+	ASSERT(cb.nwritten <= buflen);
 	if (put_user(cb.nwritten, rlenp))
 		goto out_kfree;
 	if (copy_to_user(locp, &loc, sizeof(loc)))
