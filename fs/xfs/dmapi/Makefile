@@ -20,7 +20,7 @@ EXTRA_CFLAGS += -I$(src)/.. -I$(src)/../linux-2.6
 EXTRA_CFLAGS += -I$(srctree)/fs/dmapi
 
 ifeq ($(CONFIG_XFS_DEBUG),y)
-	EXTRA_CFLAGS += -g -DDEBUG
+	EXTRA_CFLAGS += -g -DDEBUG -DDEBUG_RIGHTS
 endif
 
 obj-$(CONFIG_XFS_DMAPI)		+= xfs_dmapi.o
