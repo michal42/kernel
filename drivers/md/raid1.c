@@ -869,18 +869,16 @@ static void raise_barrier(struct r1conf *conf)
 	spin_lock_irq(&conf->resync_lock);
 
 	/* Wait until no block IO is waiting */
-	wait_event_lock_irq(conf->wait_barrier,
-			    !atomic_read(&conf->nr_waiting),
+	wait_event_lock_irq(conf->wait_barrier, !conf->nr_waiting,
 			    conf->resync_lock);
 
 	/* block any new IO from starting */
-	atomic_inc(&conf->barrier);
+	conf->barrier++;
 
 	/* Now wait for all pending IO to complete */
 	wait_event_lock_irq(conf->wait_barrier,
-			    !test_bit(R1FLAG_ARRAY_FROZEN, &conf->flags) &&
-			    !atomic_read(&conf->nr_pending) &&
-			    atomic_read(&conf->barrier) < RESYNC_DEPTH,
+			    !conf->array_frozen &&
+			    !conf->nr_pending && conf->barrier < RESYNC_DEPTH,
 			    conf->resync_lock);
 
 	spin_unlock_irq(&conf->resync_lock);
@@ -888,18 +886,19 @@ static void raise_barrier(struct r1conf *conf)
 
 static void lower_barrier(struct r1conf *conf)
 {
-	BUG_ON(atomic_read(&conf->barrier) <= 0);
-	atomic_dec(&conf->barrier);
+	unsigned long flags;
+	BUG_ON(conf->barrier <= 0);
+	spin_lock_irqsave(&conf->resync_lock, flags);
+	conf->barrier--;
+	spin_unlock_irqrestore(&conf->resync_lock, flags);
 	wake_up(&conf->wait_barrier);
 }
 
 static void wait_barrier(struct r1conf *conf)
 {
-	atomic_inc(&conf->nr_pending);
-	if (atomic_read(&conf->barrier)) {
-		spin_lock_irq(&conf->resync_lock);
-		atomic_inc(&conf->nr_waiting);
-		atomic_dec(&conf->nr_pending);
+	spin_lock_irq(&conf->resync_lock);
+	if (conf->barrier) {
+		conf->nr_waiting++;
 		/* Wait for the barrier to drop.
 		 * However if there are already pending
 		 * requests (preventing the barrier from
@@ -909,23 +908,25 @@ static void wait_barrier(struct r1conf *conf)
 		 * that queue to get the nr_pending
 		 * count down.
 		 */
-		wait_event_lock_irq(
-			conf->wait_barrier,
-			!test_bit(R1FLAG_ARRAY_FROZEN, &conf->flags) &&
-			(atomic_read(&conf->barrier) ||
-			 (atomic_read(&conf->nr_pending) &&
-			 current->bio_list &&
-			 !bio_list_empty(current->bio_list))),
-			conf->resync_lock);
-		atomic_inc(&conf->nr_pending);
-		atomic_dec(&conf->nr_waiting);
-		spin_unlock_irq(&conf->resync_lock);
+		wait_event_lock_irq(conf->wait_barrier,
+				    !conf->array_frozen &&
+				    (!conf->barrier ||
+				    (conf->nr_pending &&
+				     current->bio_list &&
+				     !bio_list_empty(current->bio_list))),
+				    conf->resync_lock);
+		conf->nr_waiting--;
 	}
+	conf->nr_pending++;
+	spin_unlock_irq(&conf->resync_lock);
 }
 
 static void allow_barrier(struct r1conf *conf)
 {
-	atomic_dec(&conf->nr_pending);
+	unsigned long flags;
+	spin_lock_irqsave(&conf->resync_lock, flags);
+	conf->nr_pending--;
+	spin_unlock_irqrestore(&conf->resync_lock, flags);
 	wake_up(&conf->wait_barrier);
 }
 
@@ -942,22 +943,21 @@ static void freeze_array(struct r1conf *conf, int extra)
 	 * must match the number of pending IOs (nr_pending) before
 	 * we continue.
 	 */
-	if (!test_and_set_bit(R1FLAG_ARRAY_FROZEN, &conf->flags)) {
-		spin_lock_irq(&conf->resync_lock);
-		wait_event_lock_irq_cmd(conf->wait_barrier,
-				  atomic_read(&conf->nr_pending) ==
-					conf->nr_queued + extra,
-				  conf->resync_lock,
-				  flush_pending_writes(conf));
-		spin_unlock_irq(&conf->resync_lock);
-	}
+	spin_lock_irq(&conf->resync_lock);
+	conf->array_frozen = 1;
+	wait_event_lock_irq_cmd(conf->wait_barrier,
+				conf->nr_pending == conf->nr_queued+extra,
+				conf->resync_lock,
+				flush_pending_writes(conf));
+	spin_unlock_irq(&conf->resync_lock);
 }
-
 static void unfreeze_array(struct r1conf *conf)
 {
 	/* reverse the effect of the freeze */
-	if (test_and_set_bit(R1FLAG_ARRAY_FROZEN, &conf->flags))
-		wake_up(&conf->wait_barrier);
+	spin_lock_irq(&conf->resync_lock);
+	conf->array_frozen = 0;
+	wake_up(&conf->wait_barrier);
+	spin_unlock_irq(&conf->resync_lock);
 }
 
 /* duplicate the data pages for behind I/O
@@ -1602,7 +1602,7 @@ static int raid1_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 			 * if this was recently any drive of the array
 			 */
 			if (rdev->saved_raid_disk < 0)
-				set_bit(R1FLAG_FULLSYNC, &conf->flags);
+				conf->fullsync = 1;
 			rcu_assign_pointer(p->rdev, rdev);
 			break;
 		}
@@ -1613,7 +1613,7 @@ static int raid1_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 			set_bit(Replacement, &rdev->flags);
 			rdev->raid_disk = mirror;
 			err = 0;
-			set_bit(R1FLAG_FULLSYNC, &conf->flags);
+			conf->fullsync = 1;
 			rcu_assign_pointer(p[conf->raid_disks].rdev, rdev);
 			break;
 		}
@@ -2514,7 +2514,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr, int *skipp
 			bitmap_end_sync(mddev->bitmap, mddev->curr_resync,
 						&sync_blocks, 1);
 		else /* completed sync */
-			clear_bit(R1FLAG_FULLSYNC, &conf->flags);
+			conf->fullsync = 0;
 
 		bitmap_close_sync(mddev->bitmap);
 		close_sync(conf);
@@ -2529,7 +2529,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr, int *skipp
 	if (mddev->bitmap == NULL &&
 	    mddev->recovery_cp == MaxSector &&
 	    !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery) &&
-	    !test_bit(R1FLAG_FULLSYNC, &conf->flags)) {
+	    conf->fullsync == 0) {
 		*skipped = 1;
 		return max_sector - sector_nr;
 	}
@@ -2537,8 +2537,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr, int *skipp
 	 * This call the bitmap_start_sync doesn't actually record anything
 	 */
 	if (!bitmap_start_sync(mddev->bitmap, sector_nr, &sync_blocks, 1) &&
-	    !test_bit(R1FLAG_FULLSYNC, &conf->flags) &&
-	    !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery)) {
+	    !conf->fullsync && !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery)) {
 		/* We can skip this block, and probably several more */
 		*skipped = 1;
 		return sync_blocks;
@@ -2548,7 +2547,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr, int *skipp
 	 * and resync is going fast enough,
 	 * then let it though before starting on this new sync request.
 	 */
-	if (!go_faster && atomic_read(&conf->nr_waiting))
+	if (!go_faster && conf->nr_waiting)
 		msleep_interruptible(1000);
 
 	/* we are incrementing sector_nr below. To be safe, we check against
@@ -2714,7 +2713,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr, int *skipp
 		if (sync_blocks == 0) {
 			if (!bitmap_start_sync(mddev->bitmap, sector_nr,
 					       &sync_blocks, still_degraded) &&
-			    !test_bit(R1FLAG_FULLSYNC, &conf->flags) &&
+			    !conf->fullsync &&
 			    !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery))
 				break;
 			BUG_ON(sync_blocks < (PAGE_SIZE>>9));
@@ -2889,7 +2888,7 @@ static struct r1conf *setup_conf(struct mddev *mddev)
 			disk->head_position = 0;
 			if (disk->rdev &&
 			    (disk->rdev->saved_raid_disk < 0))
-				set_bit(R1FLAG_FULLSYNC, &conf->flags);
+				conf->fullsync = 1;
 		}
 	}
 
@@ -3204,7 +3203,7 @@ static void *raid1_takeover(struct mddev *mddev)
 		conf = setup_conf(mddev);
 		if (!IS_ERR(conf))
 			/* Array must appear to be quiesced */
-			set_bit(R1FLAG_ARRAY_FROZEN, &conf->flags);
+			conf->array_frozen = 1;
 		return conf;
 	}
 	return ERR_PTR(-EINVAL);
