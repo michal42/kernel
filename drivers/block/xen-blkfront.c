@@ -1766,14 +1766,14 @@ static int blkfront_setup_indirect(struct blkfront_info *info)
 	err = xenbus_gather(XBT_NIL, info->xbdev->otherend,
 			    "feature-max-indirect-segments", "%u", &indirect_segments,
 			    NULL);
-	if (err) {
-		info->max_indirect_segments = 0;
-		segs = BLKIF_MAX_SEGMENTS_PER_REQUEST;
-	} else {
-		info->max_indirect_segments = min(indirect_segments,
-						  xen_blkif_max_segments);
-		segs = info->max_indirect_segments;
-	}
+	if (err)
+		indirect_segments = 0;
+	if (indirect_segments > xen_blkif_max_segments)
+		indirect_segments = xen_blkif_max_segments;
+	if (indirect_segments <= BLKIF_MAX_SEGMENTS_PER_REQUEST)
+		indirect_segments = 0;
+	info->max_indirect_segments = indirect_segments;
+	segs = indirect_segments ?: BLKIF_MAX_SEGMENTS_PER_REQUEST;
 
 	err = fill_grant_buffer(info, (segs + INDIRECT_GREFS(segs)) * BLK_RING_SIZE);
 	if (err)
@@ -1957,7 +1957,7 @@ static void blkfront_connect(struct blkfront_info *info)
 	if (err) {
 		xenbus_dev_fatal(info->xbdev, err, "xlvbd_add at %s",
 				 info->xbdev->otherend);
-		return;
+		goto fail;
 	}
 
 	xenbus_switch_state(info->xbdev, XenbusStateConnected);
@@ -1971,6 +1971,11 @@ static void blkfront_connect(struct blkfront_info *info)
 	add_disk(info->gd);
 
 	info->is_ready = 1;
+	return;
+
+fail:
+	blkif_free(info, 0);
+	return;
 }
 
 /**
@@ -1997,10 +2002,23 @@ static void blkback_changed(struct xenbus_device *dev,
 		break;
 
 	case XenbusStateConnected:
-		if (dev->state != XenbusStateInitialised) {
+		/*
+		 * talk_to_blkback sets state to XenbusStateInitialised
+		 * and blkfront_connect sets it to XenbusStateConnected
+		 * (if connection went OK).
+		 *
+		 * If the backend (or toolstack) decides to poke at backend
+		 * state (and re-trigger the watch by setting the state repeatedly
+		 * to XenbusStateConnected (4)) we need to deal with this.
+		 * This is allowed as this is used to communicate to the guest
+		 * that the size of disk has changed!
+		 */
+		if ((dev->state != XenbusStateInitialised) &&
+		    (dev->state != XenbusStateConnected)) {
 			if (talk_to_blkback(dev, info))
 				break;
 		}
+
 		blkfront_connect(info);
 		break;
 
@@ -2176,6 +2194,9 @@ static int __init xlblk_init(void)
 
 	if (!xen_domain())
 		return -ENODEV;
+
+	if (xen_blkif_max_segments < BLKIF_MAX_SEGMENTS_PER_REQUEST)
+		xen_blkif_max_segments = BLKIF_MAX_SEGMENTS_PER_REQUEST;
 
 	if (!xen_has_pv_disk_devices())
 		return -ENODEV;
