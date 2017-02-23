@@ -2222,8 +2222,10 @@ void mark_mounts_for_expiry(struct list_head *mounts)
 	 *   cleared by mntput())
 	 */
 	list_for_each_entry_safe(mnt, next, mounts, mnt_expire) {
-		if (!xchg(&mnt->mnt_expiry_mark, 1) ||
-			propagate_mount_busy(mnt, 1))
+		if ((!xchg(&mnt->mnt_expiry_mark, 1) ||
+		     propagate_mount_busy(mnt, 1)) &&
+		    !cant_mount(mnt->mnt.mnt_root) &&
+		    !cant_mount(mnt->mnt_mountpoint))
 			continue;
 		list_move(&mnt->mnt_expire, &graveyard);
 	}

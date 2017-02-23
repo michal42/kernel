@@ -490,8 +490,12 @@ void nfs_prime_dcache(struct dentry *parent, struct nfs_entry *entry)
 				nfs_setsecurity(dentry->d_inode, entry->fattr, entry->label);
 			goto out;
 		} else {
-			if (d_invalidate(dentry) != 0)
+			if (d_invalidate(dentry) != 0) {
+				if (!cant_mount(dentry))
+					/* Ensure auto-expiry is expedited */
+					dont_mount(dentry);
 				goto out;
+			}
 			dput(dentry);
 		}
 	}
@@ -1227,12 +1231,18 @@ out_zap_parent:
 		 * it from shrink_dcache_for_unmount(), leading to busy
 		 * inodes on unmount and further oopses.
 		 */
-		if (IS_ROOT(dentry))
+		if (IS_ROOT(dentry)) {
+			if (!cant_mount(dentry))
+				dont_mount(dentry);
 			goto out_valid;
+		}
 	}
 	/* If we have submounts, don't unhash ! */
-	if (check_submounts_and_drop(dentry) != 0)
+	if (check_submounts_and_drop(dentry) != 0) {
+		if (inode && S_ISDIR(inode->i_mode) && !cant_mount(dentry))
+			dont_mount(dentry);
 		goto out_valid;
+	}
 
 	dput(parent);
 	dfprintk(LOOKUPCACHE, "NFS: %s(%s/%s) is invalid\n",
