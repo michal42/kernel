@@ -1582,15 +1582,15 @@ out_unlock:
  *      errno on error
  *
  */
-int
-xfs_change_file_space(
+STATIC int
+__xfs_change_file_space(
 	struct dentry	*dentry,
+	xfs_inode_t	*ip,
 	int		cmd,
 	xfs_flock64_t	*bf,
 	xfs_off_t	offset,
 	int		attr_flags)
 {
-	xfs_inode_t	*ip = XFS_I(dentry->d_inode);
 	xfs_mount_t	*mp = ip->i_mount;
 	int		clrprealloc;
 	int		error;
@@ -1677,6 +1677,9 @@ xfs_change_file_space(
 	case XFS_IOC_ALLOCSP64:
 	case XFS_IOC_FREESP:
 	case XFS_IOC_FREESP64:
+		/* NULL dentry is a hack for DMAPI and should not get here! */
+		if (WARN_ON_ONCE(!dentry))
+			return XFS_ERROR(EINVAL);
 		/*
 		 * These operations actually do IO when extending the file, but
 		 * the allocation is done seperately to the zeroing that is
@@ -1753,6 +1756,29 @@ xfs_change_file_space(
 	if (attr_flags & XFS_ATTR_SYNC)
 		xfs_trans_set_sync(tp);
 	return xfs_trans_commit(tp, 0);
+}
+
+int
+xfs_vn_change_file_space(
+	struct dentry	*dentry,
+	int		cmd,
+	xfs_flock64_t	*bf,
+	xfs_off_t	offset,
+	int		attr_flags)
+{
+	return __xfs_change_file_space(dentry, XFS_I(dentry->d_inode), cmd, bf,
+				       offset, attr_flags);
+}
+
+int
+xfs_change_file_space(
+	xfs_inode_t	*ip,
+	int		cmd,
+	xfs_flock64_t	*bf,
+	xfs_off_t	offset,
+	int		attr_flags)
+{
+	return __xfs_change_file_space(NULL, ip, cmd, bf, offset, attr_flags);
 }
 
 /*

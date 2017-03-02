@@ -1015,7 +1015,7 @@ xfs_file_fallocate(
 	if (file->f_flags & O_DSYNC)
 		attr_flags |= XFS_ATTR_SYNC;
 
-	error = -xfs_change_file_space(file->f_dentry, cmd, &bf, 0, attr_flags);
+	error = -xfs_vn_change_file_space(file->f_dentry, cmd, &bf, 0, attr_flags);
 	if (error)
 		goto out_unlock;
 
