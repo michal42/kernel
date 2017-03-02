@@ -16,18 +16,6 @@
 #include <linux/evm.h>
 #include <linux/ima.h>
 
-/**
- * inode_change_ok - check if attribute changes to an inode are allowed
- * @inode:	inode to check
- * @attr:	attributes to change
- *
- * Check if we are allowed to change the attributes contained in @attr
- * in the given inode.  This includes the normal unix access permission
- * checks, as well as checks for rlimits and others.
- *
- * Should be called as the first thing in ->setattr implementations,
- * possibly after taking additional locks.
- */
 int inode_change_ok(const struct inode *inode, struct iattr *attr)
 {
 	unsigned int ia_valid = attr->ia_valid;
@@ -80,6 +68,37 @@ int inode_change_ok(const struct inode *inode, struct iattr *attr)
 	return 0;
 }
 EXPORT_SYMBOL(inode_change_ok);
+
+/**
+ * setattr_prepare - check if attribute changes to a dentry are allowed
+ * @dentry:	dentry to check
+ * @attr:	attributes to change
+ *
+ * Check if we are allowed to change the attributes contained in @attr
+ * in the given dentry.  This includes the normal unix access permission
+ * checks, as well as checks for rlimits and others. The function also clears
+ * SGID bit from mode if user is not allowed to set it. Also file capabilities
+ * and IMA extended attributes are cleared if ATTR_KILL_PRIV is set.
+ *
+ * Should be called as the first thing in ->setattr implementations,
+ * possibly after taking additional locks.
+ */
+int setattr_prepare(struct dentry *dentry, struct iattr *attr)
+{
+	int error;
+
+	error = inode_change_ok(dentry->d_inode, attr);
+	if (error)
+		return error;
+	/* User has permission for the change */
+	if (attr->ia_valid & ATTR_KILL_PRIV) {
+		error = security_inode_killpriv(dentry);
+		attr->ia_valid &= ~ATTR_KILL_PRIV;
+	}
+	return error;
+
+}
+EXPORT_SYMBOL(setattr_prepare);
 
 /**
  * inode_newsize_ok - may this inode be truncated to a given size
@@ -217,13 +236,11 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 	if (!(ia_valid & ATTR_MTIME_SET))
 		attr->ia_mtime = now;
 	if (ia_valid & ATTR_KILL_PRIV) {
-		attr->ia_valid &= ~ATTR_KILL_PRIV;
-		ia_valid &= ~ATTR_KILL_PRIV;
 		error = security_inode_need_killpriv(dentry);
-		if (error > 0)
-			error = security_inode_killpriv(dentry);
-		if (error)
+		if (error < 0)
 			return error;
+		if (error == 0)
+			ia_valid = attr->ia_valid &= ~ATTR_KILL_PRIV;
 	}
 
 	/*
@@ -268,6 +285,14 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 		error = simple_setattr(dentry, attr);
 
 	if (!error) {
+		/*
+		 * Backward compatibility hack for out of tree filesystems that
+		 * don't call setattr_prepare().
+		 */
+		if (attr->ia_valid & ATTR_KILL_PRIV) {
+			error = security_inode_killpriv(dentry);
+			attr->ia_valid &= ~ATTR_KILL_PRIV;
+		}
 		fsnotify_change(dentry, ia_valid);
 		ima_inode_post_setattr(dentry);
 		evm_inode_post_setattr(dentry, ia_valid);
