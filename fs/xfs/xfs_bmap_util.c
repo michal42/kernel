@@ -1584,12 +1584,13 @@ out_unlock:
  */
 int
 xfs_change_file_space(
-	xfs_inode_t	*ip,
+	struct dentry	*dentry,
 	int		cmd,
 	xfs_flock64_t	*bf,
 	xfs_off_t	offset,
 	int		attr_flags)
 {
+	xfs_inode_t	*ip = XFS_I(dentry->d_inode);
 	xfs_mount_t	*mp = ip->i_mount;
 	int		clrprealloc;
 	int		error;
@@ -1700,7 +1701,7 @@ xfs_change_file_space(
 		iattr.ia_valid = ATTR_SIZE;
 		iattr.ia_size = startoffset;
 
-		error = xfs_setattr_size(ip, &iattr, attr_flags |
+		error = xfs_vn_setattr_size(dentry, &iattr, attr_flags |
 					 XFS_ATTR_NOLOCK);
 		xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 

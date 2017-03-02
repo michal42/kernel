@@ -93,7 +93,7 @@ int	xfs_bmap_last_extent(struct xfs_trans *tp, struct xfs_inode *ip,
 			     int *is_empty);
 
 /* preallocation and hole punch interface */
-int	xfs_change_file_space(struct xfs_inode *ip, int cmd,
+int	xfs_change_file_space(struct dentry *dentry, int cmd,
 			      xfs_flock64_t *bf, xfs_off_t offset,
 			      int attr_flags);
 
