@@ -96,6 +96,9 @@ int	xfs_bmap_last_extent(struct xfs_trans *tp, struct xfs_inode *ip,
 int	xfs_change_file_space(struct xfs_inode *ip, int cmd,
 			      xfs_flock64_t *bf, xfs_off_t offset,
 			      int attr_flags);
+int	xfs_vn_change_file_space(struct dentry *dentry, int cmd,
+			      xfs_flock64_t *bf, xfs_off_t offset,
+			      int attr_flags);
 
 /* EOF block manipulation functions */
 bool	xfs_can_free_eofblocks(struct xfs_inode *ip, bool force);
