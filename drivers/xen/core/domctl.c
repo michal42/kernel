@@ -254,7 +254,8 @@ union xen_sysctl {
 	} v8, v9, v10, v11;
 	/*
 	 * v12: Xen 4.6
-	 * v13: Xen 4.7+
+	 * v13: Xen 4.7
+	 * v14: Xen 4.8+
 	 */
 	struct {
 		uint32_t cmd;
@@ -262,7 +263,7 @@ union xen_sysctl {
 		union {
 			struct xen_sysctl_cputopoinfo_v12 cputopoinfo;
 		};
-	} v12, v13;
+	} v12, v13, v14;
 };
 
 /* The actual code comes here */
@@ -517,7 +518,7 @@ int xen_get_topology_info(unsigned int cpu, u32 *core, u32 *sock, u32 *node)
 	unsigned int nr;
 	int rc;
 
-	BUILD_BUG_ON(XEN_SYSCTL_INTERFACE_VERSION > 13);
+	BUILD_BUG_ON(XEN_SYSCTL_INTERFACE_VERSION > 14);
 	if (!core && !sock && !node)
 		return 0;
 
@@ -535,7 +536,11 @@ int xen_get_topology_info(unsigned int cpu, u32 *core, u32 *sock, u32 *node)
 	nr = sysctl.v##ver.cputopoinfo.num_cpus;			\
 } while (0)
 
-	cputopoinfo(13);
+	cputopoinfo(14);
+#if CONFIG_XEN_COMPAT < 0x040800
+	if (rc)
+		cputopoinfo(13);
+#endif
 #if CONFIG_XEN_COMPAT < 0x040700
 	if (rc)
 		cputopoinfo(12);

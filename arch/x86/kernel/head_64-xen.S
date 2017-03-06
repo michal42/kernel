@@ -21,6 +21,7 @@
 #include <asm/msr.h>
 #include <asm/cache.h>
 #include <asm/percpu.h>
+#include "../entry/calling.h"
 #include <asm/export.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/arch-x86/xen-mca.h>
@@ -31,7 +32,11 @@
 	.code64
 	.globl startup_64
 startup_64:
-	movq $(init_thread_union+THREAD_SIZE-8),%rsp
+	/*
+	 * The SIZEOF_PTREGS gap is a convention which helps the in-kernel
+	 * unwinder reliably detect the end of the stack.
+	 */
+	movq $init_thread_union + THREAD_SIZE - SIZEOF_PTREGS,%rsp
 
 	/* rsi is pointer to startup info structure.
 	   pass it to C */

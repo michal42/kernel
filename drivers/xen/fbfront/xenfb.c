@@ -393,7 +393,7 @@ static int xenfb_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct xenfb_mapping *map = vma->vm_private_data;
 	struct xenfb_info *info = map->info;
-	int pgnr = ((long)vmf->virtual_address - vma->vm_start) >> PAGE_SHIFT;
+	int pgnr = PFN_DOWN(vmf->address - vma->vm_start);
 	unsigned long flags;
 	struct page *page;
 	int y1, y2;
@@ -572,7 +572,6 @@ static int xenfb_probe(struct xenbus_device *dev,
 	struct xenfb_info *info;
 	struct fb_info *fb_info;
 	int fb_size;
-	int val;
 	int ret;
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
@@ -582,10 +581,8 @@ static int xenfb_probe(struct xenbus_device *dev,
 	}
 
 	/* Limit kernel param videoram amount to what is in xenstore */
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "videoram", "%d", &val) == 1) {
-		if (val < video[KPARAM_MEM])
-			video[KPARAM_MEM] = val;
-	}
+	video[KPARAM_MEM] = xenbus_read_unsigned(dev->otherend, "videoram",
+						 video[KPARAM_MEM]);
 
 	/* If requested res does not fit in available memory, use default */
 	fb_size = video[KPARAM_MEM] * MB_;
@@ -817,7 +814,6 @@ static void xenfb_backend_changed(struct xenbus_device *dev,
 				  enum xenbus_state backend_state)
 {
 	struct xenfb_info *info = dev_get_drvdata(&dev->dev);
-	int val;
 
 	switch (backend_state) {
 	case XenbusStateInitialising:
@@ -841,17 +837,13 @@ static void xenfb_backend_changed(struct xenbus_device *dev,
 		if (dev->state != XenbusStateConnected)
 			goto InitWait; /* no InitWait seen yet, fudge it */
 
+		info->feature_resize = !!xenbus_read_unsigned(dev->otherend,
+							      "feature-resize",
+							      0);
 
-		if (xenbus_scanf(XBT_NIL, dev->otherend,
-					"feature-resize", "%d", &val) < 0)
-			val = 0;
-		info->feature_resize = val;
-
-		if (xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-				 "request-update", "%d", &val) < 0)
-			val = 0;
-
-		if (val && !info->kthread) {
+		if (xenbus_read_unsigned(dev->otherend,
+					 "request-update", 0) &&
+		    !info->kthread) {
 			info->kthread = kthread_run(xenfb_thread, info,
 						    "xenfb thread");
 			if (IS_ERR(info->kthread)) {

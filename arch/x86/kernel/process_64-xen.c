@@ -49,12 +49,12 @@
 #include <asm/proto.h>
 #include <asm/hardirq.h>
 #include <asm/ia32.h>
-#include <asm/idle.h>
 #include <asm/syscalls.h>
 #include <asm/debugreg.h>
 #include <asm/switch_to.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/vdso.h>
+#include <asm/intel_rdt.h>
 
 /* Prints also some state that isn't saved in the pt_regs */
 void __show_regs(struct pt_regs *regs, int all)
@@ -64,10 +64,15 @@ void __show_regs(struct pt_regs *regs, int all)
 	unsigned int fsindex, gsindex;
 	unsigned int ds, cs, es;
 
-	printk(KERN_DEFAULT "RIP: %04lx:[<%016lx>] ", regs->cs & 0xffff, regs->ip);
-	printk_address(regs->ip);
-	printk(KERN_DEFAULT "RSP: %04lx:%016lx  EFLAGS: %08lx\n", regs->ss,
-			regs->sp, regs->flags);
+	printk(KERN_DEFAULT "RIP: %04lx:%pS\n", regs->cs & 0xffff,
+		(void *)regs->ip);
+	printk(KERN_DEFAULT "RSP: %04lx:%016lx EFLAGS: %08lx", regs->ss,
+		regs->sp, regs->flags);
+	if (regs->orig_ax != -1)
+		pr_cont(" ORIG_RAX: %016lx\n", regs->orig_ax);
+	else
+		pr_cont("\n");
+
 	printk(KERN_DEFAULT "RAX: %016lx RBX: %016lx RCX: %016lx\n",
 	       regs->ax, regs->bx, regs->cx);
 	printk(KERN_DEFAULT "RDX: %016lx RSI: %016lx RDI: %016lx\n",
@@ -273,11 +278,10 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	struct thread_struct *next = &next_p->thread;
 	struct fpu *prev_fpu = &prev->fpu;
 	struct fpu *next_fpu = &next->fpu;
-	int cpu = smp_processor_id(), cr0_ts;
+	int cpu = smp_processor_id();
 #ifndef CONFIG_X86_NO_TSS
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 #endif
-	fpu_switch_t fpu_switch;
 #if CONFIG_XEN_COMPAT > 0x030002
 	struct physdev_set_iopl iopl_op;
 	struct physdev_set_iobitmap iobmp_op;
@@ -288,7 +292,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 #endif
 	multicall_entry_t _mcl[8], *mcl = _mcl;
 
-	fpu_switch = xen_switch_fpu_prepare(prev_fpu, next_fpu, cpu, &mcl);
+	switch_fpu_prepare(prev_fpu, cpu);
 
 	/* Reload sp0. This is load_sp0(tss, next) with a multicall. */
 	mcl->op      = __HYPERVISOR_stack_switch;
@@ -348,20 +352,8 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	BUG_ON(pdo > _pdo + ARRAY_SIZE(_pdo));
 #endif
 	BUG_ON(mcl > _mcl + ARRAY_SIZE(_mcl));
-	if (_mcl->op == __HYPERVISOR_fpu_taskswitch) {
-		__this_cpu_write(xen_x86_cr0_upd, X86_CR0_TS);
-		cr0_ts = _mcl->args[0] ? 1 : -1;
-	} else
-		cr0_ts = 0;
 	if (unlikely(HYPERVISOR_multicall_check(_mcl, mcl - _mcl, NULL)))
 		BUG();
-	if (cr0_ts) {
-		if (cr0_ts > 0)
-			__this_cpu_or(xen_x86_cr0, X86_CR0_TS);
-		else
-			__this_cpu_and(xen_x86_cr0, ~X86_CR0_TS);
-		xen_clear_cr0_upd();
-	}
 
 	/* Switch DS and ES.
 	 *
@@ -469,7 +461,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 		}
 	}
 
-	switch_fpu_finish(next_fpu, fpu_switch);
+	switch_fpu_finish(next_fpu, cpu);
 
 	/*
 	 * Switch the PDA context.
@@ -516,6 +508,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 			loadsegment(ss, __KERNEL_DS);
 	}
 #endif
+
+	/* Load the Intel cache allocation PQR MSR. */
+	intel_rdt_sched_in();
 
 	return prev_p;
 }

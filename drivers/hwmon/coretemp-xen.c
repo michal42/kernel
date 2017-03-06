@@ -52,6 +52,7 @@ static int force_tjmax;
 module_param_named(tjmax, force_tjmax, int, 0444);
 MODULE_PARM_DESC(tjmax, "TjMax value in degrees Celsius");
 
+#define PKG_SYSFS_ATTR_NO	1	/* Sysfs attribute for package temp */
 #define BASE_SYSFS_ATTR_NO	2	/* Sysfs Base attr no for coretemp */
 #define NUM_REAL_CORES		128	/* Number of Real cores per cpu */
 #define CORETEMP_NAME_LENGTH	19	/* String Length of attrs */
@@ -98,11 +99,11 @@ struct temp_data {
 
 /* Platform Data per Physical CPU */
 struct platform_data {
-	struct device *hwmon_dev;
-	u16 phys_proc_id;
-	u8 x86_model, x86_mask:4;
-	u8 managed:1;
-	struct temp_data *core_data[MAX_CORE_DATA];
+	struct device		*hwmon_dev;
+	u16			phys_proc_id;
+	u8			x86_model, x86_mask:4;
+	u8			managed:1;
+	struct temp_data	*core_data[MAX_CORE_DATA];
 	struct device_attribute name_attr;
 };
 
@@ -142,8 +143,13 @@ static ssize_t show_crit_alarm(struct device *dev,
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
 	struct platform_data *pdata = dev_get_drvdata(dev);
 	struct temp_data *tdata = pdata->core_data[attr->index];
+	int rc;
 
-	if (rdmsr_safe_on_pcpu(tdata->cpu, tdata->status_reg, &eax, &edx) < 0)
+	mutex_lock(&tdata->update_lock);
+	rc = rdmsr_safe_on_pcpu(tdata->cpu, tdata->status_reg, &eax, &edx);
+	mutex_unlock(&tdata->update_lock);
+
+	if (rc < 0)
 		return sprintf(buf, "\n");
 
 	return sprintf(buf, "%d\n", (eax >> 5) & 1);
@@ -491,7 +497,7 @@ static int create_core_data(struct platform_device *pdev,
 	 * The attr number is always core id + 2
 	 * The Pkgtemp will always show up as temp1_*, if available
 	 */
-	attr_no = pkg_flag ? 1 : CORE_ATTR_NO(c->cpu_core_id);
+	attr_no = pkg_flag ? PKG_SYSFS_ATTR_NO : CORE_ATTR_NO(c->cpu_core_id);
 
 	if (attr_no > MAX_CORE_DATA - 1)
 		return -ERANGE;
@@ -682,7 +688,7 @@ static void coretemp_device_remove(unsigned int cpu)
 	mutex_unlock(&pdev_list_mutex);
 }
 
-static bool is_any_core_online(struct platform_data *pdata)
+static int get_online_core_in_package(struct platform_data *pdata)
 {
 	int i;
 
@@ -690,10 +696,10 @@ static bool is_any_core_online(struct platform_data *pdata)
 	for (i = MAX_CORE_DATA - 1; i >= 0; --i) {
 		if (pdata->core_data[i] &&
 			!pdata->core_data[i]->is_pkg_data) {
-			return true;
+			return pdata->core_data[i]->cpu;
 		}
 	}
-	return false;
+	return nr_cpu_ids;
 }
 
 static void get_cpuid_info(void *arg)
@@ -782,9 +788,10 @@ static void get_core_online(unsigned int cpu)
 
 static void put_core_offline(unsigned int cpu)
 {
-	int i, indx;
-	struct platform_data *pdata;
 	struct platform_device *pdev = coretemp_get_pdev(cpu);
+	struct platform_data *pdata;
+	struct temp_data *tdata;
+	int i, indx, target;
 	u32 cpu_core_id, phys_proc_id;
 
 	/* If the physical CPU device does not exist, just return */
@@ -837,8 +844,21 @@ static void put_core_offline(unsigned int cpu)
 	 * which in turn calls coretemp_remove. This removes the
 	 * pkgtemp entry and does other clean ups.
 	 */
-	if (!is_any_core_online(pdata))
+	target = get_online_core_in_package(pdata);
+	if (target >= nr_cpu_ids) {
 		coretemp_device_remove(cpu);
+		return;
+	}
+	/*
+	 * Check whether this core is the target for the package
+	 * interface. We need to assign it to some other cpu.
+	 */
+	tdata = pdata->core_data[PKG_SYSFS_ATTR_NO];
+	if (tdata && tdata->cpu == cpu) {
+		mutex_lock(&tdata->update_lock);
+		tdata->cpu = target;
+		mutex_unlock(&tdata->update_lock);
+	}
 }
 
 static int coretemp_cpu_callback(struct notifier_block *nfb,

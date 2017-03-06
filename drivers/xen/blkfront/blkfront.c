@@ -252,11 +252,11 @@ static int talk_to_backend(struct xenbus_device *dev,
 	 */
 	info->ring_size = ring_size = 1U << ring_order;
 
-	err = xenbus_scanf(XBT_NIL, dev->otherend,
-			   "feature-max-indirect-segments", "%u", &max_segs);
+	max_segs = xenbus_read_unsigned(dev->otherend,
+					"feature-max-indirect-segments", 0);
 	if (max_segs > max_segs_per_req)
 		max_segs = max_segs_per_req;
-	if (err != 1 || max_segs < BLKIF_MAX_SEGMENTS_PER_REQUEST)
+	if (max_segs < BLKIF_MAX_SEGMENTS_PER_REQUEST)
 		max_segs = BLKIF_MAX_SEGMENTS_PER_REQUEST;
 	else if (BLKIF_INDIRECT_PAGES(max_segs)
 		 > BLKIF_MAX_INDIRECT_PAGES_PER_REQUEST)
@@ -529,7 +529,6 @@ static void blkfront_setup_discard(struct blkfront_info *info)
 {
 	unsigned int discard_granularity;
 	unsigned int discard_alignment;
-	int discard_secure;
 
 	info->feature_discard = 1;
 	if (!xenbus_gather(XBT_NIL, info->xbdev->otherend,
@@ -539,10 +538,8 @@ static void blkfront_setup_discard(struct blkfront_info *info)
 		info->discard_granularity = discard_granularity;
 		info->discard_alignment = discard_alignment;
 	}
-	if (xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-			 "discard-secure", "%d", &discard_secure) != 1)
-		discard_secure = 0;
-	info->feature_secdiscard = !!discard_secure;
+	info->feature_secdiscard = !!xenbus_read_unsigned(info->xbdev->otherend,
+							  "discard-secure", 0);
 }
 
 /*
@@ -553,7 +550,7 @@ static void connect(struct blkfront_info *info)
 {
 	unsigned long long sectors;
 	unsigned int binfo, sector_size, physical_sector_size;
-	int err, barrier, flush, discard;
+	int err, barrier;
 
 	switch (info->connected) {
 	case BLKIF_STATE_CONNECTED:
@@ -565,10 +562,8 @@ static void connect(struct blkfront_info *info)
 				   "sectors", "%Lu", &sectors);
 		if (err != 1)
 			return;
-		err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-				   "sector-size", "%u", &sector_size);
-		if (err != 1)
-			sector_size = 0;
+		sector_size = xenbus_read_unsigned(info->xbdev->otherend,
+						   "sector-size", 0);
 		if (sector_size)
 			blk_queue_logical_block_size(info->gd->queue,
 						     sector_size);
@@ -600,10 +595,9 @@ static void connect(struct blkfront_info *info)
 	 * provide this. Assume physical sector size to be the same as
 	 * sector_size in that case.
 	 */
-	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-			   "physical-sector-size", "%u", &physical_sector_size);
-	if (err <= 0)
-		physical_sector_size = sector_size;
+	physical_sector_size = xenbus_read_unsigned(info->xbdev->otherend,
+						    "physical-sector-size",
+						    sector_size);
 
 	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
 			   "feature-barrier", "%d", &barrier);
@@ -622,9 +616,8 @@ static void connect(struct blkfront_info *info)
 	 * And if there is "feature-flush-cache" use that above
 	 * barriers.
 	 */
-	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-			   "feature-flush-cache", "%d", &flush);
-	if (err > 0 && flush)
+	if (xenbus_read_unsigned(info->xbdev->otherend,
+				 "feature-flush-cache", 0))
 		info->feature_flush = REQ_PREFLUSH;
 #else
 	if (err <= 0)
@@ -635,10 +628,7 @@ static void connect(struct blkfront_info *info)
 		info->feature_flush = QUEUE_ORDERED_NONE;
 #endif
 
-	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-			   "feature-discard", "%d", &discard);
-
-	if (err > 0 && discard)
+	if (xenbus_read_unsigned(info->xbdev->otherend, "feature-discard", 0))
 		blkfront_setup_discard(info);
 
 	err = xlvbd_add(sectors, info->vdevice, binfo, sector_size,

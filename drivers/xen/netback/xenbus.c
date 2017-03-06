@@ -423,7 +423,6 @@ static int connect_rings(struct backend_info *be)
 	unsigned int tx_ring_ref, rx_ring_ref;
 	unsigned int evtchn, rx_copy;
 	int err;
-	int val;
 
 	DPRINTK("");
 
@@ -452,44 +451,24 @@ static int connect_rings(struct backend_info *be)
 	netif->copying_receiver = !!rx_copy;
 
 	if (netif->dev->tx_queue_len != 0) {
-		if (xenbus_scanf(XBT_NIL, dev->otherend,
-				 "feature-rx-notify", "%d", &val) < 0)
-			val = 0;
-		if (val)
+		if (xenbus_read_unsigned(dev->otherend, "feature-rx-notify", 0))
 			netif->can_queue = 1;
 		else
 			/* Must be non-zero for pfifo_fast to work. */
 			netif->dev->tx_queue_len = 1;
 	}
 
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-sg", "%d", &val) < 0)
-		val = 0;
-	netif->can_sg = !!val;
-
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-gso-tcpv4", "%d",
-			 &val) < 0)
-		val = 0;
-	netif->gso = !!val;
-
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-gso-tcpv6", "%d",
-			 &val) < 0)
-		val = 0;
-	netif->gso6 = !!val;
-
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-no-csum-offload",
-			 "%d", &val) < 0)
-		val = 0;
-	netif->csum = !val;
-
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-ipv6-csum-offload",
-			 "%d", &val) < 0)
-		val = 0;
-	netif->csum6 = !!val;
-
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "request-multicast-control",
-			 "%d", &val) < 0)
-		val = 0;
-	netif->mcast = !!val;
+	netif->can_sg = !!xenbus_read_unsigned(dev->otherend, "feature-sg", 0);
+	netif->gso    = !!xenbus_read_unsigned(dev->otherend,
+					       "feature-gso-tcpv4", 0);
+	netif->gso6   = !!xenbus_read_unsigned(dev->otherend,
+					       "feature-gso-tcpv6", 0);
+	netif->csum   = !xenbus_read_unsigned(dev->otherend,
+					       "feature-no-csum-offload", 0);
+	netif->csum6  = !!xenbus_read_unsigned(dev->otherend,
+					       "feature-ipv6-csum-offload", 0);
+	netif->mcast  = !!xenbus_read_unsigned(dev->otherend,
+					       "request-multicast-control", 0);
 
 	/* Map the shared frame, irq etc. */
 	err = netif_map(be, tx_ring_ref, rx_ring_ref, evtchn);

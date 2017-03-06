@@ -295,9 +295,9 @@ static int setup_shutdown_watcher(void)
 	if (is_initial_xendomain())
 		return 0;
 
-	xenbus_scanf(XBT_NIL, "control",
-		     "platform-feature-multiprocessor-suspend",
-		     "%d", &fast_suspend);
+	fast_suspend = xenbus_read_unsigned("control",
+					    "platform-feature-multiprocessor-suspend",
+					    0);
 
 	err = register_xenbus_watch(&shutdown_watch);
 	if (err) {

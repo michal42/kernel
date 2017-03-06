@@ -19,7 +19,6 @@
 #include <linux/miscdevice.h>
 #include <linux/poll.h>
 #include <linux/delay.h>
-#include <asm/uaccess.h>
 #include <xen/xenbus.h>
 #include <xen/interface/grant_table.h>
 #include <xen/gnttab.h>

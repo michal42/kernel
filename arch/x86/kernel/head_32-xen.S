@@ -32,13 +32,21 @@
 #define X86_CAPABILITY	new_cpu_data+CPUINFO_x86_capability
 #define X86_VENDOR_ID	new_cpu_data+CPUINFO_x86_vendor_id
 
+#define SIZEOF_PTREGS 17*4
+
 __HEAD
 ENTRY(startup_32)
 	movl %esi,xen_start_info
 	cld
 
-	/* Set up the stack pointer */
-	movl $(init_thread_union+THREAD_SIZE),%esp
+	/*
+	 * Set up the stack pointer.
+	 *
+	 * The SIZEOF_PTREGS gap is a convention which helps the in-kernel
+	 * unwinder reliably detect the end of the stack.
+	 */
+	movl $init_thread_union + THREAD_SIZE - SIZEOF_PTREGS - \
+	      TOP_OF_KERNEL_STACK_PADDING,%esp
 
 	/* get vendor info */
 	xorl %eax,%eax			# call CPUID with 0 -> return vendor ID

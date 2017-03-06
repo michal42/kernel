@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2000-2006 Tigran Aivazian <tigran@aivazian.fsnet.co.uk>
  *	      2006	Shaohua Li <shaohua.li@intel.com>
- *	      2013-2015	Borislav Petkov <bp@alien8.de>
+ *	      2013-2016	Borislav Petkov <bp@alien8.de>
  *
  * X86 CPU microcode early update for Linux:
  *
@@ -40,7 +40,7 @@
 
 #include <xen/pcpu.h>
 
-#define MICROCODE_VERSION	"2.01-xen"
+#define DRIVER_VERSION	"2.2-xen"
 
 static bool dis_ucode_ldr;
 module_param(dis_ucode_ldr, bool, 0);
@@ -230,7 +230,7 @@ static struct notifier_block ucode_cpu_notifier = {
 	.notifier_call = ucode_cpu_callback
 };
 
-static int __init microcode_init(void)
+static int __init _microcode_init(void)
 {
 	const struct cpuinfo_x86 *c = &boot_cpu_data;
 	char buf[36];
@@ -266,8 +266,7 @@ static int __init microcode_init(void)
 		return error;
 	}
 
-	pr_info("Microcode Update Driver: v" MICROCODE_VERSION
-		" <tigran@aivazian.fsnet.co.uk>, Peter Oruba\n");
+	pr_info("Microcode Update Driver: v" DRIVER_VERSION ".\n");
 
 	error = register_pcpu_notifier(&ucode_cpu_notifier);
 	if (error)
@@ -275,4 +274,4 @@ static int __init microcode_init(void)
 
 	return 0;
 }
-late_initcall(microcode_init);
+late_initcall(_microcode_init);

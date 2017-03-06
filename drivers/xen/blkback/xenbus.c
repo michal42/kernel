@@ -238,11 +238,9 @@ static void blkback_discard(struct xenbus_transaction xbt,
 	struct xenbus_device *dev = be->dev;
 	struct vbd *vbd = &be->blkif->vbd;
 	struct request_queue *q = bdev_get_queue(vbd->bdev);
-	int err, state = 0, discard_enable;
+	int err, state = 0;
 
-	err = xenbus_scanf(XBT_NIL, dev->nodename, "discard-enable", "%d",
-			   &discard_enable);
-	if (err == 1 && !discard_enable)
+	if (!xenbus_read_unsigned(dev->nodename, "discard-enable", 1))
 		return;
 
 	if (blk_queue_discard(q)) {

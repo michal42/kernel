@@ -28,7 +28,7 @@ static void switch_trap_table(void *arg)
 	local_irq_restore(flags);
 }
 
-void trace_irq_vector_regfunc(void)
+int trace_irq_vector_regfunc(void)
 {
 	mutex_lock(&trap_table_mutex);
 	if (!trace_trap_table_refcount) {
@@ -38,6 +38,7 @@ void trace_irq_vector_regfunc(void)
 	}
 	trace_trap_table_refcount++;
 	mutex_unlock(&trap_table_mutex);
+	return 0;
 }
 
 void trace_irq_vector_unregfunc(void)

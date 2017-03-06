@@ -172,8 +172,7 @@ static DECLARE_WORK(update_wallclock_work, _update_wallclock);
 void xen_check_wallclock_update(void)
 {
 	if (shadow_tv_version != HYPERVISOR_shared_info->wc_version
-	    && !is_initial_xendomain() && !independent_wallclock
-	    && keventd_up())
+	    && !is_initial_xendomain() && !independent_wallclock)
 		schedule_work(&update_wallclock_work);
 }
 
@@ -380,8 +379,7 @@ static void get_runstate_snapshot(struct vcpu_runstate_info *res)
 unsigned long long sched_clock(void)
 {
 	struct vcpu_runstate_info runstate;
-	cycle_t now;
-	u64 ret;
+	u64 now, ret;
 	s64 offset;
 
 	/*
@@ -442,13 +440,13 @@ void mark_tsc_unstable(char *reason)
 }
 EXPORT_SYMBOL_GPL(mark_tsc_unstable);
 
-static cycle_t cs_last;
+static u64 cs_last;
 
-static cycle_t xen_clocksource_read(struct clocksource *cs)
+static u64 xen_clocksource_read(struct clocksource *cs)
 {
 #ifdef CONFIG_SMP
-	cycle_t last = get_64bit(&cs_last);
-	cycle_t ret = xen_local_clock();
+	u64 last = get_64bit(&cs_last);
+	u64 ret = xen_local_clock();
 
 	if (unlikely((s64)(ret - last) < 0)) {
 		if (last - ret > permitted_clock_jitter
@@ -467,7 +465,7 @@ static cycle_t xen_clocksource_read(struct clocksource *cs)
 	}
 
 	for (;;) {
-		cycle_t cur = cmpxchg64(&cs_last, last, ret);
+		u64 cur = cmpxchg64(&cs_last, last, ret);
 
 		if (cur == last || (s64)(ret - cur) < 0)
 			return ret;

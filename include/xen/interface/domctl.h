@@ -37,7 +37,7 @@
 #include "hvm/save.h"
 #include "memory.h"
 
-#define XEN_DOMCTL_INTERFACE_VERSION 0x0000000b
+#define XEN_DOMCTL_INTERFACE_VERSION 0x0000000c
 
 /*
  * NB. xen_domctl.domain is an IN/OUT parameter for this operation.
@@ -103,6 +103,9 @@ struct xen_domctl_getdomaininfo {
 /* domain is a xenstore domain */
 #define _XEN_DOMINF_xs_domain 8
 #define XEN_DOMINF_xs_domain  (1U<<_XEN_DOMINF_xs_domain)
+/* domain has hardware assisted paging */
+#define _XEN_DOMINF_hap       9
+#define XEN_DOMINF_hap        (1U<<_XEN_DOMINF_hap)
  /* XEN_DOMINF_shutdown guest-supplied code.  */
 #define XEN_DOMINF_shutdownmask 255
 #define XEN_DOMINF_shutdownshift 16
@@ -1123,6 +1126,9 @@ DEFINE_XEN_GUEST_HANDLE(xen_domctl_psr_cmt_op_t);
 #define XEN_DOMCTL_MONITOR_EVENT_SINGLESTEP            2
 #define XEN_DOMCTL_MONITOR_EVENT_SOFTWARE_BREAKPOINT   3
 #define XEN_DOMCTL_MONITOR_EVENT_GUEST_REQUEST         4
+#define XEN_DOMCTL_MONITOR_EVENT_DEBUG_EXCEPTION       5
+#define XEN_DOMCTL_MONITOR_EVENT_CPUID                 6
+#define XEN_DOMCTL_MONITOR_EVENT_PRIVILEGED_CALL       7
 
 struct xen_domctl_monitor_op {
     uint32_t op; /* XEN_DOMCTL_MONITOR_OP_* */
@@ -1150,14 +1156,18 @@ struct xen_domctl_monitor_op {
         } mov_to_cr;
 
         struct {
-            /* Enable the capture of an extended set of MSRs */
-            uint8_t extended_capture;
+            uint32_t msr;
         } mov_to_msr;
 
         struct {
             /* Pause vCPU until response */
             uint8_t sync;
         } guest_request;
+
+        struct {
+            /* Pause vCPU until response */
+            uint8_t sync;
+        } debug_exception;
     } u;
 };
 typedef struct xen_domctl_monitor_op xen_domctl_monitor_op_t;
@@ -1262,9 +1272,6 @@ struct xen_domctl {
     domid_t  domain;
     union {
         struct xen_domctl_createdomain      createdomain;
-#if defined(__arm__) || defined(__aarch64__)
-        struct xen_domctl_arm_configuredomain configuredomain;
-#endif
         struct xen_domctl_getdomaininfo     getdomaininfo;
         struct xen_domctl_getmemlist        getmemlist;
         struct xen_domctl_getpageframeinfo3 getpageframeinfo3;

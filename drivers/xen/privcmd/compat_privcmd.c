@@ -22,8 +22,8 @@
 #include <linux/fs.h>
 #include <linux/ioctl.h>
 #include <linux/syscalls.h>
+#include <linux/uaccess.h>
 #include <asm/hypervisor.h>
-#include <asm/uaccess.h>
 #include <xen/public/privcmd.h>
 #include <xen/compat_ioctl.h>
 

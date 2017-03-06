@@ -44,6 +44,7 @@
 #include <linux/slab.h>
 #include <linux/mutex.h>
 #include <linux/seq_file.h>
+#include <linux/uaccess.h>
 #include <xen/xen_proc.h>
 #include <asm/hypervisor.h>
 #include <xen/balloon.h>
@@ -52,7 +53,6 @@
 #include <asm/page.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
-#include <asm/uaccess.h>
 #include <asm/tlb.h>
 #include <xen/xenbus.h>
 #include "common.h"

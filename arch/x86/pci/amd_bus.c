@@ -328,34 +328,17 @@ static int __init early_root_info_init(void)
 #define ENABLE_CF8_EXT_CFG      (1ULL << 46)
 
 #ifndef CONFIG_XEN
-static void enable_pci_io_ecs(void *unused)
+static int amd_bus_cpu_online(unsigned int cpu)
 {
 	u64 reg;
+
 	rdmsrl(MSR_AMD64_NB_CFG, reg);
 	if (!(reg & ENABLE_CF8_EXT_CFG)) {
 		reg |= ENABLE_CF8_EXT_CFG;
 		wrmsrl(MSR_AMD64_NB_CFG, reg);
 	}
+	return 0;
 }
-
-static int amd_cpu_notify(struct notifier_block *self, unsigned long action,
-			  void *hcpu)
-{
-	int cpu = (long)hcpu;
-	switch (action) {
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		smp_call_function_single(cpu, enable_pci_io_ecs, NULL, 0);
-		break;
-	default:
-		break;
-	}
-	return NOTIFY_OK;
-}
-
-static struct notifier_block amd_cpu_notifier = {
-	.notifier_call	= amd_cpu_notify,
-};
 #endif /* CONFIG_XEN */
 
 static void __init pci_enable_pci_io_ecs(void)
@@ -387,7 +370,7 @@ static void __init pci_enable_pci_io_ecs(void)
 
 static int __init pci_io_ecs_init(void)
 {
-	int cpu;
+	int ret;
 
 	/* assume all cpus from fam10h have IO ECS */
 	if (boot_cpu_data.x86 < 0x10)
@@ -398,14 +381,11 @@ static int __init pci_io_ecs_init(void)
 		pci_enable_pci_io_ecs();
 
 #ifndef CONFIG_XEN
-	cpu_notifier_register_begin();
-	for_each_online_cpu(cpu)
-		amd_cpu_notify(&amd_cpu_notifier, (unsigned long)CPU_ONLINE,
-			       (void *)(long)cpu);
-	__register_cpu_notifier(&amd_cpu_notifier);
-	cpu_notifier_register_done();
+	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "pci/amd_bus:online",
+				amd_bus_cpu_online, NULL);
+	WARN_ON(ret < 0);
 #else
-	if (cpu = 1, cpu) {
+	if (ret = 0, !ret) {
 		u64 reg;
 		rdmsrl(MSR_AMD64_NB_CFG, reg);
 		if (!(reg & ENABLE_CF8_EXT_CFG))

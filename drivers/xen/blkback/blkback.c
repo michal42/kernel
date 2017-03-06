@@ -611,12 +611,12 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 	case BLKIF_OP_WRITE_BARRIER:
 		blkif->st_br_req++;
 		operation = REQ_OP_WRITE;
-		operation_flags = WRITE_FLUSH_FUA;
+		operation_flags = REQ_PREFLUSH | REQ_FUA;
 		break;
 	case BLKIF_OP_FLUSH_DISKCACHE:
 		blkif->st_fl_req++;
 		operation = REQ_OP_WRITE;
-		operation_flags = WRITE_FLUSH;
+		operation_flags = REQ_PREFLUSH;
 		break;
 	default:
 		goto fail_response;
@@ -695,7 +695,7 @@ static void _dispatch_rw_block_io(blkif_t *blkif,
 	}
 
 	/* Wait on all outstanding I/O's and once that has been completed
-	 * issue the WRITE_FLUSH.
+	 * issue the flush.
 	 */
 	if (req->operation == BLKIF_OP_WRITE_BARRIER)
 		drain_io(blkif);

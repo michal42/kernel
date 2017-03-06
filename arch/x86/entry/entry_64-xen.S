@@ -39,15 +39,10 @@
 #include <asm/smap.h>
 #include <asm/pgtable_types.h>
 #include <asm/export.h>
+#include <asm/frame.h>
 #include <linux/err.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/features.h>
-
-/* Avoid __ASSEMBLER__'ifying <linux/audit.h> just for this.  */
-#include <linux/elf-em.h>
-#define AUDIT_ARCH_X86_64			(EM_X86_64|__AUDIT_ARCH_64BIT|__AUDIT_ARCH_LE)
-#define __AUDIT_ARCH_64BIT			0x80000000
-#define __AUDIT_ARCH_LE				0x40000000
 
 .code64
 .section .entry.text, "ax"
@@ -343,15 +338,17 @@ END(__switch_to_asm)
  * r12: kernel thread arg
  */
 ENTRY(ret_from_fork)
+	FRAME_BEGIN			/* help unwinder find end of stack */
 	movq	%rax, %rdi
-	call	schedule_tail			/* rdi: 'prev' task parameter */
+	call	schedule_tail		/* rdi: 'prev' task parameter */
 
-	testq	%rbx, %rbx			/* from kernel_thread? */
-	jnz	1f				/* kernel threads are uncommon */
+	testq	%rbx, %rbx		/* from kernel_thread? */
+	jnz	1f			/* kernel threads are uncommon */
 
 2:
-	movq	%rsp, %rdi
+	leaq	FRAME_OFFSET(%rsp),%rdi	/* pt_regs pointer */
 	call	syscall_return_slowpath	/* returns with IRQs disabled */
+	FRAME_END
 	jmp	restore_regs_and_iret
 
 1:
@@ -575,6 +572,7 @@ restore_all_enable_events:
 	__DISABLE_INTERRUPTS
 .Lecrit: /**** END OF CRITICAL REGION ****/
 	SAVE_EXTRA_REGS
+	ENCODE_FRAME_POINTER
         movq	%rsp, %rdi		# set the argument again
 	jmp	11b
 # At this point, unlike on x86-32, we don't do the fixup to simplify the 
@@ -622,6 +620,7 @@ ENTRY(failsafe_callback)
 	ALLOC_PT_GPREGS_ON_STACK
 	SAVE_C_REGS
 	SAVE_EXTRA_REGS
+	ENCODE_FRAME_POINTER
 	jmp	error_exit
 
 idtentry divide_error			do_divide_error			has_error_code=0
@@ -650,36 +649,22 @@ ENTRY(do_softirq_own_stack)
 	ret
 END(do_softirq_own_stack)
 
-#ifdef CONFIG_STACK_UNWIND
-ENTRY(arch_unwind_init_running)
+#ifdef CONFIG_DWARF_UNWIND
+ENTRY(arch_dwarf_init_running)
 	movq	%r15, R15(%rdi)
 	movq	%r14, R14(%rdi)
-	xchgq	%rsi, %rdx
 	movq	%r13, R13(%rdi)
 	movq	%r12, R12(%rdi)
-	xorl	%eax, %eax
 	movq	%rbp, RBP(%rdi)
 	movq	%rbx, RBX(%rdi)
 	movq	(%rsp), %r9
-	xchgq	%rdx, %rcx
-	movq	%rax, R11(%rdi)
-	movq	%rax, R10(%rdi)
-	movq	%rax, R9(%rdi)
-	movq	%rax, R8(%rdi)
-	movq	%rax, RAX(%rdi)
-	movq	%rax, RCX(%rdi)
-	movq	%rax, RDX(%rdi)
-	movq	%rax, RSI(%rdi)
-	movq	%rax, RDI(%rdi)
-	movq	%rax, ORIG_RAX(%rdi)
 	movq	%r9, RIP(%rdi)
 	leaq	8(%rsp), %r9
-	movq	$__KERNEL_CS, CS(%rdi)
-	movq	%rax, EFLAGS(%rdi)
 	movq	%r9, RSP(%rdi)
+	movq	$__KERNEL_CS, CS(%rdi)
 	movq	$__KERNEL_DS, SS(%rdi)
-	jmpq	*%rcx
-END(arch_unwind_init_running)
+	ret
+ENDPROC(arch_dwarf_init_running)
 #endif
 
 idtentry debug			do_debug		has_error_code=0
@@ -708,6 +693,7 @@ ENTRY(paranoid_entry)
 	cld
 	SAVE_C_REGS 8
 	SAVE_EXTRA_REGS 8
+	ENCODE_FRAME_POINTER 8
 	movl	$1, %ebx
 	movl	$MSR_GS_BASE, %ecx
 	rdmsr
@@ -756,6 +742,7 @@ ENTRY(error_entry)
 	cld
 	SAVE_C_REGS 8
 	SAVE_EXTRA_REGS 8
+	ENCODE_FRAME_POINTER 8
 #ifndef CONFIG_XEN
 	xorl	%ebx, %ebx
 	testb	$3, CS+8(%rsp)

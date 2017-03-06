@@ -42,10 +42,10 @@
 #include <linux/fs.h>
 #include <linux/poll.h>
 #include <linux/mutex.h>
+#include <linux/uaccess.h>
 
 #include "xenbus_comms.h"
 
-#include <asm/uaccess.h>
 #include <asm/hypervisor.h>
 #include <xen/xenbus.h>
 #include <xen/xen_proc.h>
@@ -322,7 +322,9 @@ static ssize_t xenbus_dev_write(struct file *filp,
 		}
 		goto common;
 
-	case XS_TRANSACTION_END:
+	default:
+		if (!u->u.msg.tx_id)
+			goto common;
 		list_for_each_entry(trans, &u->transactions, list)
 			if (trans->handle.id == u->u.msg.tx_id)
 				break;
@@ -330,9 +332,7 @@ static ssize_t xenbus_dev_write(struct file *filp,
 			rc = -ESRCH;
 			goto out;
 		}
-		/* fall through */
 	common:
-	default:
 		reply = xenbus_dev_request_and_reply(&u->u.msg);
 		if (IS_ERR(reply)) {
 			if (msg_type == XS_TRANSACTION_START)

@@ -349,13 +349,10 @@ static void scsifront_read_backend_params(struct xenbus_device *dev,
 					  struct vscsifrnt_info *info)
 {
 	unsigned int nr_segs;
-	int ret;
 	struct Scsi_Host *host = info->host;
 
-	ret = xenbus_scanf(XBT_NIL, dev->otherend, "segs-per-req", "%u",
-			   &nr_segs);
-	if (ret != 1)
-		nr_segs = VSCSIIF_SG_TABLESIZE;
+	nr_segs = xenbus_read_unsigned(dev->otherend, "segs-per-req",
+				       VSCSIIF_SG_TABLESIZE);
 	if (!info->pause && nr_segs > host->sg_tablesize) {
 		host->sg_tablesize = min(nr_segs, max_nr_segs);
 		dev_info(&dev->dev, "using up to %d SG entries\n",

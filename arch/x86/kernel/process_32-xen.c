@@ -51,11 +51,11 @@
 
 #include <asm/tlbflush.h>
 #include <asm/cpu.h>
-#include <asm/idle.h>
 #include <asm/syscalls.h>
 #include <asm/debugreg.h>
 #include <asm/switch_to.h>
 #include <asm/vm86.h>
+#include <asm/intel_rdt.h>
 
 void __show_regs(struct pt_regs *regs, int all)
 {
@@ -74,10 +74,9 @@ void __show_regs(struct pt_regs *regs, int all)
 		savesegment(gs, gs);
 	}
 
-	printk(KERN_DEFAULT "EIP: %04x:[<%08lx>] EFLAGS: %08lx CPU: %d\n",
-			(u16)regs->cs, regs->ip, regs->flags,
-			smp_processor_id());
-	print_symbol("EIP is at %s\n", regs->ip);
+	printk(KERN_DEFAULT "EIP: %pS\n", (void *)regs->ip);
+	printk(KERN_DEFAULT "EFLAGS: %08lx CPU: %d\n", regs->flags,
+		smp_processor_id());
 
 	printk(KERN_DEFAULT "EAX: %08lx EBX: %08lx ECX: %08lx EDX: %08lx\n",
 		regs->ax, regs->bx, regs->cx, regs->dx);
@@ -233,11 +232,10 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 			     *next = &next_p->thread;
 	struct fpu *prev_fpu = &prev->fpu;
 	struct fpu *next_fpu = &next->fpu;
-	int cpu = smp_processor_id(), cr0_ts;
+	int cpu = smp_processor_id();
 #ifndef CONFIG_X86_NO_TSS
 	struct tss_struct *tss = &per_cpu(cpu_tss, cpu);
 #endif
-	fpu_switch_t fpu_switch;
 #if CONFIG_XEN_COMPAT > 0x030002
 	struct physdev_set_iopl iopl_op;
 	struct physdev_set_iobitmap iobmp_op;
@@ -250,7 +248,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 
 	/* XEN NOTE: FS/GS saved in switch_mm(), not here. */
 
-	fpu_switch = xen_switch_fpu_prepare(prev_fpu, next_fpu, cpu, &mcl);
+	switch_fpu_prepare(prev_fpu, cpu);
 
 	/*
 	 * Reload sp0.
@@ -312,20 +310,8 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	BUG_ON(pdo > _pdo + ARRAY_SIZE(_pdo));
 #endif
 	BUG_ON(mcl > _mcl + ARRAY_SIZE(_mcl));
-	if (_mcl->op == __HYPERVISOR_fpu_taskswitch) {
-		__this_cpu_write(xen_x86_cr0_upd, X86_CR0_TS);
-		cr0_ts = _mcl->args[0] ? 1 : -1;
-	} else
-		cr0_ts = 0;
 	if (unlikely(HYPERVISOR_multicall_check(_mcl, mcl - _mcl, NULL)))
 		BUG();
-	if (cr0_ts) {
-		if (cr0_ts > 0)
-			__this_cpu_or(xen_x86_cr0, X86_CR0_TS);
-		else
-			__this_cpu_and(xen_x86_cr0, ~X86_CR0_TS);
-		xen_clear_cr0_upd();
-	}
 
 	/*
 	 * Now maybe handle debug registers
@@ -357,9 +343,12 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	if (prev->gs | next->gs)
 		lazy_load_gs(next->gs);
 
-	switch_fpu_finish(next_fpu, fpu_switch);
+	switch_fpu_finish(next_fpu, cpu);
 
 	this_cpu_write(current_task, next_p);
+
+	/* Load the Intel cache allocation PQR MSR. */
+	intel_rdt_sched_in();
 
 	return prev_p;
 }

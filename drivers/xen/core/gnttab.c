@@ -41,7 +41,6 @@
 #include <xen/interface/xen.h>
 #include <xen/gnttab.h>
 #include <asm/pgtable.h>
-#include <asm/uaccess.h>
 #include <asm/cmpxchg.h>
 #include <asm/io.h>
 #include <xen/interface/memory.h>

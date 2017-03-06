@@ -25,30 +25,6 @@ static inline void xen_clear_cr0_upd(void)
 	raw_cpu_write_l(xen_x86_cr0_upd, 0);
 }
 
-static inline void xen_clts(void)
-{
-	if (unlikely(xen_read_cr0_upd()))
-		HYPERVISOR_fpu_taskswitch(0);
-	else if (raw_cpu_read_4(xen_x86_cr0) & X86_CR0_TS) {
-		raw_cpu_write_4(xen_x86_cr0_upd, X86_CR0_TS);
-		HYPERVISOR_fpu_taskswitch(0);
-		raw_cpu_and_4(xen_x86_cr0, ~X86_CR0_TS);
-		xen_clear_cr0_upd();
-	}
-}
-
-static inline void xen_stts(void)
-{
-	if (unlikely(xen_read_cr0_upd()))
-		HYPERVISOR_fpu_taskswitch(1);
-	else if (!(raw_cpu_read_4(xen_x86_cr0) & X86_CR0_TS)) {
-		raw_cpu_write_4(xen_x86_cr0_upd, X86_CR0_TS);
-		HYPERVISOR_fpu_taskswitch(1);
-		raw_cpu_or_4(xen_x86_cr0, X86_CR0_TS);
-		xen_clear_cr0_upd();
-	}
-}
-
 /*
  * Volatile isn't enough to prevent the compiler from reordering the
  * read/write functions for the control registers and messing everything up.
@@ -84,16 +60,11 @@ static inline void xen_write_cr0(unsigned long val)
 		native_write_cr0(val);
 		return;
 	}
-	switch (upd) {
-	case 0:
+
+	if (!upd)
 		return;
-	case X86_CR0_TS:
-		HYPERVISOR_fpu_taskswitch(!!(val & X86_CR0_TS));
-		break;
-	default:
-		native_write_cr0(val);
-		break;
-	}
+
+	native_write_cr0(val);
 	raw_cpu_write_l(xen_x86_cr0, val);
 	xen_clear_cr0_upd();
 }
@@ -255,17 +226,6 @@ static inline void load_gs_index(unsigned selector)
 }
 
 #endif
-
-/* Clear the 'TS' bit */
-static inline void clts(void)
-{
-	xen_clts();
-}
-
-static inline void stts(void)
-{
-	xen_stts();
-}
 
 static inline void clflush(volatile void *__p)
 {

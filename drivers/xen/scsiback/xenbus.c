@@ -306,7 +306,6 @@ static int scsiback_probe(struct xenbus_device *dev,
 			   const struct xenbus_device_id *id)
 {
 	int err;
-	unsigned val = 0;
 
 	struct backend_info *be = kzalloc(sizeof(struct backend_info),
 					  GFP_KERNEL);
@@ -335,11 +334,7 @@ static int scsiback_probe(struct xenbus_device *dev,
 
 	scsiback_init_translation_table(be->info);
 
-	err = xenbus_scanf(XBT_NIL, dev->nodename, "feature-host", "%u", &val);
-	if (err <= 0)
-		val = 0;
-
-	if (val)
+	if (xenbus_read_unsigned(dev->nodename, "feature-host", 0))
 		be->info->feature = VSCSI_TYPE_HOST;
 
 	if (vscsiif_segs > VSCSIIF_SG_TABLESIZE) {

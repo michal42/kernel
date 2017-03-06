@@ -54,7 +54,6 @@
 #include <net/pkt_sched.h>
 #include <net/route.h>
 #include <net/tcp.h>
-#include <asm/uaccess.h>
 #include <xen/evtchn.h>
 #include <xen/xenbus.h>
 #include <xen/interface/io/netif.h>
@@ -1033,6 +1032,10 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
  	} 
 
+	/* Basic sanity check */
+	if (unlikely(skb->len < ETH_HLEN))
+		goto drop;
+
 	/*
 	 * If skb->len is too big for wire format, drop skb and alert
 	 * user about misconfiguration.
@@ -1067,6 +1070,11 @@ static int network_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	len = skb_headlen(skb);
+	if (unlikely(len < ETH_HLEN)) {
+		if (!__pskb_pull_tail(skb, ETH_HLEN - len))
+			goto drop;
+		len = ETH_HLEN;
+	}
 
 	spin_lock_irqsave(&np->tx_lock, flags);
 
@@ -1875,16 +1883,12 @@ static int network_connect(struct net_device *dev)
 	struct sk_buff *skb;
 	grant_ref_t ref;
 	netif_rx_request_t *req;
-	unsigned int feature_rx_copy, feature_rx_flip;
+	bool feature_rx_copy, feature_rx_flip;
 
-	err = xenbus_scanf(XBT_NIL, np->xbdev->otherend,
-			   "feature-rx-copy", "%u", &feature_rx_copy);
-	if (err != 1)
-		feature_rx_copy = 0;
-	err = xenbus_scanf(XBT_NIL, np->xbdev->otherend,
-			   "feature-rx-flip", "%u", &feature_rx_flip);
-	if (err != 1)
-		feature_rx_flip = 1;
+	feature_rx_copy = xenbus_read_unsigned(np->xbdev->otherend,
+					       "feature-rx-copy", 0);
+	feature_rx_flip = xenbus_read_unsigned(np->xbdev->otherend,
+					       "feature-rx-flip", 1);
 
 	/*
 	 * Copy packets on receive path if:
@@ -2107,43 +2111,24 @@ static netdev_features_t xennet_fix_features(struct net_device *dev,
 					     netdev_features_t features)
 {
 	struct netfront_info *np = netdev_priv(dev);
-	int val;
 
-	if (features & NETIF_F_SG) {
-		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend, "feature-sg",
-				 "%d", &val) < 0)
-			val = 0;
+	if ((features & NETIF_F_SG) &&
+	    !xenbus_read_unsigned(np->xbdev->otherend, "feature-sg", 0))
+		features &= ~NETIF_F_SG;
 
-		if (!val)
-			features &= ~NETIF_F_SG;
-	}
+	if ((features & NETIF_F_TSO) &&
+	    !xenbus_read_unsigned(np->xbdev->otherend,
+				  "feature-gso-tcpv4", 0))
+		features &= ~NETIF_F_TSO;
 
-	if (features & NETIF_F_TSO) {
-		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend,
-				 "feature-gso-tcpv4", "%d", &val) < 0)
-			val = 0;
+	if ((features & NETIF_F_IPV6_CSUM) &&
+	    !xenbus_read_unsigned(np->xbdev->otherend,
+				  "feature-ipv6-csum-offload", 0))
+		features &= ~NETIF_F_IPV6_CSUM;
 
-		if (!val)
-			features &= ~NETIF_F_TSO;
-	}
-
-	if (features & NETIF_F_IPV6_CSUM) {
-		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend,
-				 "feature-ipv6-csum-offload", "%d", &val) < 0)
-			val = 0;
-
-		if (!val)
-			features &= ~NETIF_F_IPV6_CSUM;
-	}
-
-	if (features & NETIF_F_TSO6) {
-		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend,
-				 "feature-gso-tcpv6", "%d", &val) < 0)
-			val = 0;
-
-		if (!val)
-			features &= ~NETIF_F_TSO6;
-	}
+	if ((features & NETIF_F_TSO6) &&
+	    !xenbus_read_unsigned(np->xbdev->otherend, "feature-gso-tcpv6", 0))
+		features &= ~NETIF_F_TSO6;
 
 	return features;
 }
@@ -2259,6 +2244,8 @@ static struct net_device *create_netdev(struct xenbus_device *dev)
 	netdev->features |= netdev->hw_features;
 
 	netdev->ethtool_ops = &network_ethtool_ops;
+	netdev->min_mtu = 0;
+	netdev->max_mtu = XEN_NETIF_MAX_TX_SIZE;
 	SET_NETDEV_DEV(netdev, &dev->dev);
 
 	np->netdev = netdev;

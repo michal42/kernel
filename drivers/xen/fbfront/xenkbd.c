@@ -123,8 +123,7 @@ int xenkbd_probe(struct xenbus_device *dev, const struct xenbus_device_id *id)
 	info->page->in_cons = info->page->in_prod = 0;
 	info->page->out_cons = info->page->out_prod = 0;
 
-	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-abs-pointer", "%d", &abs) < 0)
-		abs = 0;
+	abs = xenbus_read_unsigned(dev->otherend, "feature-abs-pointer", 0);
 	if (abs)
 		xenbus_write(XBT_NIL, dev->nodename, "request-abs-pointer", "1");
 
@@ -288,11 +287,8 @@ static void xenkbd_backend_changed(struct xenbus_device *dev,
 
 	case XenbusStateInitWait:
 	InitWait:
-		ret = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
-				   "feature-abs-pointer", "%d", &val);
-		if (ret < 0)
-			val = 0;
-		if (val) {
+		if (xenbus_read_unsigned(info->xbdev->otherend,
+					 "feature-abs-pointer", 0)) {
 			ret = xenbus_write(XBT_NIL, info->xbdev->nodename,
 					   "request-abs-pointer", "1");
 			if (ret)

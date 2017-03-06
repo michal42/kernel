@@ -299,8 +299,8 @@ static int _xen_pcibk_publish_pci_roots(struct xen_pcibk_device *pdev,
 {
 	struct controller_dev_data *dev_data = pdev->pci_dev_data;
 	struct controller_list_entry *cntrl_entry;
-	int i, root_num, len, err = 0;
-	unsigned int domain, bus;
+	int len, err = 0;
+	unsigned int i, root_num, domain, bus;
 	char str[64];
 	struct walk_info info;
 
@@ -317,11 +317,8 @@ static int _xen_pcibk_publish_pci_roots(struct xen_pcibk_device *pdev,
  		 * Now figure out which root-%d this belongs to
 		 * so we can associate resources with it.
 		 */
-		err = xenbus_scanf(XBT_NIL, pdev->xdev->nodename,
-				   "root_num", "%d", &root_num);
-
-		if (err != 1)
-			goto out;
+		root_num = xenbus_read_unsigned(pdev->xdev->nodename,
+						"root_num", 0);
 
 		for (i = 0; i < root_num; i++) {
 			len = snprintf(str, sizeof(str), "root-%d", i);

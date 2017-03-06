@@ -350,7 +350,6 @@ void __init init_IRQ(void)
 	irq_ctx_init(0);
 	xen_init_IRQ();
 }
-#include <asm/idle.h>
 #endif
 
 /* Xen will never allocate port zero for any purpose. */
@@ -407,7 +406,6 @@ __irq_entry evtchn_do_upcall(struct pt_regs *regs)
 
 	old_regs = set_irq_regs(regs);
 	irq_enter();
-	exit_idle();
 
 	do {
 		vcpu_info_write(evtchn_upcall_pending, 0);

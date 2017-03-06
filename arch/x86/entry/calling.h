@@ -48,6 +48,19 @@ For 32-bit we have the following conventions - kernel is built with
 
 */
 
+#if !defined(CONFIG_UNWIND_INFO) && defined(CONFIG_AS_CFI_SECTIONS) \
+	&& defined(__ASSEMBLY__)
+	/*
+	 * Emit CFI data in .debug_frame sections, not .eh_frame sections.
+	 * The latter we currently just discard since we don't do DWARF
+	 * unwinding at runtime.  So only the offline DWARF information is
+	 * useful to anyone.  Note we should not use this directive if this
+	 * file is used in the vDSO assembly, or if vmlinux.lds.S gets
+	 * changed so it doesn't discard .eh_frame.
+	 */
+	.cfi_sections .debug_frame
+#endif
+
 #ifdef CONFIG_X86_64
 
 /*
@@ -147,15 +160,6 @@ For 32-bit we have the following conventions - kernel is built with
 	movq 5*8+\offset(%rsp), %rbx
 	.endm
 
-	.macro ZERO_EXTRA_REGS
-	xorl	%r15d, %r15d
-	xorl	%r14d, %r14d
-	xorl	%r13d, %r13d
-	xorl	%r12d, %r12d
-	xorl	%ebp, %ebp
-	xorl	%ebx, %ebx
-	.endm
-
 	.macro RESTORE_C_REGS_HELPER rstor_rax=1, rstor_rcx=1, rstor_r11=1, rstor_r8910=1, rstor_rdx=1
 	.if \rstor_r11
 	movq 6*8(%rsp), %r11
@@ -200,6 +204,26 @@ For 32-bit we have the following conventions - kernel is built with
 	.macro icebp
 	.byte 0xf1
 	.endm
+
+/*
+ * This is a sneaky trick to help the unwinder find pt_regs on the stack.  The
+ * frame pointer is replaced with an encoded pointer to pt_regs.  The encoding
+ * is just setting the LSB, which makes it an invalid stack address and is also
+ * a signal to the unwinder that it's a pt_regs pointer in disguise.
+ *
+ * NOTE: This macro must be used *after* SAVE_EXTRA_REGS because it corrupts
+ * the original rbp.
+ */
+.macro ENCODE_FRAME_POINTER ptregs_offset=0
+#ifdef CONFIG_FRAME_POINTER
+	.if \ptregs_offset
+		leaq \ptregs_offset(%rsp), %rbp
+	.else
+		mov %rsp, %rbp
+	.endif
+	orq	$0x1, %rbp
+#endif
+.endm
 
 #endif /* CONFIG_X86_64 */
 

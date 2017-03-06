@@ -24,7 +24,7 @@
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/io.h>
 #include <xen/gnttab.h>
 #include <asm/hypervisor.h>

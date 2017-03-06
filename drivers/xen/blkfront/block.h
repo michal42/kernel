@@ -55,7 +55,6 @@
 #include <xen/interface/io/blkif.h>
 #include <xen/interface/io/ring.h>
 #include <asm/io.h>
-#include <asm/uaccess.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0)
 # define REQ_PREFLUSH REQ_FLUSH

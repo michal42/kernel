@@ -67,20 +67,17 @@ static void handle_vcpu_hotplug_event(
 	}
 }
 
-static int smpboot_cpu_notify(struct notifier_block *notifier,
-			      unsigned long action, void *hcpu)
+static int smpboot_cpu_offline(unsigned int cpu)
 {
-	unsigned int cpu = (long)hcpu;
-
 	/*
 	 * We do this in a callback notifier rather than __cpu_disable()
 	 * because local_cpu_hotplug_request() does not work in the latter
 	 * as it's always executed from within a stopmachine kthread.
 	 */
-	if ((action == CPU_DOWN_PREPARE) && local_cpu_hotplug_request())
+	if (local_cpu_hotplug_request())
 		cpumask_clear_cpu(cpu, local_allowed_cpumask);
 
-	return NOTIFY_OK;
+	return 0;
 }
 
 static int setup_cpu_watcher(struct notifier_block *notifier,
@@ -105,15 +102,15 @@ static int setup_cpu_watcher(struct notifier_block *notifier,
 
 static int __init setup_vcpu_hotplug_event(void)
 {
-	static struct notifier_block hotplug_cpu = {
-		.notifier_call = smpboot_cpu_notify };
 	static struct notifier_block xsn_cpu = {
 		.notifier_call = setup_cpu_watcher };
 
 	if (!is_running_on_xen())
 		return -ENODEV;
 
-	register_cpu_notifier(&hotplug_cpu);
+	cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN, "xen/guest:online",
+				  NULL, smpboot_cpu_offline);
+
 	register_xenstore_notifier(&xsn_cpu);
 
 	return 0;

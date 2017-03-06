@@ -35,10 +35,7 @@ static void pcifront_init_sd(struct pcifront_sd *sd,
 	sd->platform_data = pdev;
 
 	/* Look for resources for this controller in xenbus. */
-	err = xenbus_scanf(XBT_NIL, pdev->xdev->otherend, "root_num",
-			   "%d", &root_num);
-	if (err != 1)
-		return;
+	root_num = xenbus_read_unsigned(pdev->xdev->otherend, "root_num", 0);
 
 	for (i = 0; i < root_num; i++) {
 		len = snprintf(str, sizeof(str), "root-%d", i);
@@ -75,10 +72,8 @@ static void pcifront_init_sd(struct pcifront_sd *sd,
 	if (unlikely(len >= (sizeof(str) - 1)))
 		return;
 
-	err = xenbus_scanf(XBT_NIL, pdev->xdev->otherend,
-			   str, "%d", &res_count);
-
-	if (err != 1)
+	res_count = xenbus_read_unsigned(pdev->xdev->otherend, str, 0);
+	if (!res_count)
 		return; /* No resources, nothing to do */
 
 	sd->window = kzalloc(sizeof(*sd->window) * res_count, GFP_KERNEL);

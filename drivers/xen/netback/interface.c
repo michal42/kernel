@@ -113,7 +113,7 @@ static int net_close(struct net_device *dev)
 
 static int netbk_change_mtu(struct net_device *dev, int mtu)
 {
-	int max = netbk_can_sg(dev) ? 65535 - ETH_HLEN : ETH_DATA_LEN;
+	int max = netbk_can_sg(dev) ? ETH_MAX_MTU - ETH_HLEN : ETH_DATA_LEN;
 
 	if (mtu > max)
 		return -EINVAL;
@@ -256,6 +256,9 @@ netif_t *netif_alloc(struct device *parent, domid_t domid, unsigned int handle)
 	dev->ethtool_ops = &network_ethtool_ops;
 
 	dev->tx_queue_len = netbk_queue_length;
+
+	dev->min_mtu = 0;
+	dev->max_mtu = ETH_MAX_MTU - ETH_HLEN;
 
 	/*
 	 * Initialise a dummy MAC address. We choose the numerically

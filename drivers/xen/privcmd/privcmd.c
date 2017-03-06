@@ -13,11 +13,9 @@
 #include <linux/string.h>
 #include <linux/errno.h>
 #include <linux/mm.h>
-#include <asm/hypervisor.h>
-
+#include <linux/uaccess.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
-#include <asm/uaccess.h>
 #include <asm/tlb.h>
 #include <asm/hypervisor.h>
 #include <xen/public/privcmd.h>

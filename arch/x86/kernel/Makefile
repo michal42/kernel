@@ -76,7 +76,7 @@ apm-y				:= apm_32.o
 obj-$(CONFIG_APM)		+= apm.o
 obj-$(CONFIG_SMP)		+= smp.o
 obj-$(CONFIG_SMP)		+= smpboot.o
-obj-$(CONFIG_SMP)		+= tsc_sync.o
+obj-$(CONFIG_X86_TSC)		+= tsc_sync.o
 obj-$(CONFIG_SMP)		+= setup_percpu.o
 obj-$(CONFIG_X86_MPPARSE)	+= mpparse.o
 obj-y				+= apic/
@@ -124,11 +124,19 @@ obj-$(CONFIG_EFI)			+= sysfb_efi.o
 
 obj-$(CONFIG_PERF_EVENTS)		+= perf_regs.o
 obj-$(CONFIG_TRACING)			+= tracepoint.o
+obj-$(CONFIG_SCHED_MC_PRIO)		+= itmt.o
 
+ifdef CONFIG_DWARF_UNWIND
+obj-y					+= unwind_dwarf.o
+KASAN_SANITIZE_unwind_dwarf.o		:= n
+else
 ifdef CONFIG_FRAME_POINTER
 obj-y					+= unwind_frame.o
+KASAN_SANITIZE_unwind_frame.o		:= n
 else
 obj-y					+= unwind_guess.o
+KASAN_SANITIZE_unwind_guess.o		:= n
+endif
 endif
 
 obj-$(CONFIG_X86_XEN)		+= fixup.o
