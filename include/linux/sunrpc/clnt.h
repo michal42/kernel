@@ -173,5 +173,6 @@ const char	*rpc_peeraddr2str(struct rpc_clnt *, enum rpc_display_format_t);
 int		rpc_localaddr(struct rpc_clnt *, struct sockaddr *, size_t);
 int		rpc_is_foreign(struct rpc_clnt *);
 
+void rpc_cleanup_clids(void);
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SUNRPC_CLNT_H */

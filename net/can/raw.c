@@ -166,9 +166,9 @@ static int raw_enable_filters(struct net_device *dev, struct sock *sk,
 	int i;
 
 	for (i = 0; i < count; i++) {
-		err = can_rx_register(dev, filter[i].can_id,
+		err = can_rx_register7(dev, filter[i].can_id,
 				      filter[i].can_mask,
-				      raw_rcv, sk, "raw");
+				      raw_rcv, sk, "raw", sk);
 		if (err) {
 			/* clean up successfully registered filters */
 			while (--i >= 0)
@@ -188,8 +188,8 @@ static int raw_enable_errfilter(struct net_device *dev, struct sock *sk,
 	int err = 0;
 
 	if (err_mask)
-		err = can_rx_register(dev, 0, err_mask | CAN_ERR_FLAG,
-				      raw_rcv, sk, "raw");
+		err = can_rx_register7(dev, 0, err_mask | CAN_ERR_FLAG,
+				      raw_rcv, sk, "raw", sk);
 
 	return err;
 }
