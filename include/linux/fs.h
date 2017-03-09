@@ -1852,6 +1852,7 @@ struct file_system_type {
 #define FS_USERNS_DEV_MOUNT	16 /* A userns mount does not imply MNT_NODEV */
 #define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
 #define FS_USES_GET_INODE_DEV	65536 /* FS defines sops->get_inode_dev */
+#define FS_NOEXEC		131072 /* Should set NOEXEC flag */
 	struct dentry *(*mount) (struct file_system_type *, int,
 		       const char *, void *);
 	void (*kill_sb) (struct super_block *);

@@ -786,6 +786,9 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (flags & MS_KERNMOUNT)
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
 
+	if (type->fs_flags & FS_NOEXEC)
+		mnt->mnt.mnt_flags |= MNT_NOEXEC;
+
 	root = mount_fs(type, flags, name, data);
 	if (IS_ERR(root)) {
 		free_vfsmnt(mnt);

@@ -240,6 +240,7 @@ static int __init aio_setup(void)
 {
 	static struct file_system_type aio_fs = {
 		.name		= "aio",
+		.fs_flags	= FS_NOEXEC,
 		.mount		= aio_mount,
 		.kill_sb	= kill_anon_super,
 	};
