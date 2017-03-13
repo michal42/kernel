@@ -301,6 +301,7 @@ TOUT	:= .tmp_gas_check
 # - gcc-3.4 and binutils-2.14 are a fatal combination
 # - Require gcc 4.0 or above on 64-bit
 # - gcc-4.2.0 has issues compiling modules on 64-bit
+# - gcc-5.4, 6.1, 6.2 don't copy the command_line around correctly
 checkbin:
 	@if test "$(call cc-version)" = "0304" ; then \
 		if ! /bin/echo mftb 5 | $(AS) -v -mppc -many -o $(TOUT) >/dev/null 2>&1 ; then \
@@ -324,6 +325,24 @@ checkbin:
 		echo 'disable kernel modules' ; \
 		false ; \
 	fi
+	@if test "x${CONFIG_CPU_LITTLE_ENDIAN}" = "xy" \
+	    && $(LD) --version | head -1 | grep ' 2\.24$$' >/dev/null ; then \
+		echo -n '*** binutils 2.24 miscompiles weak symbols ' ; \
+		echo 'in some circumstances.' ; \
+		echo -n '*** Please use a different binutils version.' ; \
+		false ; \
+	fi
+	@if test "x${CONFIG_CPU_LITTLE_ENDIAN}" = "xy" \
+		&& { test "$(cc-version)" = "0504" \
+		|| test "$(cc-version)" = "0601" \
+		|| test "$(cc-version)" = "0602" ; } ; then \
+		echo -n '*** GCC-5.4 6.1 6.2 have a bad -O2 optimisation ' ; \
+		echo 'which will cause lost command_line options (at least).' ; \
+		echo '*** Please use a different GCC version.' ; \
+		false ; \
+	fi
+
+
 
 CLEAN_FILES += $(TOUT)
 
