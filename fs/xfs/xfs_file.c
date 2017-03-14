@@ -42,6 +42,7 @@
 #include <linux/dcache.h>
 #include <linux/falloc.h>
 #include <linux/pagevec.h>
+#include <linux/splice.h>
 
 static const struct vm_operations_struct xfs_file_vm_ops;
 #ifdef HAVE_DMAPI
@@ -406,13 +407,34 @@ xfs_file_splice_read(
 	return ret;
 }
 
+static ssize_t
+xfs_file_splice_write_actor(
+       struct pipe_inode_info  *pipe,
+       struct splice_desc      *sd)
+{
+	struct file *out = sd->u.file;
+	struct xfs_inode *ip = XFS_I(out->f_mapping->host);
+	ssize_t ret;
+
+	xfs_rw_ilock(ip, XFS_IOLOCK_EXCL);
+	ret = file_remove_suid(out);
+	if (!ret) {
+		ret = file_update_time(out);
+		if (!ret)
+			ret = splice_from_pipe_feed(pipe, sd, pipe_to_file);
+	}
+	xfs_rw_iunlock(ip, XFS_IOLOCK_EXCL);
+
+	return ret;
+}
+
 /*
- * xfs_file_splice_write() does not use xfs_rw_ilock() because
- * generic_file_splice_write() takes the i_mutex itself. This, in theory,
- * couuld cause lock inversions between the aio_write path and the splice path
- * if someone is doing concurrent splice(2) based writes and write(2) based
- * writes to the same inode. The only real way to fix this is to re-implement
- * the generic code here with correct locking orders.
+ * xfs_file_splice_write() does not use the generic file splice write path
+ * because that takes the i_mutex, causing lock inversions with the IOLOCK.
+ * Instead, we call splice_write_to_file() directly with our own actor that
+ * does  not take the i_mutex. This allows us to use the xfs_rw_ilock()
+ * functions like the rest of the code and hence avoid lock inversions
+ * and deadlocks.
  */
 STATIC ssize_t
 xfs_file_splice_write(
@@ -435,28 +457,23 @@ xfs_file_splice_write(
 	if (XFS_FORCED_SHUTDOWN(ip->i_mount))
 		return -EIO;
 
-	xfs_ilock(ip, XFS_IOLOCK_EXCL);
-
 	if (DM_EVENT_ENABLED(ip, DM_EVENT_WRITE) && !(ioflags & IO_INVIS)) {
-		int iolock = XFS_IOLOCK_EXCL;
 		struct xfs_mount	*mp = ip->i_mount;
 		int error;
 
 		error = XFS_SEND_DATA(mp, DM_EVENT_WRITE, ip, *ppos, count,
-					FILP_DELAY_FLAG(outfilp), &iolock);
-		if (error) {
-			xfs_iunlock(ip, XFS_IOLOCK_EXCL);
+					FILP_DELAY_FLAG(outfilp), NULL);
+		if (error)
 			return -error;
-		}
 	}
 
 	trace_xfs_file_splice_write(ip, count, *ppos, ioflags);
 
-	ret = generic_file_splice_write(pipe, outfilp, ppos, count, flags);
+	ret = splice_write_to_file(pipe, outfilp, ppos, count, flags,
+								xfs_file_splice_write_actor);
 	if (ret > 0)
 		XFS_STATS_ADD(xs_write_bytes, ret);
 
-	xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 	return ret;
 }
 
