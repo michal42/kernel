@@ -559,7 +559,7 @@ typedef struct xfs_icdinode {
 	__uint8_t	di_forkoff;	/* attr fork offs, <<3 for 64b align */
 	__int8_t	di_aformat;	/* format of attr fork's data */
 	__uint32_t	di_dmevmask;	/* DMIG event mask */
-	__uint16_t	di_dmstate;	/* DMIG state info */
+	atomic_t	di_dmstate;	/* DMIG state info */
 	__uint16_t	di_flags;	/* random flags, XFS_DIFLAG_... */
 	__uint32_t	di_gen;		/* generation number */
 

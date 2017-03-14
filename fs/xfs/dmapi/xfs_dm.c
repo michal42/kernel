@@ -148,7 +148,7 @@ xfs_dm_send_data_event(
 	/* Returns positive errors to XFS */
 
 	do {
-		dmstate = ip->i_d.di_dmstate;
+		dmstate = atomic_read(&ip->i_d.di_dmstate);
 		if (lock_flags)
 			xfs_iunlock(ip, *lock_flags);
 
@@ -162,7 +162,7 @@ xfs_dm_send_data_event(
 
 		if (lock_flags)
 			xfs_ilock(ip, *lock_flags);
-	} while (!error && (ip->i_d.di_dmstate != dmstate));
+	} while (!error && (atomic_read(&ip->i_d.di_dmstate) != dmstate));
 
 	return error;
 }
@@ -331,7 +331,7 @@ xfs_ip_to_stat(
 	buf->dt_xfs_extents = dic->di_nextents;
 	buf->dt_xfs_aextents = dic->di_anextents;
 	buf->dt_xfs_igen = dic->di_gen;
-	buf->dt_xfs_dmstate = dic->di_dmstate;
+	buf->dt_xfs_dmstate = atomic_read(&dic->di_dmstate);
 
 	switch (dic->di_format) {
 	case XFS_DINODE_FMT_DEV:
@@ -2284,9 +2284,10 @@ xfs_dm_punch_hole(
 	if (error)
 		error = -error;
 
-	/* Let threads in send_data_event know we punched the file. */
-	ip->i_d.di_dmstate++;
 	xfs_iunlock(ip, XFS_IOLOCK_EXCL);
+
+	/* Let threads in send_data_event know we punched the file. */
+	atomic_inc(&ip->i_d.di_dmstate);
 
 up_and_out:
 	up_rw_sems(inode, DM_SEM_FLAG_WR);

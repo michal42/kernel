@@ -746,7 +746,7 @@ xfs_ialloc(
 	 */
 	ip->i_d.di_extsize = 0;
 	ip->i_d.di_dmevmask = 0;
-	ip->i_d.di_dmstate = 0;
+	atomic_set(&ip->i_d.di_dmstate, 0);
 	ip->i_d.di_flags = 0;
 
 	if (ip->i_d.di_version == 3) {
