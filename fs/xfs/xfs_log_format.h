@@ -562,7 +562,7 @@ typedef struct xfs_icdinode {
 #ifndef __GENKSYMS__
 	atomic_t	di_dmstate;	/* DMIG state info */
 #else
-	__uint16_t	di_dmstate
+	__uint16_t	di_dmstate;
 #endif
 	__uint16_t	di_flags;	/* random flags, XFS_DIFLAG_... */
 	__uint32_t	di_gen;		/* generation number */
