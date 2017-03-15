@@ -1048,6 +1048,8 @@ int kgr_modify_kernel(struct kgr_patch *patch, bool revert)
 		goto err_unlock;
 	}
 
+	add_taint_module(patch->owner, TAINT_KGRAFT, LOCKDEP_STILL_OK);
+
 	pr_info("%sing patch '%s'\n", revert ? "revert" : "apply",
 			patch->name);
 
@@ -1130,9 +1132,6 @@ int kgr_patch_kernel(struct kgr_patch *patch)
 		pr_err("can't increase patch module refcount\n");
 		return -EBUSY;
 	}
-
-	pr_notice_once("tainting kernel with TAINT_KGRAFT\n");
-	add_taint(TAINT_KGRAFT, LOCKDEP_STILL_OK);
 
 	init_completion(&patch->finish);
 

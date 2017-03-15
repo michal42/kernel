@@ -444,6 +444,13 @@ static inline bool within_module(unsigned long addr, const struct module *mod)
 	return within_module_init(addr, mod) || within_module_core(addr, mod);
 }
 
+static inline void add_taint_module(struct module *mod, unsigned flag,
+				    enum lockdep_ok lockdep_ok)
+{
+	add_taint(flag, lockdep_ok);
+	mod->taints |= (1U << flag);
+}
+
 /* Search for module by name: must hold module_mutex. */
 struct module *find_module(const char *name);
 

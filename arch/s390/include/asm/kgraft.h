@@ -25,9 +25,4 @@ static inline void kgr_set_regs_ip(struct pt_regs *regs, unsigned long ip)
 	regs->psw.addr = ip;
 }
 
-static inline bool kgr_needs_lazy_migration(struct task_struct *p)
-{
-	return true;
-}
-
 #endif
