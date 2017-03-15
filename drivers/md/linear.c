@@ -101,7 +101,7 @@ static int linear_mergeable_bvec(struct request_queue *q,
  * In linear_congested() conf->raid_disks is used as a copy of
  * mddev->raid_disks to iterate conf->disks[], because conf->raid_disks
  * and conf->disks[] are created in linear_conf(), they are always
- * consitent with each other, but mddev->raid_disks dose not.
+ * consitent with each other, but mddev->raid_disks does not.
  */
 static int linear_congested(void *data, int bits)
 {
@@ -271,8 +271,7 @@ static int linear_add(struct mddev *mddev, struct md_rdev *rdev)
 	if (!newconf)
 		return -ENOMEM;
 
-	/*
-	 * newconf->raid_disks already keeps a copy of * the increased
+	/* newconf->raid_disks already keeps a copy of * the increased
 	 * value of mddev->raid_disks, WARN_ONCE() is just used to make
 	 * sure of this. It is possible that oldconf is still referenced
 	 * in linear_congested(), therefore kfree_rcu() is used to free
