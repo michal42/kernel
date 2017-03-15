@@ -66,10 +66,10 @@ struct r1conf {
 	 */
 	wait_queue_head_t	wait_barrier;
 	spinlock_t		resync_lock;
-	int			nr_pending;
-	int			nr_waiting;
+	atomic_t		nr_pending;
+	atomic_t		nr_waiting;
 	int			nr_queued;
-	int			barrier;
+	atomic_t		barrier;
 	int			array_frozen;
 
 	/* Set to 1 if a full sync is needed, (fresh device added).
