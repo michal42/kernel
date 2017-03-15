@@ -2290,7 +2290,7 @@ xfs_dm_punch_hole(
 	 * Also due to out change from uint16 to effectively uint32, handle
 	 * overflow case manually
 	 */
-	if (!atomic_add_unless(&ip->i_d.di_dmstate, 1, USHRT_MAX)
+	if (!atomic_add_unless(&ip->i_d.di_dmstate, 1, USHRT_MAX))
 			atomic_set(&ip->i_d.di_dmstate, 0); 
 
 up_and_out:
