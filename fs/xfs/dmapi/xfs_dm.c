@@ -2286,8 +2286,12 @@ xfs_dm_punch_hole(
 
 	xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 
-	/* Let threads in send_data_event know we punched the file. */
-	atomic_inc(&ip->i_d.di_dmstate);
+	/* Let threads in send_data_event know we punched the file.
+	 * Also due to out change from uint16 to effectively uint32, handle
+	 * overflow case manually
+	 */
+	if (!atomic_add_unless(&ip->i_d.di_dmstate, 1, USHRT_MAX)
+			atomic_set(&ip->i_d.di_dmstate, 0); 
 
 up_and_out:
 	up_rw_sems(inode, DM_SEM_FLAG_WR);
