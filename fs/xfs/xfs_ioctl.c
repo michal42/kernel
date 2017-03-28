@@ -373,7 +373,7 @@ xfs_set_dmattrs(
 	xfs_trans_ijoin(tp, ip, XFS_ILOCK_EXCL);
 
 	ip->i_d.di_dmevmask = evmask;
-	ip->i_d.di_dmstate  = state;
+	atomic_set(&ip->i_d.di_dmstate, state);
 
 	xfs_trans_log_inode(tp, ip, XFS_ILOG_CORE);
 	error = xfs_trans_commit(tp, 0);
