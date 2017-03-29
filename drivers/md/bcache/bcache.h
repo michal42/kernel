@@ -185,6 +185,7 @@
 #include <linux/rwsem.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
+#include <asm-generic/barrier.h>
 
 #include "util.h"
 #include "closure.h"
@@ -1102,7 +1103,7 @@ static inline bool cached_dev_get(struct cached_dev *dc)
 		return false;
 
 	/* Paired with the mb in cached_dev_attach */
-	smp_mb__after_atomic_inc();
+	smp_mb__after_atomic();
 	return true;
 }
 

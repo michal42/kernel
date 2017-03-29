@@ -12,6 +12,7 @@
 #include <linux/blkdev.h>
 #include <linux/math64.h>
 #include <linux/ratelimit.h>
+#include <asm-generic/barrier.h>
 
 struct dm_dev;
 struct dm_target;
