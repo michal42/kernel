@@ -207,7 +207,7 @@ static int superblock_lock(struct dm_cache_metadata *cmd,
 
 /*----------------------------------------------------------------*/
 
-static int __superblock_all_zeroes(struct dm_block_manager *bm, int *result)
+static int __superblock_all_zeroes(struct dm_block_manager *bm, bool *result)
 {
 	int r;
 	unsigned i;
@@ -223,10 +223,10 @@ static int __superblock_all_zeroes(struct dm_block_manager *bm, int *result)
 		return r;
 
 	data_le = dm_block_data(b);
-	*result = 1;
+	*result = true;
 	for (i = 0; i < sb_block_size; i++) {
 		if (data_le[i] != zero) {
-			*result = 0;
+			*result = false;
 			break;
 		}
 	}
@@ -446,7 +446,8 @@ bad:
 static int __open_or_format_metadata(struct dm_cache_metadata *cmd,
 				     bool format_device)
 {
-	int r, unformatted;
+	int r;
+	bool unformatted = false;
 
 	r = __superblock_all_zeroes(cmd->bm, &unformatted);
 	if (r)
