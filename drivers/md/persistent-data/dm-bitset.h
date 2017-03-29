@@ -71,6 +71,9 @@ struct dm_disk_bitset {
 	uint64_t current_bits;
 
 	bool current_index_set:1;
+#ifndef __GENKSYMS__
+	bool dirty:1;
+#endif
 };
 
 /*
