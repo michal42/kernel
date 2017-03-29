@@ -451,10 +451,10 @@ static int queue_if_no_path(struct multipath *m, unsigned queue_if_no_path,
 	else
 		m->saved_queue_if_no_path = queue_if_no_path;
 	m->queue_if_no_path = queue_if_no_path;
-	if (!m->queue_if_no_path)
-		dm_table_run_md_queue_async(m->ti->table);
-
 	spin_unlock_irqrestore(&m->lock, flags);
+
+	if (!queue_if_no_path)
+		dm_table_run_md_queue_async(m->ti->table);
 
 	return 0;
 }
@@ -994,7 +994,7 @@ out:
  */
 static int reinstate_path(struct pgpath *pgpath)
 {
-	int r = 0;
+	int r = 0, run_queue = 0;
 	unsigned long flags;
 	struct multipath *m = pgpath->pg->m;
 
@@ -1024,7 +1024,7 @@ static int reinstate_path(struct pgpath *pgpath)
 
 	if (!m->nr_valid_paths++) {
 		m->current_pgpath = NULL;
-		dm_table_run_md_queue_async(m->ti->table);
+		run_queue = 1;
 	} else if (m->hw_handler_name && (m->current_pg == pgpath->pg)) {
 		if (queue_work(kmpath_handlerd, &pgpath->activate_path.work))
 			m->pg_init_in_progress++;
@@ -1037,6 +1037,8 @@ static int reinstate_path(struct pgpath *pgpath)
 
 out:
 	spin_unlock_irqrestore(&m->lock, flags);
+	if (run_queue)
+		dm_table_run_md_queue_async(m->ti->table);
 
 	return r;
 }
@@ -1623,8 +1625,8 @@ static int multipath_ioctl(struct dm_target *ti, unsigned int cmd,
 		}
 		if (m->pg_init_required)
 			__pg_init_all_paths(m);
-		dm_table_run_md_queue_async(m->ti->table);
 		spin_unlock_irqrestore(&m->lock, flags);
+		dm_table_run_md_queue_async(m->ti->table);
 	}
 
 	return r ? : __blkdev_driver_ioctl(bdev, mode, cmd, arg);
