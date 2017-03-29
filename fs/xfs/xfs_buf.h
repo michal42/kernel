@@ -117,8 +117,9 @@ typedef struct xfs_buftarg {
 	/* LRU control structures */
 	struct shrinker		bt_shrinker;
 	struct list_lru		bt_lru;
-
+#ifndef __GENKSYMS__
 	struct percpu_counter	bt_io_count;
+#endif
 } xfs_buftarg_t;
 
 struct xfs_buf;
