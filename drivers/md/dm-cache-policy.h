@@ -234,6 +234,13 @@ struct dm_cache_policy_type {
 	struct dm_cache_policy *(*create)(dm_cblock_t cache_size,
 					  sector_t origin_size,
 					  sector_t block_size);
+#ifndef __GENKSYMS__
+	/*
+	 * For use by an alias dm_cache_policy_type to point to the
+	 * real dm_cache_policy_type.
+	 */
+	struct dm_cache_policy_type *real;
+#endif
 };
 
 int dm_cache_policy_register(struct dm_cache_policy_type *type);
