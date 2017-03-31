@@ -86,6 +86,12 @@ nfs_file_release(struct inode *inode, struct file *filp)
 			filp->f_path.dentry->d_parent->d_name.name,
 			filp->f_path.dentry->d_name.name);
 
+	if (filp->f_mode & FMODE_WRITE)
+		/* Ensure dirty mmapped pages are flushed
+		 * so there will be no dirty pages to
+		 * prevent an unmount from completing.
+		 */
+		vfs_fsync(filp, 0);
 	nfs_inc_stats(inode, NFSIOS_VFSRELEASE);
 	return nfs_release(inode, filp);
 }
