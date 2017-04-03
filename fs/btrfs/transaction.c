@@ -442,8 +442,9 @@ static inline bool need_reserve_reloc_root(struct btrfs_root *root)
 }
 
 static struct btrfs_trans_handle *
-start_transaction(struct btrfs_root *root, u64 num_items, unsigned int type,
-		  enum btrfs_reserve_flush_enum flush)
+start_transaction(struct btrfs_root *root, unsigned int num_items,
+		  unsigned int type, enum btrfs_reserve_flush_enum flush,
+		  bool enforce_qgroups)
 {
 	struct btrfs_trans_handle *h;
 	struct btrfs_transaction *cur_trans;
@@ -471,7 +472,8 @@ start_transaction(struct btrfs_root *root, u64 num_items, unsigned int type,
 	 */
 	if (num_items > 0 && root != root->fs_info->chunk_root) {
 		qgroup_reserved = num_items * root->nodesize;
-		ret = btrfs_qgroup_reserve_meta(root, qgroup_reserved);
+		ret = btrfs_qgroup_reserve_meta(root, qgroup_reserved,
+				enforce_qgroups);
 		if (ret)
 			return ERR_PTR(ret);
 
@@ -590,8 +592,9 @@ struct btrfs_trans_handle *btrfs_start_transaction(struct btrfs_root *root,
 						   int num_items)
 {
 	return start_transaction(root, num_items, TRANS_START,
-				 BTRFS_RESERVE_FLUSH_ALL);
+				 BTRFS_RESERVE_FLUSH_ALL, true);
 }
+
 struct btrfs_trans_handle *btrfs_start_transaction_fallback_global_rsv(
 					struct btrfs_root *root,
 					unsigned int num_items,
@@ -601,7 +604,14 @@ struct btrfs_trans_handle *btrfs_start_transaction_fallback_global_rsv(
 	u64 num_bytes;
 	int ret;
 
-	trans = btrfs_start_transaction(root, num_items);
+	/*
+	 * We have two callers: unlink and block group removal.  The
+	 * former should succeed even if we will temporarily exceed
+	 * quota and the latter operates on the extent root so
+	 * qgroup enforcement is ignored anyway.
+	 */
+	trans = start_transaction(root, num_items, TRANS_START,
+				  BTRFS_RESERVE_FLUSH_ALL, false);
 	if (!IS_ERR(trans) || PTR_ERR(trans) != -ENOSPC)
 		return trans;
 
@@ -629,22 +639,22 @@ struct btrfs_trans_handle *btrfs_start_transaction_lflush(
 					struct btrfs_root *root, int num_items)
 {
 	return start_transaction(root, num_items, TRANS_START,
-				 BTRFS_RESERVE_FLUSH_LIMIT);
+				 BTRFS_RESERVE_FLUSH_LIMIT, true);
 }
 
 struct btrfs_trans_handle *btrfs_join_transaction(struct btrfs_root *root)
 {
-	return start_transaction(root, 0, TRANS_JOIN, 0);
+	return start_transaction(root, 0, TRANS_JOIN, 0, true);
 }
 
 struct btrfs_trans_handle *btrfs_join_transaction_nolock(struct btrfs_root *root)
 {
-	return start_transaction(root, 0, TRANS_JOIN_NOLOCK, 0);
+	return start_transaction(root, 0, TRANS_JOIN_NOLOCK, 0, true);
 }
 
 struct btrfs_trans_handle *btrfs_start_ioctl_transaction(struct btrfs_root *root)
 {
-	return start_transaction(root, 0, TRANS_USERSPACE, 0);
+	return start_transaction(root, 0, TRANS_USERSPACE, 0, true);
 }
 
 /*
@@ -662,7 +672,7 @@ struct btrfs_trans_handle *btrfs_start_ioctl_transaction(struct btrfs_root *root
  */
 struct btrfs_trans_handle *btrfs_attach_transaction(struct btrfs_root *root)
 {
-	return start_transaction(root, 0, TRANS_ATTACH, 0);
+	return start_transaction(root, 0, TRANS_ATTACH, 0, true);
 }
 
 /*
@@ -677,7 +687,7 @@ btrfs_attach_transaction_barrier(struct btrfs_root *root)
 {
 	struct btrfs_trans_handle *trans;
 
-	trans = start_transaction(root, 0, TRANS_ATTACH, 0);
+	trans = start_transaction(root, 0, TRANS_ATTACH, 0, true);
 	if (IS_ERR(trans) && PTR_ERR(trans) == -ENOENT)
 		btrfs_wait_for_commit(root, 0);
 
