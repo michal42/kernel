@@ -2717,18 +2717,18 @@ int btrfs_qgroup_reserve_meta(struct btrfs_root *root, int num_bytes,
 	ret = qgroup_reserve(root, num_bytes, enforce);
 	if (ret < 0)
 		return ret;
-	atomic_add(num_bytes, &root->qgroup_meta_rsv);
+	atomic64_add(num_bytes, &root->qgroup_meta_rsv);
 	return ret;
 }
 
 void btrfs_qgroup_free_meta_all(struct btrfs_root *root)
 {
-	int reserved;
+	u64 reserved;
 
 	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid))
 		return;
 
-	reserved = atomic_xchg(&root->qgroup_meta_rsv, 0);
+	reserved = atomic64_xchg(&root->qgroup_meta_rsv, 0);
 	if (reserved == 0)
 		return;
 	qgroup_free(root, reserved);
@@ -2740,8 +2740,8 @@ void btrfs_qgroup_free_meta(struct btrfs_root *root, int num_bytes)
 		return;
 
 	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
-	WARN_ON(atomic_read(&root->qgroup_meta_rsv) < num_bytes);
-	atomic_sub(num_bytes, &root->qgroup_meta_rsv);
+	WARN_ON(atomic64_read(&root->qgroup_meta_rsv) < num_bytes);
+	atomic64_sub(num_bytes, &root->qgroup_meta_rsv);
 	qgroup_free(root, num_bytes);
 }
 
