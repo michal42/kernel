@@ -1882,7 +1882,7 @@ struct btrfs_root {
 	atomic_t will_be_snapshoted;
 
 	/* For qgroup metadata space reserve */
-	atomic_t qgroup_meta_rsv;
+	atomic64_t qgroup_meta_rsv;
 };
 
 struct btrfs_ioctl_defrag_range_args {

@@ -2101,19 +2101,34 @@ out:
 	return ret;
 }
 
+static bool qgroup_check_limits(const struct btrfs_qgroup *qg, u64 num_bytes)
+{
+	if ((qg->lim_flags & BTRFS_QGROUP_LIMIT_MAX_RFER) &&
+	    qg->reserved + (s64)qg->rfer + num_bytes > qg->max_rfer)
+		return false;
+
+	if ((qg->lim_flags & BTRFS_QGROUP_LIMIT_MAX_EXCL) &&
+	    qg->reserved + (s64)qg->excl + num_bytes > qg->max_excl)
+		return false;
+
+	return true;
+}
+
+
 /*
  * reserve some space for a qgroup and all its parents. The reservation takes
  * place with start_transaction or dealloc_reserve, similar to ENOSPC
  * accounting. If not enough space is available, EDQUOT is returned.
  * We assume that the requested space is new for all qgroups.
  */
-static int qgroup_reserve(struct btrfs_root *root, u64 num_bytes)
+static int qgroup_reserve(struct btrfs_root *root, u64 num_bytes, bool enforce)
 {
 	struct btrfs_root *quota_root;
 	struct btrfs_qgroup *qgroup;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	u64 ref_root = root->root_key.objectid;
 	int ret = 0;
+	int retried = 0;
 	struct ulist_node *unode;
 	struct ulist_iterator uiter;
 
@@ -2122,7 +2137,7 @@ static int qgroup_reserve(struct btrfs_root *root, u64 num_bytes)
 
 	if (num_bytes == 0)
 		return 0;
-
+retry:
 	spin_lock(&fs_info->qgroup_lock);
 	quota_root = fs_info->quota_root;
 	if (!quota_root)
@@ -2148,16 +2163,28 @@ static int qgroup_reserve(struct btrfs_root *root, u64 num_bytes)
 
 		qg = u64_to_ptr(unode->aux);
 
-		if ((qg->lim_flags & BTRFS_QGROUP_LIMIT_MAX_RFER) &&
-		    qg->reserved + (s64)qg->rfer + num_bytes >
-		    qg->max_rfer) {
-			ret = -EDQUOT;
-			goto out;
-		}
+		if (enforce && !qgroup_check_limits(qg, num_bytes)) {
+			/*
+			 * Commit the tree and retry, since we may have
+			 * deletions which would free up space.
+			 */
+			if (!retried && qg->reserved > 0) {
+				struct btrfs_trans_handle *trans;
 
-		if ((qg->lim_flags & BTRFS_QGROUP_LIMIT_MAX_EXCL) &&
-		    qg->reserved + (s64)qg->excl + num_bytes >
-		    qg->max_excl) {
+				spin_unlock(&fs_info->qgroup_lock);
+				ret = btrfs_start_delalloc_inodes(root, 0);
+				if (ret)
+					return ret;
+				btrfs_wait_ordered_extents(root, -1);
+				trans = btrfs_join_transaction(root);
+				if (IS_ERR(trans))
+					return PTR_ERR(trans);
+				ret = btrfs_commit_transaction(trans, root);
+				if (ret)
+					return ret;
+				retried++;
+				goto retry;
+			}
 			ret = -EDQUOT;
 			goto out;
 		}
@@ -2617,7 +2644,7 @@ int btrfs_qgroup_reserve_data(struct inode *inode, u64 start, u64 len)
 					QGROUP_RESERVE);
 	if (ret < 0)
 		goto cleanup;
-	ret = qgroup_reserve(root, changeset.bytes_changed);
+	ret = qgroup_reserve(root, changeset.bytes_changed, true);
 	if (ret < 0)
 		goto cleanup;
 
@@ -2699,7 +2726,8 @@ int btrfs_qgroup_release_data(struct inode *inode, u64 start, u64 len)
 	return __btrfs_qgroup_release_data(inode, start, len, 0);
 }
 
-int btrfs_qgroup_reserve_meta(struct btrfs_root *root, int num_bytes)
+int btrfs_qgroup_reserve_meta(struct btrfs_root *root, int num_bytes,
+			      bool enforce)
 {
 	int ret;
 
@@ -2708,21 +2736,21 @@ int btrfs_qgroup_reserve_meta(struct btrfs_root *root, int num_bytes)
 		return 0;
 
 	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
-	ret = qgroup_reserve(root, num_bytes);
+	ret = qgroup_reserve(root, num_bytes, enforce);
 	if (ret < 0)
 		return ret;
-	atomic_add(num_bytes, &root->qgroup_meta_rsv);
+	atomic64_add(num_bytes, &root->qgroup_meta_rsv);
 	return ret;
 }
 
 void btrfs_qgroup_free_meta_all(struct btrfs_root *root)
 {
-	int reserved;
+	u64 reserved;
 
 	if (!root->fs_info->quota_enabled || !is_fstree(root->objectid))
 		return;
 
-	reserved = atomic_xchg(&root->qgroup_meta_rsv, 0);
+	reserved = atomic64_xchg(&root->qgroup_meta_rsv, 0);
 	if (reserved == 0)
 		return;
 	qgroup_free(root, reserved);
@@ -2734,8 +2762,8 @@ void btrfs_qgroup_free_meta(struct btrfs_root *root, int num_bytes)
 		return;
 
 	BUG_ON(num_bytes != round_down(num_bytes, root->nodesize));
-	WARN_ON(atomic_read(&root->qgroup_meta_rsv) < num_bytes);
-	atomic_sub(num_bytes, &root->qgroup_meta_rsv);
+	WARN_ON(atomic64_read(&root->qgroup_meta_rsv) < num_bytes);
+	atomic64_sub(num_bytes, &root->qgroup_meta_rsv);
 	qgroup_free(root, num_bytes);
 }
 
