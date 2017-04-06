@@ -29,6 +29,8 @@
 #include <net/netfilter/nf_log.h>
 #include <net/netfilter/xt_log.h>
 
+static int sysctl_nf_log_all_netns __read_mostly;
+
 static struct nf_loginfo default_loginfo = {
 	.type	= NF_LOG_TYPE_LOG,
 	.u = {
@@ -478,7 +480,7 @@ ipt_log_packet(struct net *net,
 	struct sbuff *m;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net))
+	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
 		return;
 
 	m = sb_open();
@@ -809,7 +811,7 @@ ip6t_log_packet(struct net *net,
 	struct sbuff *m;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net))
+	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
 		return;
 
 	m = sb_open();
@@ -908,17 +910,41 @@ static struct nf_logger ip6t_log_logger __read_mostly = {
 };
 #endif
 
+#ifdef CONFIG_SYSCTL
+static struct ctl_table nf_log_sysctl_ftable[] = {
+	{
+		.procname	= "nf_log_all_netns",
+		.data		= &sysctl_nf_log_all_netns,
+		.maxlen		= sizeof(sysctl_nf_log_all_netns),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{ }
+};
+
+static struct ctl_table_header *nf_log_sysctl_fhdr;
+#endif
+
 static int __net_init log_net_init(struct net *net)
 {
 	nf_log_set(net, NFPROTO_IPV4, &ipt_log_logger);
 #if IS_ENABLED(CONFIG_IP6_NF_IPTABLES)
 	nf_log_set(net, NFPROTO_IPV6, &ip6t_log_logger);
 #endif
+#ifdef CONFIG_SYSCTL
+	if (net_eq(net, &init_net))
+		nf_log_sysctl_fhdr = register_net_sysctl(net, "net/netfilter",
+							 nf_log_sysctl_ftable);
+#endif
 	return 0;
 }
 
 static void __net_exit log_net_exit(struct net *net)
 {
+#ifdef CONFIG_SYSCTL
+	if (nf_log_sysctl_fhdr)
+		unregister_sysctl_table(nf_log_sysctl_fhdr);
+#endif
 	nf_log_unset(net, &ipt_log_logger);
 #if IS_ENABLED(CONFIG_IP6_NF_IPTABLES)
 	nf_log_unset(net, &ip6t_log_logger);
