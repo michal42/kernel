@@ -387,9 +387,6 @@ static inline int xfrm_replay_verify_len(struct xfrm_replay_state_esn *replay_es
 	if (!replay_esn || !rp)
 		return 0;
 
-	if (nla_len(rp) < sizeof(*up))
-		return -EINVAL;
-
 	up = nla_data(rp);
 	ulen = xfrm_replay_state_esn_len(up);
 
