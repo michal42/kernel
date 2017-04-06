@@ -128,14 +128,12 @@ void dm_cache_dump(struct dm_cache_metadata *cmd);
  * rather than querying the policy for each cblock, we let it walk its data
  * structures and fill in the hints in whatever order it wishes.
  */
-
-int dm_cache_begin_hints(struct dm_cache_metadata *cmd, struct dm_cache_policy *p);
+int dm_cache_write_hints(struct dm_cache_metadata *cmd, struct dm_cache_policy *p);
 
 /*
- * requests hints for every cblock and stores in the metadata device.
+ * Query method.  Are all the blocks in the cache clean?
  */
-int dm_cache_save_hint(struct dm_cache_metadata *cmd,
-		       dm_cblock_t cblock, uint32_t hint);
+int dm_cache_metadata_all_clean(struct dm_cache_metadata *cmd, bool *result);
 
 /*----------------------------------------------------------------*/
 

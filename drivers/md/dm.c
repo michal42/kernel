@@ -51,6 +51,11 @@ static unsigned int _major = 0;
 static DEFINE_IDR(_minor_idr);
 
 static DEFINE_SPINLOCK(_minor_lock);
+
+static void do_deferred_remove(struct work_struct *w);
+
+static DECLARE_WORK(deferred_remove_work, do_deferred_remove);
+
 /*
  * For bio-based dm.
  * One of these is allocated per bio.
@@ -118,6 +123,7 @@ EXPORT_SYMBOL_GPL(dm_get_rq_mapinfo);
 #define DMF_DELETING 4
 #define DMF_NOFLUSH_SUSPENDING 5
 #define DMF_MERGE_IS_OPTIONAL 6
+#define DMF_DEFERRED_REMOVE 7
 
 /*
  * A dummy definition to make RCU happy.
@@ -307,6 +313,8 @@ out_free_io_cache:
 
 static void local_exit(void)
 {
+	flush_scheduled_work();
+
 	kmem_cache_destroy(_rq_tio_cache);
 	kmem_cache_destroy(_io_cache);
 	unregister_blkdev(_major, _name);
@@ -421,7 +429,10 @@ static void dm_blk_close(struct gendisk *disk, fmode_t mode)
 
 	spin_lock(&_minor_lock);
 
-	atomic_dec(&md->open_count);
+	if (atomic_dec_and_test(&md->open_count) &&
+	    (test_bit(DMF_DEFERRED_REMOVE, &md->flags)))
+		schedule_work(&deferred_remove_work);
+
 	dm_put(md);
 
 	spin_unlock(&_minor_lock);
@@ -435,14 +446,18 @@ int dm_open_count(struct mapped_device *md)
 /*
  * Guarantees nothing is using the device before it's deleted.
  */
-int dm_lock_for_deletion(struct mapped_device *md)
+int dm_lock_for_deletion(struct mapped_device *md, bool mark_deferred, bool only_deferred)
 {
 	int r = 0;
 
 	spin_lock(&_minor_lock);
 
-	if (dm_open_count(md))
+	if (dm_open_count(md)) {
 		r = -EBUSY;
+		if (mark_deferred)
+			set_bit(DMF_DEFERRED_REMOVE, &md->flags);
+	} else if (only_deferred && !test_bit(DMF_DEFERRED_REMOVE, &md->flags))
+		r = -EEXIST;
 	else
 		set_bit(DMF_DELETING, &md->flags);
 
@@ -451,9 +466,35 @@ int dm_lock_for_deletion(struct mapped_device *md)
 	return r;
 }
 
+int dm_cancel_deferred_remove(struct mapped_device *md)
+{
+	int r = 0;
+
+	spin_lock(&_minor_lock);
+
+	if (test_bit(DMF_DELETING, &md->flags))
+		r = -EBUSY;
+	else
+		clear_bit(DMF_DEFERRED_REMOVE, &md->flags);
+
+	spin_unlock(&_minor_lock);
+
+	return r;
+}
+
+static void do_deferred_remove(struct work_struct *w)
+{
+	dm_deferred_remove();
+}
+
 sector_t dm_get_size(struct mapped_device *md)
 {
 	return get_capacity(md->disk);
+}
+
+struct request_queue *dm_get_md_queue(struct mapped_device *md)
+{
+	return md->queue;
 }
 
 struct dm_stats *dm_get_stats(struct mapped_device *md)
@@ -741,7 +782,7 @@ static void dec_pending(struct dm_io *io, int error)
 static void clone_endio(struct bio *bio, int error)
 {
 	int r = 0;
-	struct dm_target_io *tio = bio->bi_private;
+	struct dm_target_io *tio = container_of(bio, struct dm_target_io, clone);
 	struct dm_io *io = tio->io;
 	struct mapped_device *md = tio->io->md;
 	dm_endio_fn endio = tio->ti->type->end_io;
@@ -775,7 +816,8 @@ static void clone_endio(struct bio *bio, int error)
  */
 static void end_clone_bio(struct bio *clone, int error)
 {
-	struct dm_rq_clone_bio_info *info = clone->bi_private;
+	struct dm_rq_clone_bio_info *info =
+		container_of(clone, struct dm_rq_clone_bio_info, clone);
 	struct dm_rq_target_io *tio = info->tio;
 	struct bio *bio = info->orig;
 	unsigned int nr_bytes = info->orig->bi_size;
@@ -1101,7 +1143,6 @@ static void __map_bio(struct dm_target_io *tio)
 	struct dm_target *ti = tio->ti;
 
 	clone->bi_end_io = clone_endio;
-	clone->bi_private = tio;
 
 	/*
 	 * Map the clone.  If r == 0 we don't need to do
@@ -1135,11 +1176,11 @@ struct clone_info {
 	struct bio *bio;
 	struct dm_io *io;
 	sector_t sector;
-	sector_t sector_count;
+	unsigned sector_count;
 	unsigned short idx;
 };
 
-static void bio_setup_sector(struct bio *bio, sector_t sector, sector_t len)
+static void bio_setup_sector(struct bio *bio, sector_t sector, unsigned len)
 {
 	bio->bi_sector = sector;
 	bio->bi_size = to_bytes(len);
@@ -1228,7 +1269,7 @@ static struct dm_target_io *alloc_tio(struct clone_info *ci,
 
 static void __clone_and_map_simple_bio(struct clone_info *ci,
 				       struct dm_target *ti,
-				       unsigned target_bio_nr, sector_t len)
+				       unsigned target_bio_nr, unsigned len)
 {
 	struct dm_target_io *tio = alloc_tio(ci, ti, ci->bio->bi_max_vecs, target_bio_nr);
 	struct bio *clone = &tio->clone;
@@ -1246,7 +1287,7 @@ static void __clone_and_map_simple_bio(struct clone_info *ci,
 }
 
 static void __send_duplicate_bios(struct clone_info *ci, struct dm_target *ti,
-				  unsigned num_bios, sector_t len)
+				  unsigned num_bios, unsigned len)
 {
 	unsigned target_bio_nr;
 
@@ -1317,7 +1358,7 @@ static int __send_changing_extent_only(struct clone_info *ci,
 				       is_split_required_fn is_split_required)
 {
 	struct dm_target *ti;
-	sector_t len;
+	unsigned len;
 	unsigned num_bios;
 
 	do {
@@ -1336,9 +1377,9 @@ static int __send_changing_extent_only(struct clone_info *ci,
 			return -EOPNOTSUPP;
 
 		if (is_split_required && !is_split_required(ti))
-			len = min(ci->sector_count, max_io_len_target_boundary(ci->sector, ti));
+			len = min((sector_t)ci->sector_count, max_io_len_target_boundary(ci->sector, ti));
 		else
-			len = min(ci->sector_count, max_io_len(ci->sector, ti));
+			len = min((sector_t)ci->sector_count, max_io_len(ci->sector, ti));
 
 		__send_duplicate_bios(ci, ti, num_bios, len);
 
@@ -1644,7 +1685,6 @@ static int dm_rq_bio_constructor(struct bio *bio, struct bio *bio_orig,
 	info->orig = bio_orig;
 	info->tio = tio;
 	bio->bi_end_io = end_clone_bio;
-	bio->bi_private = info;
 
 	return 0;
 }
@@ -1662,7 +1702,6 @@ static int setup_clone(struct request *clone, struct request *rq,
 	clone->cmd = rq->cmd;
 	clone->cmd_len = rq->cmd_len;
 	clone->sense = rq->sense;
-	clone->buffer = rq->buffer;
 	clone->end_io = end_clone_request;
 	clone->end_io_data = tio;
 
@@ -2341,7 +2380,7 @@ static struct dm_table *__unbind(struct mapped_device *md)
 		return NULL;
 
 	dm_table_event_callback(map, NULL, NULL);
-	rcu_assign_pointer(md->map, NULL);
+	RCU_INIT_POINTER(md->map, NULL);
 	dm_sync_table(md);
 
 	return map;
@@ -2626,7 +2665,7 @@ static void dm_wq_work(struct work_struct *work)
 static void dm_queue_flush(struct mapped_device *md)
 {
 	clear_bit(DMF_BLOCK_IO_FOR_SUSPEND, &md->flags);
-	smp_mb__after_clear_bit();
+	smp_mb__after_atomic();
 	queue_work(md->wq, &md->work);
 }
 
@@ -2967,6 +3006,11 @@ struct mapped_device *dm_get_from_kobject(struct kobject *kobj)
 int dm_suspended_md(struct mapped_device *md)
 {
 	return test_bit(DMF_SUSPENDED, &md->flags);
+}
+
+int dm_test_deferred_remove_flag(struct mapped_device *md)
+{
+	return test_bit(DMF_DEFERRED_REMOVE, &md->flags);
 }
 
 int dm_suspended(struct dm_target *ti)

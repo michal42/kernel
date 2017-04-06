@@ -118,7 +118,7 @@ static inline int speed_max(struct mddev *mddev)
 
 static struct ctl_table_header *raid_table_header;
 
-static ctl_table raid_table[] = {
+static struct ctl_table raid_table[] = {
 	{
 		.procname	= "speed_limit_min",
 		.data		= &sysctl_speed_limit_min,
@@ -136,7 +136,7 @@ static ctl_table raid_table[] = {
 	{ }
 };
 
-static ctl_table raid_dir_table[] = {
+static struct ctl_table raid_dir_table[] = {
 	{
 		.procname	= "raid",
 		.maxlen		= 0,
@@ -146,7 +146,7 @@ static ctl_table raid_dir_table[] = {
 	{ }
 };
 
-static ctl_table raid_root_table[] = {
+static struct ctl_table raid_root_table[] = {
 	{
 		.procname	= "dev",
 		.maxlen		= 0,
@@ -842,19 +842,11 @@ int md_super_wait(struct mddev *mddev)
 	return 0;
 }
 
-static void bi_complete(struct bio *bio, int error)
-{
-	complete((struct completion*)bio->bi_private);
-}
-
 int sync_page_io(struct md_rdev *rdev, sector_t sector, int size,
 		 struct page *page, int rw, bool metadata_op)
 {
 	struct bio *bio = bio_alloc_mddev(GFP_NOIO, 1, rdev->mddev);
-	struct completion event;
 	int ret;
-
-	rw |= REQ_SYNC;
 
 	bio->bi_bdev = (metadata_op && rdev->meta_bdev) ?
 		rdev->meta_bdev : rdev->bdev;
@@ -867,11 +859,7 @@ int sync_page_io(struct md_rdev *rdev, sector_t sector, int size,
 	else
 		bio->bi_sector = sector + rdev->data_offset;
 	bio_add_page(bio, page, size, 0);
-	init_completion(&event);
-	bio->bi_private = &event;
-	bio->bi_end_io = bi_complete;
-	submit_bio(rw, bio);
-	wait_for_completion(&event);
+	submit_bio_wait(rw, bio);
 
 	ret = test_bit(BIO_UPTODATE, &bio->bi_flags);
 	bio_put(bio);
@@ -3670,6 +3658,8 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 		mddev->level = LEVEL_NONE;
 		return rv;
 	}
+	if (mddev->ro)
+		return  -EROFS;
 
 	/* request to change the personality.  Need to ensure:
 	 *  - array is not engaged in resync/recovery/reshape
@@ -3834,6 +3824,8 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 	pers->run(mddev);
 	set_bit(MD_CHANGE_DEVS, &mddev->flags);
 	mddev_resume(mddev);
+	if (!mddev->thread)
+		md_update_sb(mddev, 1);
 	sysfs_notify(&mddev->kobj, NULL, "level");
 	md_new_event(mddev);
 	return rv;
@@ -3866,6 +3858,8 @@ layout_store(struct mddev *mddev, const char *buf, size_t len)
 		int err;
 		if (mddev->pers->check_reshape == NULL)
 			return -EBUSY;
+		if (mddev->ro)
+			return -EROFS;
 		mddev->new_layout = n;
 		err = mddev->pers->check_reshape(mddev);
 		if (err) {
@@ -3954,6 +3948,8 @@ chunk_size_store(struct mddev *mddev, const char *buf, size_t len)
 		int err;
 		if (mddev->pers->check_reshape == NULL)
 			return -EBUSY;
+		if (mddev->ro)
+			return -EROFS;
 		mddev->new_chunk_sectors = n >> 9;
 		err = mddev->pers->check_reshape(mddev);
 		if (err) {
@@ -6443,6 +6439,8 @@ static int update_size(struct mddev *mddev, sector_t num_sectors)
 	 */
 	if (mddev->sync_thread)
 		return -EBUSY;
+	if (mddev->ro)
+		return -EROFS;
 
 	rdev_for_each(rdev, mddev) {
 		sector_t avail = rdev->sectors;
@@ -6465,6 +6463,8 @@ static int update_raid_disks(struct mddev *mddev, int raid_disks)
 	/* change the number of raid disks */
 	if (mddev->pers->check_reshape == NULL)
 		return -EINVAL;
+	if (mddev->ro)
+		return -EROFS;
 	if (raid_disks <= 0 ||
 	    (mddev->max_disks && raid_disks >= mddev->max_disks))
 		return -EINVAL;
@@ -7499,11 +7499,14 @@ static int md_seq_open(struct inode *inode, struct file *file)
 	return error;
 }
 
+static int md_unloading;
 static unsigned int mdstat_poll(struct file *filp, poll_table *wait)
 {
 	struct seq_file *seq = filp->private_data;
 	int mask;
 
+	if (md_unloading)
+		return POLLIN|POLLRDNORM|POLLERR|POLLPRI;;
 	poll_wait(filp, &md_event_waiters, wait);
 
 	/* always allow read */
@@ -8768,7 +8771,7 @@ static int md_clear_badblocks(struct badblocks *bb, sector_t s, int sectors)
 			if (a < s) {
 				/* we need to split this range */
 				if (bb->count >= MD_MAX_BADBLOCKS) {
-					rv = 0;
+					rv = -ENOSPC;
 					goto out;
 				}
 				memmove(p+lo+1, p+lo, (bb->count - lo) * 8);
@@ -9222,6 +9225,7 @@ static __exit void md_exit(void)
 {
 	struct mddev *mddev;
 	struct list_head *tmp;
+	int delay = 1;
 
 	blk_unregister_region(MKDEV(MD_MAJOR,0), 1U << MINORBITS);
 	blk_unregister_region(MKDEV(mdp_major,0), 1U << MINORBITS);
@@ -9230,7 +9234,19 @@ static __exit void md_exit(void)
 	unregister_blkdev(mdp_major, "mdp");
 	unregister_reboot_notifier(&md_notifier);
 	unregister_sysctl_table(raid_table_header);
+
+	/* We cannot unload the modules while some process is
+	 * waiting for us in select() or poll() - wake them up
+	 */
+	md_unloading = 1;
+	while (waitqueue_active(&md_event_waiters)) {
+		/* not safe to leave yet */
+		wake_up(&md_event_waiters);
+		msleep(delay);
+		delay += delay;
+	}
 	remove_proc_entry("mdstat", NULL);
+
 	for_each_mddev(mddev, tmp) {
 		export_array(mddev);
 		mddev->hold_active = 0;

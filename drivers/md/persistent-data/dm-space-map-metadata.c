@@ -474,13 +474,13 @@ static int sm_metadata_new_block(struct dm_space_map *sm, dm_block_t *b)
 
 	int r = sm_metadata_new_block_(sm, b);
 	if (r) {
-		DMERR("unable to allocate new metadata block");
+		DMERR_LIMIT("unable to allocate new metadata block");
 		return r;
 	}
 
 	r = sm_metadata_get_nr_free(sm, &count);
 	if (r) {
-		DMERR("couldn't get free block count");
+		DMERR_LIMIT("couldn't get free block count");
 		return r;
 	}
 
@@ -773,12 +773,16 @@ int dm_sm_metadata_create(struct dm_space_map *sm,
 	memcpy(&smm->sm, &bootstrap_ops, sizeof(smm->sm));
 
 	r = sm_ll_new_metadata(&smm->ll, tm);
-	if (!r) {
-		r = sm_ll_extend(&smm->ll, nr_blocks);
-	}
-	memcpy(&smm->sm, &ops, sizeof(smm->sm));
 	if (r)
 		return r;
+
+	if (nr_blocks > DM_SM_METADATA_MAX_BLOCKS)
+		nr_blocks = DM_SM_METADATA_MAX_BLOCKS;
+	r = sm_ll_extend(&smm->ll, nr_blocks);
+	if (r)
+		return r;
+
+	memcpy(&smm->sm, &ops, sizeof(smm->sm));
 
 	/*
 	 * Now we need to update the newly created data structures with the
