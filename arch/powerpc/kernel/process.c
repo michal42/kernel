@@ -55,7 +55,9 @@
 #include <asm/firmware.h>
 #endif
 #include <asm/code-patching.h>
+#ifndef __GENKSYMS__
 #include <asm/kgraft.h>
+#endif
 
 #include <linux/kprobes.h>
 #include <linux/kdebug.h>
