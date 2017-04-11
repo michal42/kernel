@@ -1512,6 +1512,8 @@ static void ap_scan_bus(struct work_struct *unused)
 			ap_dev->device_type = device_type;
 		}
 		ap_dev->raw_hwtype = device_type;
+		if (device_type == AP_DEVICE_TYPE_CEX6)
+			ap_dev->device_type = AP_DEVICE_TYPE_CEX5;
 
 		rc = ap_query_functions(qid, &device_functions);
 		if (!rc)
