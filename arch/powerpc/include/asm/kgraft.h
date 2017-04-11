@@ -38,6 +38,14 @@ static inline unsigned long kgr_get_ftrace_location(unsigned long faddr)
 	 */
 	return ftrace_location_range(faddr, faddr + 16);
 }
+
+static inline void kgr_init_thread_info(struct thread_info *ti)
+{
+	/* + 1 to account for STACK_END_MAGIC */
+	ti->kgraft_sp = (unsigned long *)(ti + 1) + 1;
+}
+#else
+static void kgr_init_thread_info(struct thread_info *ti) { }
 #endif /* CONFIG_KGRAFT */
 
 #endif /* _ASM_POWERPC_KGRAFT_H */
