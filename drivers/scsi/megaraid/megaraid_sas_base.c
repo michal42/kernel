@@ -4054,6 +4054,7 @@ megasas_ld_list_query(struct megasas_instance *instance, u8 query_type)
 	else
 		ret = megasas_issue_polled(instance, cmd);
 
+	tgtid_count = le32_to_cpu(ci->count);
 	if (tgtid_count == 0) {
 		/* No drives found, try the older LD list DCMD */
 		ret = 1;
