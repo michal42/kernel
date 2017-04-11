@@ -152,8 +152,8 @@ END_FW_FTR_SECTION_IFSET(FW_FEATURE_SPLPAR)
 #endif
 	CURRENT_THREAD_INFO(r11, r1)
 	ld	r10,TI_FLAGS(r11)
-	andi.	r11,r10,_TIF_SYSCALL_T_OR_A
-	bne	syscall_dotrace
+	andi.	r10,r10,(_TIF_SYSCALL_T_OR_A|_TIF_KGR_IN_PROGRESS)
+	bne-	syscall_precall
 .Lsyscall_dotrace_cont:
 	cmpldi	0,r0,NR_syscalls
 	bge-	syscall_enosys
@@ -246,6 +246,17 @@ syscall_error:
 	neg	r3,r3
 	std	r5,_CCR(r1)
 	b	.Lsyscall_error_cont
+
+syscall_precall:
+	andi.	r10,r10,(_TIF_KGR_IN_PROGRESS)
+	beq+	syscall_dotrace
+
+	addi	r11,r11,TI_FLAGS
+1:	ldarx	r12,0,r11
+	andc	r12,r12,r10
+	stdcx.	r12,0,r11
+	bne-	1b
+	subi	r11,r11,TI_FLAGS
 	
 /* Traced system call support */
 syscall_dotrace:
