@@ -410,6 +410,7 @@ void ftrace_run_stop_machine(int command);
 unsigned long ftrace_location(unsigned long ip);
 
 extern ftrace_func_t ftrace_trace_function;
+unsigned long ftrace_location_range(unsigned long start, unsigned long end);
 
 int ftrace_regex_open(struct ftrace_ops *ops, int flag,
 		  struct inode *inode, struct file *file);

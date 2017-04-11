@@ -114,17 +114,43 @@ static void kgr_refs_dec(void)
 		p->refs--;
 }
 
+/*
+ * Convert a function address into the appropriate ftrace location.
+ *
+ * Usually this is just the address of the function, but on some architectures
+ * it's more complicated so allow them to provide a custom behaviour.
+ */
+#ifndef kgr_get_ftrace_location
+static unsigned long kgr_get_ftrace_location(unsigned long faddr)
+{
+	return faddr;
+}
+#endif
+
+static const char *kgr_get_objname(const struct kgr_patch_fun *pf)
+{
+	return pf->objname ? pf->objname : "vmlinux";
+}
+
 static int kgr_ftrace_enable(struct kgr_patch_fun *pf, struct ftrace_ops *fops)
 {
 	int ret;
+	unsigned long ftrace_loc;
 
-	ret = ftrace_set_filter_ip(fops, pf->loc_name, 0, 0);
+	ftrace_loc = kgr_get_ftrace_location(pf->loc_name);
+	if (!ftrace_loc) {
+		pr_err("failed to find location for function %s:%s,%lu\n",
+			kgr_get_objname(pf), pf->name, pf->sympos);
+		return -EINVAL;
+	}
+
+	ret = ftrace_set_filter_ip(fops, ftrace_loc, 0, 0);
 	if (ret)
 		return ret;
 
 	ret = register_ftrace_function(fops);
 	if (ret)
-		ftrace_set_filter_ip(fops, pf->loc_name, 1, 0);
+		ftrace_set_filter_ip(fops, ftrace_loc, 1, 0);
 
 	return ret;
 }
@@ -132,12 +158,20 @@ static int kgr_ftrace_enable(struct kgr_patch_fun *pf, struct ftrace_ops *fops)
 static int kgr_ftrace_disable(struct kgr_patch_fun *pf, struct ftrace_ops *fops)
 {
 	int ret;
+	unsigned long ftrace_loc;
+
+	ftrace_loc = kgr_get_ftrace_location(pf->loc_name);
+	if (!ftrace_loc) {
+		pr_err("failed to find location for function %s:%s,%lu\n",
+			kgr_get_objname(pf), pf->name, pf->sympos);
+		return -EINVAL;
+	}
 
 	ret = unregister_ftrace_function(fops);
 	if (ret)
 		return ret;
 
-	ret = ftrace_set_filter_ip(fops, pf->loc_name, 1, 0);
+	ret = ftrace_set_filter_ip(fops, ftrace_loc, 1, 0);
 	if (ret)
 		register_ftrace_function(fops);
 
@@ -181,11 +215,6 @@ static void kgr_remove_patches_fast(void)
 		list_del_init(&p->list);
 		module_put(p->owner);
 	}
-}
-
-static const char *kgr_get_objname(const struct kgr_patch_fun *pf)
-{
-	return pf->objname ? pf->objname : "vmlinux";
 }
 
 /*
