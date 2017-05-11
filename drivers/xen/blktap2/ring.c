@@ -79,7 +79,7 @@ blktap_read_ring(struct blktap *tap)
 }
 
 static int
-blktap_ring_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+blktap_ring_fault(struct vm_fault *vmf)
 {
 	/*
 	 * if the page has not been mapped in by the driver then return
@@ -192,7 +192,7 @@ blktap_ring_vm_close(struct vm_area_struct *vma)
 
 	down_write(&tap->tap_sem);
 
-	zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start, NULL);
+	zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start);
 
 	kfree(ring->foreign_map.map);
 	ring->foreign_map.map = NULL;
@@ -352,8 +352,7 @@ blktap_ring_mmap(struct file *filp, struct vm_area_struct *vma)
 
  fail:
 	/* Clear any active mappings. */
-	zap_page_range(vma, vma->vm_start, 
-		       vma->vm_end - vma->vm_start, NULL);
+	zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start);
 	ClearPageReserved(virt_to_page(sring));
  fail_mem:
 	free_page((unsigned long)sring);

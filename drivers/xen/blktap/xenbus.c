@@ -55,8 +55,8 @@ static int connect_ring(struct backend_info *);
 static int blktap_remove(struct xenbus_device *dev);
 static int blktap_probe(struct xenbus_device *dev,
 			 const struct xenbus_device_id *id);
-static void tap_backend_changed(struct xenbus_watch *, const char **,
-			    unsigned int);
+static void tap_backend_changed(struct xenbus_watch *, const char *,
+				const char *);
 static void tap_frontend_changed(struct xenbus_device *dev,
 			     enum xenbus_state frontend_state);
 
@@ -297,7 +297,7 @@ fail:
  * information in xenstore. 
  */
 static void tap_backend_changed(struct xenbus_watch *watch,
-			    const char **vec, unsigned int len)
+				const char *path, const char *token)
 {
 	int err;
 	unsigned long info;

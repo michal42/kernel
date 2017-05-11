@@ -88,7 +88,7 @@ blktap_read_ring(struct blktap *tap)
 	up_read(&current->mm->mmap_sem);
 }
 
-static int blktap_ring_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int blktap_ring_fault(struct vm_fault *vmf)
 {
 	return VM_FAULT_SIGBUS;
 }
@@ -118,7 +118,7 @@ blktap_ring_vm_close(struct vm_area_struct *vma)
 
 	blktap_ring_fail_pending(tap);
 
-	zap_page_range(vma, vma->vm_start, PAGE_SIZE, NULL);
+	zap_page_range(vma, vma->vm_start, PAGE_SIZE);
 	ClearPageReserved(page);
 	__free_page(page);
 
@@ -186,7 +186,7 @@ blktap_ring_unmap_request(struct blktap *tap,
 		for (seg = 0; seg < request->nr_pages; seg++)
 			blktap_request_bounce(tap, request, seg, 0);
 
-	zap_page_range(ring->vma, uaddr, size, NULL);
+	zap_page_range(ring->vma, uaddr, size);
 }
 
 void
@@ -366,7 +366,7 @@ blktap_ring_mmap(struct file *filp, struct vm_area_struct *vma)
 
 fail:
 	if (page) {
-		zap_page_range(vma, vma->vm_start, PAGE_SIZE, NULL);
+		zap_page_range(vma, vma->vm_start, PAGE_SIZE);
 		ClearPageReserved(page);
 		__free_page(page);
 	}

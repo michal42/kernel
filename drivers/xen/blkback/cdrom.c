@@ -36,7 +36,7 @@
 
 #define MEDIA_PRESENT "media-present"
 
-static void cdrom_media_changed(struct xenbus_watch *, const char **, unsigned int);
+static void cdrom_media_changed(struct xenbus_watch *, const char *, const char *);
 
 /**
  * Writes media-present=1 attribute for the given vbd device if not
@@ -117,7 +117,7 @@ void cdrom_add_media_watch(struct backend_info *be)
  * Callback received when the MEDIA_PRESENT xenstore node is changed
  */
 static void cdrom_media_changed(struct xenbus_watch *watch,
-				const char **vec, unsigned int len)
+				const char *path, const char *token)
 {
 	int err, media_present;
 	struct backend_info *be

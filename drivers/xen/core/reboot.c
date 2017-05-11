@@ -161,7 +161,7 @@ static void __shutdown_handler(struct work_struct *unused)
 }
 
 static void shutdown_handler(struct xenbus_watch *watch,
-			     const char **vec, unsigned int len)
+			     const char *path, const char *token)
 {
 	extern void ctrl_alt_del(void);
 	char *str;
@@ -210,8 +210,8 @@ static void shutdown_handler(struct xenbus_watch *watch,
 	kfree(str);
 }
 
-static void sysrq_handler(struct xenbus_watch *watch, const char **vec,
-			  unsigned int len)
+static void sysrq_handler(struct xenbus_watch *watch,
+			  const char *path, const char *token)
 {
 	char sysrq_key = '\0';
 	struct xenbus_transaction xbt;

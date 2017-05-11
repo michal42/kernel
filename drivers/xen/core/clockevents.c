@@ -178,7 +178,7 @@ static irqreturn_t timer_interrupt(int irq, void *dev_id)
 		unsigned long ticks = div_u64_rem(stolen, NS_PER_TICK,
 						  this_cpu_ptr(&residual_stolen));
 
-		account_steal_time(jiffies_to_cputime(ticks));
+		account_steal_time(jiffies_to_nsecs(ticks));
 	} else
 		__this_cpu_write(residual_stolen, stolen > 0 ? stolen : 0);
 

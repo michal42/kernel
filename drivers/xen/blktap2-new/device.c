@@ -187,7 +187,7 @@ blktap_device_make_request(struct blktap *tap, struct request *rq)
 
 	request->rq = rq;
 	request->operation = write ? BLKIF_OP_WRITE : BLKIF_OP_READ;
-	if (unlikely(rq->cmd_type == REQ_TYPE_BLOCK_PC))
+	if (unlikely(blk_rq_is_passthrough(rq)))
 		request->operation = BLKIF_OP_PACKET;
 
 	err = blktap_request_get_pages(tap, request, nsegs);
@@ -241,7 +241,7 @@ blktap_device_run_queue(struct blktap *tap)
 		if (!rq)
 			break;
 
-		if (rq->cmd_type != REQ_TYPE_FS) {
+		if (blk_rq_is_passthrough(rq)) {
 			rq->errors = (DID_ERROR << 16) |
 				     (DRIVER_INVALID << 24);
 			__blktap_end_queued_rq(rq, -EOPNOTSUPP);

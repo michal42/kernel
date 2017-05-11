@@ -629,7 +629,7 @@ static void __init update_e820_saved(void)
 /*
  * Search for a gap in the e820 memory space from start_addr to end_addr.
  */
-__init int e820_search_gap(unsigned long *gapstart, unsigned long *gapsize,
+static int __init e820_search_gap(unsigned long *gapstart, unsigned long *gapsize,
 		unsigned long start_addr, unsigned long long end_addr)
 {
 	unsigned long long last;

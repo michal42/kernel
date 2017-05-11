@@ -24,7 +24,7 @@ static void maybe_connect(struct backend_info *be);
 static void connect(struct backend_info *be);
 static int connect_ring(struct backend_info *be);
 static void backend_changed(struct xenbus_watch *watch,
-			    const char **vec, unsigned int len);
+			    const char *path, const char *token);
 static void frontend_changed(struct xenbus_device *dev,
 			     enum xenbus_state frontend_state);
 
@@ -94,7 +94,7 @@ fail:
 
 
 static void backend_changed(struct xenbus_watch *watch,
-			    const char **vec, unsigned int len)
+			    const char *path, const char *token)
 {
 	int err;
 	long instance;

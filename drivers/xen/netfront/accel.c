@@ -151,7 +151,7 @@ static void accel_watch_work(void *context)
 
 
 static void accel_watch_changed(struct xenbus_watch *watch,
-				const char **vec, unsigned int len)
+				const char *path, const char *token)
 {
 	struct netfront_accel_vif_state *vif_state = 
 		container_of(watch, struct netfront_accel_vif_state,

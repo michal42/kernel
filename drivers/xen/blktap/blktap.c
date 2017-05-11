@@ -290,7 +290,7 @@ static struct device_type blktap_type = {
  * BLKTAP VM OPS
  */
 
-static int blktap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int blktap_fault(struct vm_fault *vmf)
 {
 	/*
 	 * if the page has not been mapped in by the driver then return
@@ -776,8 +776,7 @@ static int blktap_mmap(struct file *filp, struct vm_area_struct *vma)
 	return 0;
  fail:
 	/* Clear any active mappings. */
-	zap_page_range(vma, vma->vm_start, 
-		       vma->vm_end - vma->vm_start, NULL);
+	zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start);
 	info->rings_vstart = 0;
 	info->rings_total = 0;
 
@@ -1058,7 +1057,7 @@ static void blktap_zap_page_range(struct mm_struct *mm,
 		unsigned long s = max(uvaddr, vma->vm_start);
 		unsigned long e = min(end, vma->vm_end);
 
-		zap_page_range(vma, s, e - s, NULL);
+		zap_page_range(vma, s, e - s);
 
 		uvaddr = e;
 		vma = vma->vm_next;

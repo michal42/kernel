@@ -8,7 +8,9 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/sched.h>
+#include <linux/nmi.h>
+#include <linux/sched/hotplug.h>
+#include <linux/sched/task_stack.h>
 #include <linux/kernel_stat.h>
 #include <linux/irq.h>
 #include <linux/notifier.h>

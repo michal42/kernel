@@ -7,6 +7,7 @@
  *	Modified for Xen.
  */
 
+#define DISABLE_BRANCH_PROFILING
 #include <linux/init.h>
 #include <linux/linkage.h>
 #include <linux/types.h>

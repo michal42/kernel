@@ -12,6 +12,8 @@
 #include <linux/cpu.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
+#include <linux/sched/task.h>
+#include <linux/sched/task_stack.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -244,7 +246,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 #define iopl_op pdo->u.set_iopl
 #define iobmp_op pdo->u.set_iobitmap
 #endif
-	multicall_entry_t _mcl[8], *mcl = _mcl;
+	multicall_entry_t _mcl[6], *mcl = _mcl;
 
 	/* XEN NOTE: FS/GS saved in switch_mm(), not here. */
 

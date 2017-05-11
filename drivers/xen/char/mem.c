@@ -35,6 +35,14 @@ static inline int uncached_access(struct file *file)
 	return 0;
 }
 
+static inline int page_is_allowed(unsigned long pfn)
+{
+#ifdef CONFIG_STRICT_DEVMEM
+	return devmem_is_allowed(pfn);
+#else
+	return 1;
+#endif
+}
 static inline int range_is_allowed(unsigned long pfn, unsigned long size)
 {
 #ifdef CONFIG_STRICT_DEVMEM
@@ -68,14 +76,19 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 
 	while (count > 0) {
 		unsigned long remaining;
+		int allowed;
 
 		sz = size_inside_page(p, count);
 
-		if (!range_is_allowed(p >> PAGE_SHIFT, count))
+		allowed = page_is_allowed(p >> PAGE_SHIFT);
+		if (!allowed)
 			return -EPERM;
 
-		v = ioremap(p, sz);
-		if (IS_ERR_OR_NULL(v)) {
+		if (allowed == 2) {
+			/* Show zeros for restricted memory. */
+			remaining = clear_user(buf, sz);
+		} else {
+			v = ioremap(p, sz);
 			/*
 			 * Some programs (e.g., dmidecode) groove off into
 			 * weird RAM areas where no tables can possibly exist
@@ -84,14 +97,17 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 			 * Xen failed their access, so we fake out a read of
 			 * all zeroes.
 			 */
-			if (clear_user(buf, count))
-				return -EFAULT;
-			read += count;
-			break;
+			if (IS_ERR_OR_NULL(v)) {
+				if (clear_user(buf, count))
+					return -EFAULT;
+				read += count;
+				break;
+			}
+
+			remaining = copy_to_user(buf, v, sz);
+			iounmap(v);
 		}
 
-		remaining = copy_to_user(buf, v, sz);
-		iounmap(v);
 		if (remaining)
 			return -EFAULT;
 
@@ -116,27 +132,33 @@ static ssize_t write_mem(struct file *file, const char __user *buf,
 		return -EFBIG;
 
 	while (count > 0) {
+		int allowed;
+
 		sz = size_inside_page(p, count);
 
-		if (!range_is_allowed(p >> PAGE_SHIFT, sz))
+		allowed = page_is_allowed(p >> PAGE_SHIFT);
+		if (!allowed)
 			return -EPERM;
 
-		v = ioremap(p, sz);
-		if (v == NULL)
-			break;
-		if (IS_ERR(v)) {
-			if (written == 0)
-				return PTR_ERR(v);
-			break;
-		}
-
-		ignored = copy_from_user(v, buf, sz);
-		iounmap(v);
-		if (ignored) {
-			written += sz - ignored;
-			if (written)
+		/* Skip actual writing when a page is marked as restricted. */
+		if (allowed == 1) {
+			v = ioremap(p, sz);
+			if (v == NULL)
 				break;
-			return -EFAULT;
+			if (IS_ERR(v)) {
+				if (written == 0)
+					return PTR_ERR(v);
+				break;
+			}
+
+			ignored = copy_from_user(v, buf, sz);
+			iounmap(v);
+			if (ignored) {
+				written += sz - ignored;
+				if (written)
+					break;
+				return -EFAULT;
+			}
 		}
 		buf += sz;
 		p += sz;

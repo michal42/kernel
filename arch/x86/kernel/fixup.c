@@ -28,6 +28,7 @@
  */
 
 #include <linux/init.h>
+#include <linux/nmi.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>

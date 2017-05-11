@@ -55,13 +55,12 @@ static void vcpu_hotplug(unsigned int cpu, struct device *dev)
 }
 
 static void handle_vcpu_hotplug_event(
-	struct xenbus_watch *watch, const char **vec, unsigned int len)
+	struct xenbus_watch *watch, const char *path, const char *token)
 {
 	unsigned int cpu;
 	char *cpustr;
-	const char *node = vec[XS_WATCH_PATH];
 
-	if ((cpustr = strstr(node, "cpu/")) != NULL) {
+	if ((cpustr = strstr(path, "cpu/")) != NULL) {
 		sscanf(cpustr, "cpu/%u", &cpu);
 		vcpu_hotplug(cpu, get_cpu_device(cpu));
 	}

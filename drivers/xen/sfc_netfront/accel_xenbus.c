@@ -46,7 +46,7 @@ void netfront_accel_set_closing(netfront_accel_vnic *vnic)
 	
 
 static void mac_address_change(struct xenbus_watch *watch,
-			       const char **vec, unsigned int len)
+			       const char *path, const char *token)
 {
 	netfront_accel_vnic *vnic;
 	struct xenbus_device *dev;
@@ -640,7 +640,7 @@ static void netfront_accel_backend_accel_changed(netfront_accel_vnic *vnic,
 
 
 static void backend_accel_state_change(struct xenbus_watch *watch,
-				       const char **vec, unsigned int len)
+				       const char *path, const char *token)
 {
 	int state;
 	netfront_accel_vnic *vnic;

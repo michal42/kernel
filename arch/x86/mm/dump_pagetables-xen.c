@@ -20,6 +20,7 @@
 
 #include <xen/interface/xen.h>
 
+#include <asm/kasan.h>
 #include <asm/pgtable.h>
 
 /*
@@ -53,6 +54,10 @@ enum address_markers_idx {
 	LOW_KERNEL_NR,
 	VMALLOC_START_NR,
 	VMEMMAP_START_NR,
+#ifdef CONFIG_KASAN
+	KASAN_SHADOW_START_NR,
+	KASAN_SHADOW_END_NR,
+#endif
 # ifdef CONFIG_X86_ESPFIX64
 	ESPFIX_START_NR,
 # endif
@@ -79,6 +84,10 @@ static struct addr_marker address_markers[] = {
 	{ 0/* PAGE_OFFSET */,         "Low Kernel Mapping" },
 	{ 0/* VMALLOC_START */,       "vmalloc() Area" },
 	{ 0/* VMEMMAP_START */,       "Vmemmap" },
+#ifdef CONFIG_KASAN
+	{ KASAN_SHADOW_START,         "KASAN shadow" },
+	{ KASAN_SHADOW_END,           "KASAN shadow end" },
+#endif
 # ifdef CONFIG_X86_ESPFIX64
 	{ ESPFIX_BASE_ADDR,           "ESPfix Area", 16 },
 # endif
@@ -340,19 +349,32 @@ static void walk_pmd_level(struct seq_file *m, struct pg_state *st, pud_t addr,
 
 #if PTRS_PER_PUD > 1
 
+/*
+ * This is an optimization for CONFIG_DEBUG_WX=y + CONFIG_KASAN=y
+ * KASAN fills page tables with the same values. Since there is no
+ * point in checking page table more than once we just skip repeated
+ * entries. This saves us dozens of seconds during boot.
+ */
+static bool pud_already_checked(pud_t *prev_pud, pud_t *pud, bool checkwx)
+{
+	return checkwx && prev_pud && (pud_val(*prev_pud) == pud_val(*pud));
+}
+
 static void walk_pud_level(struct seq_file *m, struct pg_state *st, pgd_t addr,
 							unsigned long P)
 {
 	int i;
 	pud_t *start;
 	pgprotval_t prot;
+	pud_t *prev_pud = NULL;
 
 	start = (pud_t *) pgd_page_vaddr(addr);
 
 	for (i = 0; i < PTRS_PER_PUD; i++) {
 		st->current_address = normalize_addr(P + i * PUD_LEVEL_MULT);
-		if (!hypervisor_space(st->current_address)
-		    && !pud_none(*start)) {
+		if (!hypervisor_space(st->current_address) &&
+		    !pud_none(*start) &&
+		    !pud_already_checked(prev_pud, start, st->check_wx)) {
 			if (pud_large(*start) || !pud_present(*start)) {
 				prot = pud_flags(*start);
 				note_page(m, st, __pgprot(prot), 2);
@@ -363,6 +385,7 @@ static void walk_pud_level(struct seq_file *m, struct pg_state *st, pgd_t addr,
 		} else
 			note_page(m, st, __pgprot(0), 2);
 
+		prev_pud = start;
 		start++;
 	}
 }

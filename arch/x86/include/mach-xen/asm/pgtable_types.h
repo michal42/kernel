@@ -296,6 +296,8 @@ static inline pgdval_t pgd_flags(pgd_t pgd)
 }
 
 #if CONFIG_PGTABLE_LEVELS > 3
+#include <asm-generic/5level-fixup.h>
+
 typedef struct { pudval_t pud; } pud_t;
 
 #define __pud_ma(x) ((pud_t) { (x) } )
@@ -315,6 +317,7 @@ static inline pudval_t xen_pud_val(pud_t pud)
 	return ret;
 }
 #else
+#define __ARCH_USE_5LEVEL_HACK
 #include <asm-generic/pgtable-nopud.h>
 
 #define __pud_val(x) __pgd_val((x).pgd)
@@ -349,6 +352,7 @@ static inline pmdval_t xen_pmd_val(pmd_t pmd)
 	return ret;
 }
 #else
+#define __ARCH_USE_5LEVEL_HACK
 #include <asm-generic/pgtable-nopmd.h>
 
 #define __pmd_ma(x) ((pmd_t) { .pud.pgd = __pgd_ma(x) } )

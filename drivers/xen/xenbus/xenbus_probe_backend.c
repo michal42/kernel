@@ -61,8 +61,7 @@
 #endif
 #include <xen/features.h>
 
-#include "xenbus_comms.h"
-#include "xenbus_probe.h"
+#include "xenbus.h"
 
 #ifdef HAVE_XEN_PLATFORM_COMPAT_H
 #include <xen/platform-compat.h>
@@ -195,9 +194,9 @@ static int xenbus_probe_backend(struct xen_bus_type *bus, const char *type,
 
 #ifndef CONFIG_XEN
 static void frontend_changed(struct xenbus_watch *watch,
-			    const char **vec, unsigned int len)
+			     const char *path, const char *token)
 {
-	xenbus_otherend_changed(watch, vec, len, 0);
+	xenbus_otherend_changed(watch, path, token, 0);
 }
 #endif
 
@@ -228,11 +227,11 @@ static struct xen_bus_type xenbus_backend = {
 };
 
 static void backend_changed(struct xenbus_watch *watch,
-			    const char **vec, unsigned int len)
+			    const char *path, const char *token)
 {
 	DPRINTK("");
 
-	xenbus_dev_changed(vec[XS_WATCH_PATH], &xenbus_backend);
+	xenbus_dev_changed(path, &xenbus_backend);
 }
 
 static struct xenbus_watch be_watch = {

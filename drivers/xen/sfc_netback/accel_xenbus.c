@@ -121,7 +121,7 @@ void cfg_hw_quotas(struct xenbus_device *dev, struct netback_accel *bend)
 
 
 static void bend_config_accel_change(struct xenbus_watch *watch,
-				     const char **vec, unsigned int len)
+				     const char *path, const char *token)
 {
 	struct netback_accel *bend;
 
@@ -538,7 +538,7 @@ static void netback_accel_frontend_changed(struct xenbus_device *dev,
 
 /* accelstate on the frontend's xenbus node has changed */
 static void bend_domu_accel_change(struct xenbus_watch *watch,
-				   const char **vec, unsigned int len)
+				   const char *path, const char *token)
 {
 	int state;
 	struct netback_accel *bend;

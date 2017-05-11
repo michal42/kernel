@@ -77,8 +77,10 @@ extern start_info_t *xen_start_info;
 #define init_hypervisor(c) ((void)(c))
 #define init_hypervisor_platform() init_hypervisor(&boot_cpu_data)
 
+#ifdef CONFIG_XEN
 DECLARE_PER_CPU(struct vcpu_runstate_info, runstate);
 #define vcpu_is_preempted(cpu) (per_cpu(runstate.state, cpu) != RUNSTATE_running)
+#endif
 
 /* arch/xen/kernel/evtchn.c */
 /* Force a proper event-channel callback from Xen. */

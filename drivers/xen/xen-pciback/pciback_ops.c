@@ -170,7 +170,7 @@ int xen_pcibk_enable_msi(struct xen_pcibk_device *pdev,
 	else if (dev->msix_enabled)
 		status = -ENXIO;
 	else
-		status = pci_enable_msi_range(dev, 1, nvec);
+		status = pci_alloc_irq_vectors(dev, 1, nvec, PCI_IRQ_MSI);
 
 	if (status < 0 || status > nvec) {
 		pr_warn_ratelimited("%s: error %d enabling %u-vector MSI for Dom%u\n",

@@ -118,7 +118,7 @@ static inline void __xen_pte_clear(pte_t *ptep)
 	: (void)(*__pmdp = __pmd(0));		\
 })
 
-static inline void __xen_pud_clear(pud_t *pudp)
+static inline void pud_clear(pud_t *pudp)
 {
 	set_pud(pudp, __pud(0));
 
@@ -138,7 +138,7 @@ static inline void __xen_pud_clear(pud_t *pudp)
 ({						\
 	pud_t *__pudp = (pudp);			\
 	PagePinned(virt_to_page(__pudp))	\
-	? __xen_pud_clear(__pudp)		\
+	? pud_clear(__pudp)			\
 	: (void)(*__pudp = __pud(0));		\
 })
 
@@ -183,6 +183,32 @@ static inline pmd_t xen_pmdp_get_and_clear(pmd_t *pmdp)
 }
 #else
 #define xen_pmdp_get_and_clear(xp) xen_local_pmdp_get_and_clear(xp)
+#endif
+#endif
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#ifdef CONFIG_SMP
+union split_pud {
+	struct {
+		u32 pud_low;
+		u32 pud_high;
+	};
+	pud_t pud;
+};
+
+static inline pud_t xen_pudp_get_and_clear(pud_t *pudp)
+{
+	union split_pud res, *orig = (union split_pud *)pudp;
+
+	/* xchg acts as a barrier before setting of the high bits */
+	res.pud_low = xchg(&orig->pud_low, 0);
+	res.pud_high = orig->pud_high;
+	orig->pud_high = 0;
+
+	return res.pud;
+}
+#else
+#define xen_pudp_get_and_clear(xp) xen_local_pudp_get_and_clear(xp)
 #endif
 #endif
 

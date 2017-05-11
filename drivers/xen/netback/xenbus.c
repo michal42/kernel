@@ -362,8 +362,7 @@ static void unregister_hotplug_status_watch(struct backend_info *be)
 }
 
 static void hotplug_status_changed(struct xenbus_watch *watch,
-				   const char **vec,
-				   unsigned int vec_size)
+				   const char *path, const char *token)
 {
 	struct backend_info *be = container_of(watch,
 					       struct backend_info,

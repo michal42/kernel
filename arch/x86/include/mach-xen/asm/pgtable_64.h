@@ -107,14 +107,28 @@ static inline void xen_set_pud(pud_t *pudp, pud_t pud)
 	: (void)(*__pudp = xen_make_pud(0));	\
 })
 
-static inline pgd_t *__user_pgd(pgd_t *pgd)
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+static inline pud_t xen_pudp_get_and_clear(pud_t *xp)
 {
-	if (unlikely(((unsigned long)pgd & PAGE_MASK)
-		     == (unsigned long)init_level4_pgt))
-		return NULL;
-	return (pgd_t *)(virt_to_page(pgd)->private
-			 + ((unsigned long)pgd & ~PAGE_MASK));
+#ifdef CONFIG_SMP
+	return xen_make_pud(xchg(&xp->pud, 0));
+#else
+	/* xen_local_pudp_get_and_clear,
+	 * but duplicated because of cyclic dependency
+	 */
+	pud_t ret = *xp;
+
+	xen_pud_clear(xp);
+	return ret;
+#endif
 }
+#endif
+
+#define __user_pgd(pgd) \
+	(((unsigned long)(pgd) & PAGE_MASK) != (unsigned long)init_level4_pgt \
+	 ? (pgd_t *)(virt_to_page(pgd)->private \
+		     + ((unsigned long)(pgd) & ~PAGE_MASK)) \
+	 : (typeof(pgd))NULL)
 
 static inline void xen_set_pgd(pgd_t *pgdp, pgd_t pgd)
 {

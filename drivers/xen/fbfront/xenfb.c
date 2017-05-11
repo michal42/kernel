@@ -235,7 +235,7 @@ static void xenfb_update_screen(struct xenfb_info *info)
 		if (!map->faults)
 			continue;
 		zap_page_range(map->vma, map->vma->vm_start,
-			       map->vma->vm_end - map->vma->vm_start, NULL);
+			       map->vma->vm_end - map->vma->vm_start);
 		map->faults = 0;
 	}
 
@@ -389,11 +389,11 @@ static void xenfb_vm_close(struct vm_area_struct *vma)
 	mutex_unlock(&info->mm_lock);
 }
 
-static int xenfb_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int xenfb_vm_fault(struct vm_fault *vmf)
 {
-	struct xenfb_mapping *map = vma->vm_private_data;
+	struct xenfb_mapping *map = vmf->vma->vm_private_data;
 	struct xenfb_info *info = map->info;
-	int pgnr = PFN_DOWN(vmf->address - vma->vm_start);
+	int pgnr = PFN_DOWN(vmf->address - vmf->vma->vm_start);
 	unsigned long flags;
 	struct page *page;
 	int y1, y2;

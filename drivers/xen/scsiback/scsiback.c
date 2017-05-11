@@ -221,7 +221,7 @@ static void scsiback_cmd_done(struct request *req, int uptodate)
 	unsigned int resid;
 	int errors;
 
-	sense_buffer = req->sense;
+	sense_buffer = scsi_req(req)->sense;
 	resid        = blk_rq_bytes(req);
 	errors       = req->errors;
 
@@ -467,13 +467,13 @@ int scsiback_cmd_exec(pending_req_t *pending_req)
 		return err;
 	}
 
-	rq->cmd_type = REQ_TYPE_BLOCK_PC;
-	rq->cmd_len = cmd_len;
-	memcpy(rq->cmd, pending_req->cmnd, cmd_len);
+	scsi_req_init(rq);
+	scsi_req(rq)->cmd_len = cmd_len;
+	memcpy(scsi_req(rq)->cmd, pending_req->cmnd, cmd_len);
 
 	memset(pending_req->sense_buffer, 0, VSCSIIF_SENSE_BUFFERSIZE);
-	rq->sense       = pending_req->sense_buffer;
-	rq->sense_len = 0;
+	scsi_req(rq)->sense = pending_req->sense_buffer;
+	scsi_req(rq)->sense_len = 0;
 
 	/* not allowed to retry in backend.                   */
 	rq->retries   = 0;

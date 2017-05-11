@@ -28,6 +28,7 @@
 #include <linux/blkdev.h>
 #include <linux/list.h>
 #include <linux/cdrom.h>
+#include <scsi/scsi_request.h>
 #include <xen/interface/io/cdromif.h>
 #include "block.h"
 
@@ -66,14 +67,20 @@ static void submit_message(struct blkfront_info *info, void *sp)
 		goto out;
 
 	req->rq_disk = info->gd;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+	scsi_req_init(req);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,19)
 	req->cmd_type = REQ_TYPE_BLOCK_PC;
 	req->cmd_flags |= REQ_NOMERGE;
 #else
 	req->flags |= REQ_BLOCK_PC;
 #endif
 	req->__sector = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+	scsi_req(req)->cmd_len = 0;
+#else
 	req->cmd_len = 0;
+#endif
 	req->timeout = 60*HZ;
 
 	blk_execute_rq(req->q, info->gd, req, 1);
@@ -274,7 +281,7 @@ static int xencdrom_supported(struct blkfront_info *info)
 	return xcs->supported;
 }
 
-static struct cdrom_device_ops xencdrom_dops = {
+static const struct cdrom_device_ops xencdrom_dops = {
     .open           = xencdrom_open,
     .release        = xencdrom_release,
     .media_changed  = xencdrom_media_changed,
@@ -285,7 +292,6 @@ static struct cdrom_device_ops xencdrom_dops = {
     .capability     = (CDC_CLOSE_TRAY | CDC_OPEN_TRAY | CDC_LOCK | \
                        CDC_MEDIA_CHANGED | CDC_GENERIC_PACKET |  CDC_DVD | \
                        CDC_CD_R),
-    .n_minors       = 1,
 };
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)

@@ -7,6 +7,10 @@
 #include <linux/prctl.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
+#include <linux/sched/idle.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/task.h>
+#include <linux/sched/task_stack.h>
 #include <linux/init.h>
 #include <linux/export.h>
 #include <linux/pm.h>
@@ -32,6 +36,7 @@
 #include <asm/mce.h>
 #include <asm/vm86.h>
 #include <asm/switch_to.h>
+#include <asm/desc.h>
 #include <xen/evtchn.h>
 
 #ifndef CONFIG_X86_NO_TSS
@@ -65,6 +70,9 @@ __visible DEFINE_PER_CPU_SHARED_ALIGNED(struct tss_struct, cpu_tss) = {
 #endif
 };
 EXPORT_PER_CPU_SYMBOL(cpu_tss);
+
+DEFINE_PER_CPU(bool, __tss_limit_invalid);
+EXPORT_PER_CPU_SYMBOL_GPL(__tss_limit_invalid);
 #elif defined(CONFIG_X86_64_XEN)
 __visible DEFINE_PER_CPU(unsigned long, cpu_sp0) = TOP_OF_INIT_STACK;
 EXPORT_PER_CPU_SYMBOL(cpu_sp0);

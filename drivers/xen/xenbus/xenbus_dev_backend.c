@@ -18,7 +18,7 @@
 #include <xen/xenbus.h>
 #include <xen/xenbus_dev.h>
 
-#include "xenbus_comms.h"
+#include "xenbus.h"
 
 #ifdef MODULE
 #include <linux/module.h>

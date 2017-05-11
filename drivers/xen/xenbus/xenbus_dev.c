@@ -44,7 +44,7 @@
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
 
-#include "xenbus_comms.h"
+#include "xenbus.h"
 
 #include <asm/hypervisor.h>
 #include <xen/xenbus.h>
@@ -88,6 +88,7 @@ struct xenbus_dev_data {
 	wait_queue_head_t read_waitq;
 
 	struct mutex reply_mutex;
+	struct kref kref;
 };
 
 static ssize_t xenbus_dev_read(struct file *filp,
@@ -186,24 +187,17 @@ static void free_watch_adapter (struct watch_adapter *watch)
 }
 
 static void watch_fired(struct xenbus_watch *watch,
-			const char **vec,
-			unsigned int len)
+			const char *path, const char *token)
 {
 	struct watch_adapter *adap =
             container_of(watch, struct watch_adapter, watch);
 	struct xsd_sockmsg hdr;
-	const char *path, *token;
-	int err, path_len, tok_len, body_len, data_len = 0;
+	int err, path_len, tok_len, body_len;
 	LIST_HEAD(queue);
 
-	path = vec[XS_WATCH_PATH];
-	token = adap->token;
-
 	path_len = strlen(path) + 1;
-	tok_len = strlen(token) + 1;
-	if (len > 2)
-		data_len = vec[len] - vec[2] + 1;
-	body_len = path_len + tok_len + data_len;
+	tok_len = strlen(adap->token) + 1;
+	body_len = path_len + tok_len;
 
 	hdr.type = XS_WATCH_EVENT;
 	hdr.len = body_len;
@@ -213,11 +207,102 @@ static void watch_fired(struct xenbus_watch *watch,
 	if (!err)
 		err = queue_reply(&queue, path, path_len);
 	if (!err)
-		err = queue_reply(&queue, token, tok_len);
-	if (!err && len > 2)
-		err = queue_reply(&queue, vec[2], data_len);
+		err = queue_reply(&queue, adap->token, tok_len);
 	queue_flush(adap->dev_data, &queue, err);
 	mutex_unlock(&adap->dev_data->reply_mutex);
+}
+
+static void xenbus_file_free(struct kref *kref)
+{
+	struct xenbus_dev_data *u;
+	struct xenbus_dev_transaction *trans, *tmp;
+	struct watch_adapter *watch, *tmp_watch;
+	struct read_buffer *rb, *tmp_rb;
+
+	u = container_of(kref, struct xenbus_dev_data, kref);
+
+	/*
+	 * No need for locking here because there are no other users,
+	 * by definition.
+	 */
+
+	list_for_each_entry_safe(trans, tmp, &u->transactions, list) {
+		xenbus_transaction_end(trans->handle, 1);
+		list_del(&trans->list);
+		kfree(trans);
+	}
+
+	list_for_each_entry_safe(watch, tmp_watch, &u->watches, list) {
+		unregister_xenbus_watch(&watch->watch);
+		list_del(&watch->list);
+		free_watch_adapter(watch);
+	}
+
+	list_for_each_entry_safe(rb, tmp_rb, &u->read_buffers, list) {
+		list_del(&rb->list);
+		kfree(rb);
+	}
+	kfree(u);
+}
+
+static struct xenbus_dev_transaction *xenbus_get_transaction(
+	struct xenbus_dev_data *u, uint32_t tx_id)
+{
+	struct xenbus_dev_transaction *trans;
+
+	list_for_each_entry(trans, &u->transactions, list)
+		if (trans->handle.id == tx_id)
+			return trans;
+
+	return NULL;
+}
+
+void xenbus_dev_queue_reply(struct xb_req_data *req)
+{
+	struct xenbus_dev_data *u = req->par;
+	struct xenbus_dev_transaction *trans = NULL;
+	int rc;
+	LIST_HEAD(staging_q);
+
+	xs_request_exit(req);
+
+	mutex_lock(&u->reply_mutex);
+
+	if (req->type == XS_TRANSACTION_START) {
+		trans = xenbus_get_transaction(u, 0);
+		if (WARN_ON(!trans))
+			goto out;
+		if (req->msg.type == XS_ERROR) {
+			list_del(&trans->list);
+			kfree(trans);
+		} else {
+			rc = kstrtou32(req->body, 10, &trans->handle.id);
+			if (WARN_ON(rc))
+				goto out;
+		}
+	} else if (req->msg.type == XS_TRANSACTION_END) {
+		trans = xenbus_get_transaction(u, req->msg.tx_id);
+		if (WARN_ON(!trans))
+			goto out;
+		list_del(&trans->list);
+		kfree(trans);
+	}
+
+	rc = queue_reply(&staging_q, &req->msg, sizeof(req->msg));
+	if (!rc)
+		rc = queue_reply(&staging_q, req->body, req->msg.len);
+	queue_flush(u, &staging_q, rc);
+	mutex_unlock(&u->reply_mutex);
+
+	kfree(req->body);
+	kfree(req);
+
+	kref_put(&u->kref, xenbus_file_free);
+
+	return;
+
+ out:
+	mutex_unlock(&u->reply_mutex);
 }
 
 static LIST_HEAD(watch_list);
@@ -229,8 +314,6 @@ static ssize_t xenbus_dev_write(struct file *filp,
 	struct xenbus_dev_data *u = filp->private_data;
 	struct xenbus_dev_transaction *trans = NULL;
 	uint32_t msg_type;
-	void *reply = NULL;
-	LIST_HEAD(queue);
 	char *path, *token;
 	struct watch_adapter *watch;
 	int err, rc = len;
@@ -253,6 +336,8 @@ static ssize_t xenbus_dev_write(struct file *filp,
 	    (u->len < (sizeof(u->u.msg) + u->u.msg.len)))
 		return rc;
 
+	kref_get(&u->kref);
+
 	msg_type = u->u.msg.type;
 
 	switch (msg_type) {
@@ -260,24 +345,25 @@ static ssize_t xenbus_dev_write(struct file *filp,
 	case XS_UNWATCH: {
 		static const char XS_RESP[] = "OK";
 		struct xsd_sockmsg hdr;
+		LIST_HEAD(queue);
 
 		path = u->u.buffer + sizeof(u->u.msg);
 		token = memchr(path, 0, u->u.msg.len);
 		if (token == NULL) {
 			rc = -EILSEQ;
-			goto out;
+			goto putref;
 		}
 		token++;
 		if (memchr(token, 0, u->u.msg.len - (token - path)) == NULL) {
 			rc = -EILSEQ;
-			goto out;
+			goto putref;
 		}
 
 		if (msg_type == XS_WATCH) {
 			watch = kzalloc(sizeof(*watch), GFP_KERNEL);
 			if (watch == NULL) {
 				rc = -ENOMEM;
-				goto out;
+				goto putref;
 			}
 			watch->watch.node = kstrdup(path, GFP_KERNEL);
 			watch->watch.callback = watch_fired;
@@ -288,8 +374,7 @@ static ssize_t xenbus_dev_write(struct file *filp,
 			      ? register_xenbus_watch(&watch->watch) : -ENOMEM;
 			if (err) {
 				free_watch_adapter(watch);
-				rc = err;
-				goto out;
+				break;
 			}
 			
 			list_add(&watch->list, &u->watches);
@@ -311,58 +396,44 @@ static ssize_t xenbus_dev_write(struct file *filp,
 		mutex_lock(&u->reply_mutex);
 		err = queue_reply(&queue, &hdr, sizeof(hdr))
 		      ?: queue_reply(&queue, XS_RESP, hdr.len);
+		queue_flush(u, &queue, err);
+		mutex_unlock(&u->reply_mutex);
+
+		if (!err)
+			goto putref;
+
 		break;
 	}
 
 	case XS_TRANSACTION_START:
-		trans = kmalloc(sizeof(*trans), GFP_KERNEL);
+		trans = kzalloc(sizeof(*trans), GFP_KERNEL);
 		if (!trans) {
-			rc = -ENOMEM;
-			goto out;
+			err = -ENOMEM;
+			break;
 		}
+		list_add(&trans->list, &u->transactions);
 		goto common;
 
 	default:
-		if (!u->u.msg.tx_id)
-			goto common;
-		list_for_each_entry(trans, &u->transactions, list)
-			if (trans->handle.id == u->u.msg.tx_id)
-				break;
-		if (&trans->list == &u->transactions) {
-			rc = -ESRCH;
-			goto out;
+		if (u->u.msg.tx_id &&
+		    !xenbus_get_transaction(u, u->u.msg.tx_id)) {
+			err = -ESRCH;
+			break;
 		}
 	common:
-		reply = xenbus_dev_request_and_reply(&u->u.msg);
-		if (IS_ERR(reply)) {
-			if (msg_type == XS_TRANSACTION_START)
-				kfree(trans);
-			rc = PTR_ERR(reply);
-			goto out;
-		}
-
-		if (msg_type == XS_TRANSACTION_START) {
-			if (u->u.msg.type == XS_ERROR)
-				kfree(trans);
-			else {
-				trans->handle.id = simple_strtoul(reply, NULL, 0);
-				list_add(&trans->list, &u->transactions);
-			}
-		} else if (u->u.msg.type == XS_TRANSACTION_END) {
+		err = xenbus_dev_request_and_reply(&u->u.msg, u);
+		if (err && trans) {
 			list_del(&trans->list);
 			kfree(trans);
 		}
-		mutex_lock(&u->reply_mutex);
-		err = queue_reply(&queue, &u->u.msg, sizeof(u->u.msg))
-		      ?: queue_reply(&queue, reply, u->u.msg.len);
 		break;
 	}
 
-	queue_flush(u, &queue, err);
-	mutex_unlock(&u->reply_mutex);
-	kfree(reply);
-	if (err)
+	if (err) {
 		rc = err;
+ putref:
+		kref_put(&u->kref, xenbus_file_free);
+	}
 
  out:
 	u->len = 0;
@@ -383,6 +454,8 @@ static int xenbus_dev_open(struct inode *inode, struct file *filp)
 	if (u == NULL)
 		return -ENOMEM;
 
+	kref_init(&u->kref);
+
 	INIT_LIST_HEAD(&u->transactions);
 	INIT_LIST_HEAD(&u->watches);
 	INIT_LIST_HEAD(&u->read_buffers);
@@ -398,27 +471,8 @@ static int xenbus_dev_open(struct inode *inode, struct file *filp)
 static int xenbus_dev_release(struct inode *inode, struct file *filp)
 {
 	struct xenbus_dev_data *u = filp->private_data;
-	struct xenbus_dev_transaction *trans, *tmp;
-	struct watch_adapter *watch, *tmp_watch;
-	struct read_buffer *rb, *tmp_rb;
 
-	list_for_each_entry_safe(trans, tmp, &u->transactions, list) {
-		xenbus_transaction_end(trans->handle, 1);
-		list_del(&trans->list);
-		kfree(trans);
-	}
-
-	list_for_each_entry_safe(watch, tmp_watch, &u->watches, list) {
-		unregister_xenbus_watch(&watch->watch);
-		list_del(&watch->list);
-		free_watch_adapter(watch);
-	}
-
-	list_for_each_entry_safe(rb, tmp_rb, &u->read_buffers, list) {
-		list_del(&rb->list);
-		kfree(rb);
-	}
-	kfree(u);
+	kref_put(&u->kref, xenbus_file_free);
 
 	return 0;
 }

@@ -45,6 +45,7 @@
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
 #include <scsi/scsi.h>
+#include <scsi/scsi_request.h>
 #include <xen/blkif.h>
 #include <xen/evtchn.h>
 #include <xen/xenbus.h>
@@ -1170,7 +1171,7 @@ static int blkif_queue_request(struct request *req)
 	if (req->cmd_flags & REQ_HARDBARRIER)
 		ring_req->operation = BLKIF_OP_WRITE_BARRIER;
 #endif
-	if (req->cmd_type == REQ_TYPE_BLOCK_PC)
+	if (blk_rq_is_passthrough(req))
 		ring_req->operation = BLKIF_OP_PACKET;
 
 	if (unlikely(req_op(req) == REQ_OP_DISCARD) ||
@@ -1269,8 +1270,7 @@ void do_blkif_request(struct request_queue *rq)
 
 		blk_start_request(req);
 
-		if ((req->cmd_type != REQ_TYPE_FS &&
-		     (req->cmd_type != REQ_TYPE_BLOCK_PC || req->cmd_len)) ||
+		if ((blk_rq_is_passthrough(req) && scsi_req(req)->cmd_len) ||
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,8,0)
 		    (((req_op(req) == REQ_OP_FLUSH ? REQ_PREFLUSH : 0) |
 		      (req->cmd_flags & REQ_FUA)) >
@@ -1284,8 +1284,8 @@ void do_blkif_request(struct request_queue *rq)
 			continue;
 		}
 
-		DPRINTK("do_blk_req %p: cmd %p, sec %llx, (%u/%u) [%s]\n",
-			req, req->cmd, (long long)blk_rq_pos(req),
+		DPRINTK("do_blk_req %p: sec %llx, (%u/%u) [%s]\n",
+			req, (long long)blk_rq_pos(req),
 			blk_rq_cur_sectors(req), blk_rq_sectors(req),
 			rq_data_dir(req) ? "write" : "read");
 

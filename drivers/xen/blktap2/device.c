@@ -206,7 +206,7 @@ blktap_device_fast_flush(struct blktap *tap, struct blktap_request *request)
 	if (xen_feature(XENFEAT_auto_translated_physmap))
 		zap_page_range(ring->vma, 
 			       MMAP_VADDR(ring->user_vstart, usr_idx, 0),
-			       request->nr_pages << PAGE_SHIFT, NULL);
+			       request->nr_pages << PAGE_SHIFT);
 
 	for (i = 0; i < request->nr_pages; i++) {
 		kvaddr = request_to_kaddr(request, i);
@@ -272,7 +272,7 @@ blktap_device_fast_flush(struct blktap *tap, struct blktap_request *request)
 	if (!xen_feature(XENFEAT_auto_translated_physmap))
 		zap_page_range(ring->vma, 
 			       MMAP_VADDR(ring->user_vstart, usr_idx, 0), 
-			       request->nr_pages << PAGE_SHIFT, NULL);
+			       request->nr_pages << PAGE_SHIFT);
 	else {
 		for (i = 0; i < self_gref_nr; i++) {
 			gnttab_end_foreign_access_ref(self_gref[i]);
@@ -622,7 +622,7 @@ blktap_device_process_request(struct blktap *tap,
 	blkif_req.handle = 0;
 	blkif_req.operation = rq_data_dir(req) ?
 		BLKIF_OP_WRITE : BLKIF_OP_READ;
-	if (unlikely(req->cmd_type == REQ_TYPE_BLOCK_PC))
+	if (unlikely(blk_rq_is_passthrough(req)))
 		blkif_req.operation = BLKIF_OP_PACKET;
 
 	request->id        = (unsigned long)req;
@@ -689,7 +689,7 @@ blktap_device_process_request(struct blktap *tap,
 	wmb(); /* blktap_poll() reads req_prod_pvt asynchronously */
 	ring->ring.req_prod_pvt++;
 
-	if (unlikely(req->cmd_type == REQ_TYPE_BLOCK_PC))
+	if (unlikely(blk_rq_is_passthrough(req)))
 		tap->stats.st_pk_req++;
 	else if (rq_data_dir(req)) {
 		tap->stats.st_wr_sect += nr_sects;
@@ -820,7 +820,7 @@ blktap_device_run_queue(struct blktap *tap)
 	BTDBG("running queue for %d\n", tap->minor);
 
 	while ((req = blk_peek_request(rq)) != NULL) {
-		if (req->cmd_type != REQ_TYPE_FS) {
+		if (blk_rq_is_passthrough(req)) {
 			blk_start_request(req);
 			req->errors = (DID_ERROR << 16) |
 				      (DRIVER_INVALID << 24);
@@ -857,8 +857,8 @@ blktap_device_run_queue(struct blktap *tap)
 			goto wait;
 		}
 
-		BTDBG("req %p: dev %d cmd %p, sec %#llx, (%#x/%#x) [%s], pending: %p\n",
-		      req, tap->minor, req->cmd,
+		BTDBG("req %p: dev %d, sec %#llx, (%#x/%#x) [%s], pending: %p\n",
+		      req, tap->minor,
 		      (unsigned long long)blk_rq_pos(req),
 		      blk_rq_cur_sectors(req), blk_rq_sectors(req),
 		      rq_data_dir(req) ? "write" : "read", request);
@@ -913,7 +913,7 @@ blktap_device_do_request(struct request_queue *rq)
 
 fail:
 	while ((req = blk_fetch_request(rq))) {
-		if (req->cmd_type != REQ_TYPE_FS) {
+		if (blk_rq_is_passthrough(req)) {
 			unsigned long long sec = blk_rq_pos(req);
 
 			BTERR("device closed: failing secs %#Lx-%#Lx\n",

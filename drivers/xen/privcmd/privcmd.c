@@ -464,7 +464,7 @@ static long privcmd_ioctl(struct file *file,
 }
 
 #ifndef HAVE_ARCH_PRIVCMD_MMAP
-static int privcmd_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int privcmd_fault(struct vm_fault *vmf)
 {
 	return VM_FAULT_SIGBUS;
 }

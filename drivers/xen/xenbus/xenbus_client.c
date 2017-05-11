@@ -53,7 +53,7 @@
 #include <xen/features.h>
 
 #if defined(CONFIG_PARAVIRT_XEN)
-#include "xenbus_probe.h"
+#include "xenbus.h"
 
 #define XENBUS_PAGES(_grants)	(DIV_ROUND_UP(_grants, XEN_PFN_PER_PAGE))
 
@@ -124,7 +124,7 @@ EXPORT_SYMBOL_GPL(xenbus_strstate);
 int xenbus_watch_path(struct xenbus_device *dev, const char *path,
 		      struct xenbus_watch *watch,
 		      void (*callback)(struct xenbus_watch *,
-				       const char **, unsigned int))
+				       const char *, const char *))
 {
 	int err;
 
@@ -148,7 +148,7 @@ EXPORT_SYMBOL_GPL(xenbus_watch_path);
 int xenbus_watch_path2(struct xenbus_device *dev, const char *path,
 		       const char *path2, struct xenbus_watch *watch,
 		       void (*callback)(struct xenbus_watch *,
-					const char **, unsigned int))
+					const char *, const char *))
 {
 	int err;
 	char *state = kasprintf(GFP_NOIO | __GFP_HIGH, "%s/%s", path, path2);
@@ -182,7 +182,7 @@ EXPORT_SYMBOL_GPL(xenbus_watch_path2);
 int xenbus_watch_pathfmt(struct xenbus_device *dev,
 			 struct xenbus_watch *watch,
 			 void (*callback)(struct xenbus_watch *,
-					const char **, unsigned int),
+					  const char *, const char *),
 			 const char *pathfmt, ...)
 {
 	int err;
@@ -288,16 +288,6 @@ int xenbus_frontend_closed(struct xenbus_device *dev)
 }
 EXPORT_SYMBOL_GPL(xenbus_frontend_closed);
 
-/**
- * Return the path to the error node for the given device, or NULL on failure.
- * If the value returned is non-NULL, then it is the caller's to kfree.
- */
-static char *error_path(struct xenbus_device *dev)
-{
-	return kasprintf(GFP_KERNEL, "error/%s", dev->nodename);
-}
-
-
 static void _dev_error(struct xenbus_device *dev, int err,
 			const char *fmt, va_list *ap)
 {
@@ -308,7 +298,7 @@ static void _dev_error(struct xenbus_device *dev, int err,
 	if (printf_buffer)
 		dev_err(&dev->dev, "%s\n", printf_buffer);
 
-	path_buffer = error_path(dev);
+	path_buffer = kasprintf(GFP_KERNEL, "error/%s", dev->nodename);
 	if (!printf_buffer || !path_buffer
 	    || xenbus_write(XBT_NIL, path_buffer, "error", printf_buffer))
 		dev_err(&dev->dev,
@@ -318,7 +308,6 @@ static void _dev_error(struct xenbus_device *dev, int err,
 	kfree(printf_buffer);
 	kfree(path_buffer);
 }
-
 
 /**
  * xenbus_dev_error

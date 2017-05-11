@@ -95,7 +95,7 @@ static int nommu_dma_supported(struct device *hwdev, u64 mask)
 	return 1;
 }
 
-struct dma_map_ops nommu_dma_ops = {
+const struct dma_map_ops nommu_dma_ops = {
 	.alloc			= dma_generic_alloc_coherent,
 	.free			= dma_generic_free_coherent,
 	.map_page		= gnttab_map_page,

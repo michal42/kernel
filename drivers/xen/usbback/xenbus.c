@@ -62,7 +62,7 @@ static int start_xenusbd(usbif_t *usbif)
 }
 
 static void backend_changed(struct xenbus_watch *watch,
-			const char **vec, unsigned int len)
+			    const char *path, const char *token)
 {
 	struct xenbus_transaction xbt;
 	int err;

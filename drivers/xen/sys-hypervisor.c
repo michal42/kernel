@@ -28,7 +28,7 @@
 #include <xen/interface/xenpmu.h>
 #endif
 
-#include "xenbus/xenbus_comms.h"
+#include "xenbus/xenbus.h"
 
 #define HYPERVISOR_ATTR_RO(_name) \
 static struct hyp_sysfs_attr  _name##_attr = __ATTR_RO(_name)

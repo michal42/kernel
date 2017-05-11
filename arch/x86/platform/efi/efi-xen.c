@@ -441,11 +441,6 @@ void __init efi_init(void)
 #undef DECLARE_CALL
 #undef call
 
-void __init efi_late_init(void)
-{
-	efi_bgrt_init();
-}
-
 void __init efi_enter_virtual_mode(void)
 {
 	/* clean DUMMY object */

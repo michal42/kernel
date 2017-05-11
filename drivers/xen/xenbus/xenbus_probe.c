@@ -80,8 +80,7 @@
 #include <xen/hvm.h>
 #endif
 
-#include "xenbus_comms.h"
-#include "xenbus_probe.h"
+#include "xenbus.h"
 
 #ifdef HAVE_XEN_PLATFORM_COMPAT_H
 #include <xen/platform-compat.h>
@@ -187,10 +186,10 @@ static int read_backend_details(struct xenbus_device *xendev)
 }
 
 static void otherend_changed(struct xenbus_watch *watch,
-			     const char **vec, unsigned int len)
+			     const char *path, const char *token)
 #else /* !CONFIG_XEN && !MODULE */
 void xenbus_otherend_changed(struct xenbus_watch *watch,
-			     const char **vec, unsigned int len,
+			     const char *path, const char *token,
 			     int ignore_on_shutdown)
 #endif /* CONFIG_XEN || MODULE */
 {
@@ -202,17 +201,15 @@ void xenbus_otherend_changed(struct xenbus_watch *watch,
 	/* Protect us against watches firing on old details when the otherend
 	   details change, say immediately after a resume. */
 	if (!dev->otherend ||
-	    strncmp(dev->otherend, vec[XS_WATCH_PATH],
-		    strlen(dev->otherend))) {
-		dev_dbg(&dev->dev, "Ignoring watch at %s", vec[XS_WATCH_PATH]);
+	    strncmp(dev->otherend, path, strlen(dev->otherend))) {
+		dev_dbg(&dev->dev, "Ignoring watch at %s\n", path);
 		return;
 	}
 
 	state = xenbus_read_driver_state(dev->otherend);
 
-	dev_dbg(&dev->dev, "state is %d (%s), %s, %s",
-		state, xenbus_strstate(state), dev->otherend_watch.node,
-		vec[XS_WATCH_PATH]);
+ 	dev_dbg(&dev->dev, "state is %d (%s), %s, %s\n",
+		state, xenbus_strstate(state), dev->otherend_watch.node, path);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16)
 	/*
@@ -825,11 +822,11 @@ PARAVIRT_EXPORT_SYMBOL(xenbus_dev_changed);
 
 #if defined(CONFIG_XEN) || defined(MODULE)
 static void frontend_changed(struct xenbus_watch *watch,
-			     const char **vec, unsigned int len)
+			     const char *path, const char *token)
 {
 	DPRINTK("");
 
-	xenbus_dev_changed(vec[XS_WATCH_PATH], &xenbus_frontend);
+	xenbus_dev_changed(path, &xenbus_frontend);
 }
 
 /* We watch for devices appearing and vanishing. */
@@ -991,17 +988,18 @@ void unregister_xenstore_notifier(struct notifier_block *nb)
 EXPORT_SYMBOL_GPL(unregister_xenstore_notifier);
 #endif
 
-#ifndef CONFIG_XEN
+#ifdef MODULE
 static DECLARE_WAIT_QUEUE_HEAD(backend_state_wq);
 static int backend_state;
 
 static void xenbus_reset_backend_state_changed(struct xenbus_watch *w,
-					const char **v, unsigned int l)
+					       const char *path,
+					       const char *token)
 {
-	if (xenbus_scanf(XBT_NIL, v[XS_WATCH_PATH], "", "%i", &backend_state) != 1)
+	if (xenbus_scanf(XBT_NIL, path, "", "%i", &backend_state) != 1)
 		backend_state = XenbusStateUnknown;
 	printk(KERN_DEBUG "XENBUS: backend %s %s\n",
-			v[XS_WATCH_PATH], xenbus_strstate(backend_state));
+	       path, xenbus_strstate(backend_state));
 	wake_up(&backend_state_wq);
 }
 
@@ -1120,7 +1118,7 @@ xenbus_probe(struct work_struct *unused)
 {
 	BUG_ON(!is_xenstored_ready());
 
-#ifndef CONFIG_XEN
+#ifdef MODULE
 	/* reset devices in Connected or Closed state */
 	xenbus_reset_state();
 #endif
