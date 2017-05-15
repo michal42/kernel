@@ -224,10 +224,8 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 		sq->stats.stopped++;
 	}
 
-	if (netif_xmit_stopped(sq->txq)) {
-		cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
-		mlx5e_tx_notify_hw(sq, wqe);
-	}
+	cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
+	mlx5e_tx_notify_hw(sq, wqe);
 
 	/* fill sq edge with nops to avoid wqe wrap around */
 	 while ((sq->pc & wq->sz_m1) > sq->edge)
