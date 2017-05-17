@@ -77,6 +77,7 @@ extern int nfs4_setup_slot_table(struct nfs4_slot_table *tbl,
 extern void nfs4_shutdown_slot_table(struct nfs4_slot_table *tbl);
 extern struct nfs4_slot *nfs4_alloc_slot(struct nfs4_slot_table *tbl);
 extern void nfs4_free_slot(struct nfs4_slot_table *tbl, struct nfs4_slot *slot);
+extern bool nfs4_slot_seqid_in_use(struct nfs4_slot_table  *tbl, u32 slotid, u32 seq_nr);
 extern void nfs4_slot_tbl_drain_complete(struct nfs4_slot_table *tbl);
 bool nfs41_wake_and_assign_slot(struct nfs4_slot_table *tbl,
 		struct nfs4_slot *slot);
