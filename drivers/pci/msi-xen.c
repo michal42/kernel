@@ -202,18 +202,22 @@ EXPORT_SYMBOL(unregister_msi_get_owner);
 static void msi_unmap_pirq(struct pci_dev *dev, int pirq, unsigned int nr,
 			   domid_t owner, struct kobject *kobj)
 {
-	struct physdev_unmap_pirq unmap;
-	int rc;
+	if (is_initial_xendomain()) {
+		struct physdev_unmap_pirq unmap;
+		int rc;
 
-	unmap.domid = owner;
-	/* See comments in msi_map_vector, input parameter pirq means
-	 * irq number only if the device belongs to dom0 itself.
-	 */
-	unmap.pirq = (unmap.domid != DOMID_SELF)
-		? pirq : evtchn_get_xen_pirq(pirq);
+		unmap.domid = owner;
+		/* See comments in msi_map_vector, input parameter pirq means
+		 * irq number only if the device belongs to dom0 itself.
+		 */
+		unmap.pirq = (unmap.domid != DOMID_SELF)
+			? pirq : evtchn_get_xen_pirq(pirq);
 
-	if ((rc = HYPERVISOR_physdev_op(PHYSDEVOP_unmap_pirq, &unmap)))
-		dev_warn(&dev->dev, "unmap irq %d failed (%d)\n", pirq, rc);
+		if ((rc = HYPERVISOR_physdev_op(PHYSDEVOP_unmap_pirq, &unmap)))
+			dev_warn(&dev->dev, "unmap irq %d failed (%d)\n",
+				 pirq, rc);
+	} else
+		owner = DOMID_SELF;
 
 	/*
 	 * Its possible that we get into this path when populate_msi_sysfs()
@@ -225,7 +229,7 @@ static void msi_unmap_pirq(struct pci_dev *dev, int pirq, unsigned int nr,
 		kobject_put(kobj);
 	}
 
-	if (unmap.domid == DOMID_SELF)
+	if (owner == DOMID_SELF)
 		evtchn_map_pirq(pirq, 0, nr);
 }
 
@@ -799,15 +803,12 @@ void pci_msi_shutdown(struct pci_dev *dev)
 	if (!pci_msi_enable || !dev || !dev->msi_enabled)
 		return;
 
-	if (!is_initial_xendomain()) {
+	if (!is_initial_xendomain())
 #ifdef CONFIG_XEN_PCIDEV_FRONTEND
-		evtchn_map_pirq(dev->irq, 0, -msi_dev_entry->e.entry_nr);
 		pci_frontend_disable_msi(dev);
-		dev->irq = msi_dev_entry->default_irq;
-		dev->msi_enabled = 0;
-#endif
+#else
 		return;
-	}
+#endif
 
 	pirq = dev->irq;
 	/* Restore dev->irq to its default pin-assertion vector */
@@ -818,8 +819,10 @@ void pci_msi_shutdown(struct pci_dev *dev)
 	memset(&msi_dev_entry->e.kobj, 0, sizeof(msi_dev_entry->e.kobj));
 
 	/* Disable MSI mode */
-	msi_set_enable(dev, 0);
-	pci_intx_for_msi(dev, 1);
+	if (is_initial_xendomain()) {
+		msi_set_enable(dev, 0);
+		pci_intx_for_msi(dev, 1);
+	}
 	dev->msi_enabled = 0;
 }
 
@@ -1006,12 +1009,9 @@ void msi_remove_pci_irq_vectors(struct pci_dev *dev)
 		spin_unlock_irqrestore(&msi_dev_entry->pirq_list_lock, flags);
 		if (!pirq_entry)
 			break;
-		if (is_initial_xendomain())
-			msi_unmap_pirq(dev, pirq_entry->pirq, 1,
-				       msi_dev_entry->owner,
-				       &pirq_entry->kobj);
-		else
-			evtchn_map_pirq(pirq_entry->pirq, 0, 1);
+		msi_unmap_pirq(dev, pirq_entry->pirq, 1,
+			       msi_dev_entry->owner,
+			       &pirq_entry->kobj);
 		kfree(pirq_entry);
 	}
 	msi_dev_entry->owner = DOMID_IO;
