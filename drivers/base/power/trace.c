@@ -10,7 +10,9 @@
 #include <linux/resume-trace.h>
 #include <linux/export.h>
 #include <linux/rtc.h>
+#ifndef __GENKSYMS__
 #include <linux/suspend.h>
+#endif
 
 #include <asm/rtc.h>
 
