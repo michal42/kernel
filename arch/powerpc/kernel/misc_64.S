@@ -115,7 +115,7 @@ END_FTR_SECTION_IFSET(CPU_FTR_COHERENT_ICACHE)
  *
  *    flush all bytes from start to stop-1 inclusive
  */
-_GLOBAL(flush_dcache_range)
+_GLOBAL_TOC(flush_dcache_range)
 
 /*
  * Flush the data cache to memory 
