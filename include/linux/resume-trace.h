@@ -6,6 +6,12 @@
 #include <linux/types.h>
 
 extern int pm_trace_enabled;
+extern bool pm_trace_rtc_abused;
+
+static inline bool pm_trace_rtc_valid(void)
+{
+	return !pm_trace_rtc_abused;
+}
 
 static inline int pm_trace_is_enabled(void)
 {
@@ -25,6 +31,7 @@ extern int show_trace_dev_match(char *buf, size_t size);
 #else
 
 static inline int pm_trace_is_enabled(void) { return 0; }
+static inline bool pm_trace_rtc_valid(void) { return true; }
 
 #define TRACE_DEVICE(dev) do { } while (0)
 #define TRACE_RESUME(dev) do { } while (0)

@@ -34,6 +34,7 @@
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/platform_device.h>
+#include <linux/resume-trace.h>
 #include <linux/log2.h>
 #include <linux/pm.h>
 #include <linux/efi.h>
@@ -42,6 +43,8 @@
 
 /* this is for "generic access to PC-style RTC" using CMOS_READ/CMOS_WRITE */
 #include <asm-generic/rtc.h>
+
+static inline bool pm_trace_rtc_valid(void);
 
 struct cmos_rtc {
 	struct rtc_device	*rtc;
@@ -187,6 +190,13 @@ static inline void cmos_write_bank2(unsigned char val, unsigned char addr)
 
 static int cmos_read_time(struct device *dev, struct rtc_time *t)
 {
+	/*
+	 * If pm_trace abused the RTC for storage, set the timespec to 0,
+	 * which tells the caller that this RTC value is unusable.
+	 */
+	if (!pm_trace_rtc_valid())
+		return -EIO;
+
 	/* REVISIT:  if the clock has a "century" register, use
 	 * that instead of the heuristic in get_rtc_time().
 	 * That'll make Y3K compatility (year > 2070) easy!
