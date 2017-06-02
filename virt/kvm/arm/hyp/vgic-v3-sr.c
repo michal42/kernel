@@ -334,7 +334,11 @@ void __hyp_text __vgic_v3_restore_state(struct kvm_vcpu *vcpu)
 		for (i = 0; i < used_lrs; i++)
 			__gic_v3_set_lr(cpu_if->vgic_lr[i], i);
 	} else {
-		/* Always write ICH_HCR_EL2 to enable trapping */
+		/*
+                 * If we don't have any interrupt to inject, but that
+		 * trapping is enabled, write the ICH_HCR_EL2 config
+		 * anyway.
+		 */
 		if (static_branch_unlikely(&vgic_v3_cpuif_trap))
 			write_gicreg(cpu_if->vgic_hcr, ICH_HCR_EL2);
 	}
