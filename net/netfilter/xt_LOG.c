@@ -942,7 +942,7 @@ static int __net_init log_net_init(struct net *net)
 static void __net_exit log_net_exit(struct net *net)
 {
 #ifdef CONFIG_SYSCTL
-	if (nf_log_sysctl_fhdr)
+	if (net_eq(net, &init_net) && nf_log_sysctl_fhdr)
 		unregister_sysctl_table(nf_log_sysctl_fhdr);
 #endif
 	nf_log_unset(net, &ipt_log_logger);
